@@ -1,168 +1,194 @@
-# Anyplace
+<div align="center">
+
+# 📍 E-JUST Interactive Map & Anyplace Indoor Navigation System
+
+### *An Advanced, GPS-Less Indoor Localization, Navigation & Mapping Platform for Smart Campuses*
+
+[![Android Build](https://img.shields.io/badge/Android-SDK_31_%7C_Java_17-3DDC84?style=for-the-badge&logo=android&logoColor=white)](clients/android-new/)
+[![Target Android](https://img.shields.io/badge/Compatibility-Android_12_--_17-0052CC?style=for-the-badge&logo=android&logoColor=white)](clients/android-new/)
+[![Backend](https://img.shields.io/badge/Backend-Scala_Play_Framework-DC382D?style=for-the-badge&logo=scala&logoColor=white)](server/)
+[![Web Apps](https://img.shields.io/badge/Web_Suite-Architect_%7C_Viewer-FF6C37?style=for-the-badge&logo=html5&logoColor=white)](clients/web/)
+[![License](https://img.shields.io/badge/License-MIT_%2F_Open_Source-blue.svg?style=for-the-badge)](LICENSE.txt)
 
 ---
-### A free and open Indoor Navigation Service with superb accuracy!
+
+</div>
+
+## 📌 Executive Overview
+
+**E-JUST Interactive Map (powered by Anyplace)** is a comprehensive, open-source indoor positioning, navigation, and campus mapping system designed for smartphones and web browsers.
+
+In indoor environments like university campuses, convention centers, and hospitals, satellite-based GPS signals are blocked by concrete walls and roofs. This platform solves the indoor navigation challenge by leveraging **crowdsourced Wi-Fi fingerprinting (RSSI)**, **inertial smartphone sensors (IMU)**, and **computer vision (CV)** to deliver accurate, real-time indoor positioning without requiring expensive specialized hardware.
+
 ---
 
-[![Join the chat at https://gitter.im/dmsl/anyplace](https://badges.gitter.im/dmsl/anyplace.svg)](https://gitter.im/dmsl/anyplace?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+## 🏗️ System Architecture
 
+The project consists of three core layers working together seamlessly:
 
-# 0. CLONE THE CODE:
-<details><summary></summary>
+```mermaid
+graph TD
+    subgraph Web Clients
+        A[Architect Web App] -->|Design Floor Plans & POIs| S[Backend Server]
+        V[Viewer Campus Web App] -->|Browse Buildings & Navigation| S
+        D[Developer Portal API] -->|REST API Docs| S
+    end
 
-### Cloning without the submodules:
+    subgraph Mobile Apps
+        L[Logger Android App] -->|Record Wi-Fi Fingerprints| S
+        N[Navigator Android App] -->|Real-Time Indoor GPS| S
+        C[SMAS Chat & Emergency] -->|Messaging & Locations| S
+    end
 
+    subgraph Backend Core
+        S[Play Framework Server] --> M[(MongoDB / Couchbase DB)]
+    end
 ```
-git clone git@github.com:dmsl/anyplace.git anyplace
+
+---
+
+## 🚀 Core Components & Modules
+
+### 1. 📱 Android Mobile Suite (`clients/android-new/`)
+The native Android ecosystem is built in modern **Kotlin** with **Hilt Dependency Injection**, **Coroutines**, **Jetpack Datastore**, and **Retrofit2**.
+
+* **`logger/` (Anyplace Logger App):**
+  * **Surveying & Fingerprinting Tool:** Used by campus administrators and surveyors to walk floors, pin physical $(X, Y)$ locations on floor maps, and record Wi-Fi Access Point RSSI signals.
+  * **Pre-built APK:** Available directly at [`apks/logger-debug.apk`](apks/logger-debug.apk).
+* **`lib-android/` (Android Core Library):**
+  * Shared UI components, preference fragments, Mapbox/Google Maps integration, object detection (TensorFlow Lite YOLO), and navigation algorithms.
+* **`lib-core/` (Multiplatform Core Library):**
+  * Pure Kotlin network models, Data Transfer Objects (DTOs), and base network response wrappers.
+
+---
+
+### 2. 🌐 Web Application Suite (`clients/web/`)
+Built with modern web standards and AngularJS/HTML5:
+
+* **[Architect](clients/web/anyplace_architect/):** An interactive CAD-like map editor allowing campus managers to:
+  * Upload building CAD blueprints and floor plan images.
+  * Set physical GPS anchor points and scales.
+  * Draw indoor walls, hallways, corridors, and Points of Interest (POIs).
+* **[Viewer / Viewer Campus](clients/web/anyplace_viewer_campus/):** Public web portal for students, staff, and visitors to search for rooms, view multi-floor maps, and compute indoor routes.
+* **[Developers Portal](clients/web/developers/):** Interactive Swagger REST API documentation for backend integration.
+
+---
+
+### 3. ⚙️ Backend Server (`server/`)
+* Built with **Scala** and the **Play Framework**.
+* Connects to **Couchbase** and **MongoDB** databases.
+* Exposes RESTful v4 API endpoints for building management, floor plan retrieval, Wi-Fi fingerprint processing, and spatial queries.
+
+---
+
+### 4. 🤖 Simulators & Specialized Clients
+* **`clients/simulator/`:** Simulator tool for testing large-scale crowdsourced indoor location algorithms.
+* **`clients/robotos/`:** Robot Operating System (ROS) integration module.
+* **`clients/linux/`**, **`clients/macos/`**: Desktop clients.
+
+---
+
+## 🛠️ Build & Installation Guide (Android Logger App)
+
+### 📋 Prerequisites
+* **OS:** Linux (Ubuntu), macOS, or Windows
+* **JDK:** OpenJDK 17 (`JAVA_HOME=/usr/lib/jvm/java-1.17.0-openjdk-amd64`)
+* **Android SDK:** Platform 31 (Android 12), Build-Tools `30.0.3`
+
+---
+
+### 📥 1. Cloning the Repository
+Always clone with submodules to pull `lib-android` and `lib-core`:
+
+```bash
+git clone --recurse-submodules https://github.com/mona585/E-JUST_interactive_Map.git
+cd E-JUST_interactive_Map
 ```
 
-### Cloning with the submodules:
-- Submodules are separate `git` repositories within this one
-- You cal also fetch those at a later stage (with relevant git command)
-- Needed when developing libraries or the android client apps.
-- `core-lib`: [clients/core/lib]( clients/core/lib):
-  - core library, written in kotlin
-  - communicates to an Anyplace Backend service using `Retrofit2`
-  - can be used to create more generic libraries
-  - it is used by the `android-lib` to build the Android clients
-- `android-lib`: [clients/android-new/lib-android](clients/android-new/lib-android):
-  - most of the kotlin code is here
-  - some thin clients are created out of this (SMAS, Navigator)
-
-```
-git clone git@github.com:dmsl/anyplace.git anyplace --recurse-submodules
+If already cloned without submodules:
+```bash
+git submodule update --init --recursive
 ```
 
-
-</details>
-
-
----
 ---
 
-# 1. Server: [PLAY Framework]
-<details><summary></summary>
+### 🔨 2. Building the Logger APK
+Navigate to `clients/android-new` and compile with Gradle:
 
-- This is the Anyplace Backend
-- Latest Version 4.3.1 (MongoDB): See [ap.cs.ucy.ac.cy:44/api/version](https://ap.cs.ucy.ac.cy:44/api/version)
-  - released as part of Anyplace 5.0 (Early 2022)
-- For usage see: **Developers Front-end App** [ap.cs.ucy.ac.cy/developers](https://ap.cs.ucy.ac.cy/developers)
-- Path: [server](server)
-- Branch: `develop-server`
+```bash
+cd clients/android-new
+export JAVA_HOME=/usr/lib/jvm/java-1.17.0-openjdk-amd64
+./gradlew :logger:assembleDebug
+```
 
-</details>
-
+> ⚡ **Automatic Build Artifact Copying:** The build script is configured to automatically copy the compiled debug APK directly to [`apks/logger-debug.apk`](apks/logger-debug.apk) upon successful build.
 
 ---
----
 
-# 2. Frontend apps:
-<details><summary></summary>
+### 📲 3. Installing on Android Device
+Connect your Android phone via USB with USB Debugging enabled, then run:
 
-##
-- Path: [clients](clients)
-- Branch: `develop-clients`
-
-### Viewer: [ap.cs.ucy.ac.cy/viewer](https://ap.cs.ucy.ac.cy/viewer): Viewer
-### Architect: [ap.cs.ucy.ac.cy/architect](https://ap.cs.ucy.ac.cy/architect): Architect
-### Developers: [ap.cs.ucy.ac.cy/developers](https://ap.cs.ucy.ac.cy/developers): Developers (API through Swagger)
-
-</details>
+```bash
+adb install -r logger/build/outputs/apk/debug/logger-debug.apk
+```
+*or directly from the repository output:*
+```bash
+adb install -r ../../apks/logger-debug.apk
+```
 
 ---
----
 
-# 3. Preface 
-<details open><summary>Preface</summary>
+## 🛠️ Server Setup (Docker)
 
-Anyplace is a first-of-a-kind indoor information service offering GPS-less
-localization, navigation and search inside buildings using ordinary smartphones. 
-	 
-- URL: [anyplace.cs.ucy.ac.cy](https://anyplace.cs.ucy.ac.cy)
+You can launch the full backend server and Couchbase database locally using Docker Compose:
 
-It is recommended to watch the [video tutorials](https://anyplace.cs.ucy.ac.cy/#how-works) before proceeding with these instructions.
+```bash
+cd docker
+docker-compose up -d
+```
 
-We hope that you find our Anyplace Indoor Information Service useful for your research and innovation activities.  We would like to have feedback, comments, remarks, and, of course, any experience or test results from your own experimental setups. Currently, we can offer only limited support and assistance on the code, due to lack of resources, but we will try to get back to you as soon as possible. Questions and feedback may be sent to
-anyplace@cs.ucy.ac.cy
-
-If you install Anyplace on your own servers, please record your URL
-[here](https://docs.google.com/spreadsheets/d/1GQySk4omlEcTPWoAt_Vt3WUmVbqFko4xoFKQ2N222RI/edit?usp=sharing).
-
-#### In case you have any publications resulting from the Anyplace platform, please cite the following paper(s):
-
-- [**The Anyplace 4.0 IoT Localization Architecture**](https://www.cs.ucy.ac.cy/~dzeina/papers/mdm20-a4iot.pdf)  
-  **Paschalis Mpeis, Thierry Roussel, Manish Kumar, Constantinos Costa, Christos Laoudias, Denis Capot-Ray Demetrios Zeinalipour-Yazti**  
-  _Proceedings of the 21st IEEE International Conference on Mobile Data Management (MDM '20), IEEE Computer Society, ISBN:, pp. 8, June 30 - July 3, 2020, Versailles, France, 2020_
-
-- [**The Anatomy of the Anyplace Indoor Navigation Service**](http://www.sigspatial.org/sigspatial-special-issues/sigspatial-special-volume-9-number-2-july-2017/04-Paper01_Anatomy.pdf)  
-  **Demetrios Zeinalipour-Yazti and Christos Laoudias**  
-  _ACM SIGSPATIAL Special (SIGSPATIAL '17), ACM Press, Vol. 9, pp. 3-10, 2017_
-
-- [**Internet-Based Indoor Navigation Services**](http://www.cs.ucy.ac.cy/~dzeina/papers/ic16-iin.pdf)  
-  **Demetrios Zeinalipour-Yazti, Christos Laoudias, Kyriakos Georgiou, Georgios Chatzimilioudis**  
-  _IEEE Internet Computing, vol. 21, no. , pp. 54-63, July 2017, doi:10.1109/MIC.2017.2911420_
-
-- [**Anyplace: A Crowdsourced Indoor Information Service**](http://www.cs.ucy.ac.cy/~dzeina/papers/mdm15-anyplace-demo.pdf)  
-  **Kyriakos Georgiou, Timotheos Constambeys, Christos Laoudias, Lambros Petrou, Georgios Chatzimilioudis and Demetrios Zeinalipour-Yazti**  
-  _IEEE Mobile Data Management (MDM ’15), IEEE Press, Volume 2, Pages: 291-294, 2015_
-
-</details>
+Access the backend service at `http://localhost:8080/api/v4/`.
 
 ---
----
 
-# 4. Source Code Components 
-<details open><summary></summary>
+## 🛠️ Recent Improvements & Stability Updates (Android 12–17)
 
-## 4.1 [Server](server):
-- Play Framework server
-- Written on scala
-- Branch: `develop-server`
+The latest branch updates (`Mesbah_Branch_Test`) introduce key fixes for modern Android OS versions:
 
-## 4.2 [Clients](clients):
-- Branch: `develop-clients` (merging point of android and web apps)
-- submodule: [core-lib](clients/core/lib)
-- [Android](clients/android-new/)  Branch: `develop-clients-android`
-  - submodule: [lib-android](clients/android-new/lib-android)
-- [Web apps](clients/web): Branch: `develop-clients-web`
-  - [Architect](clients/web/anyplace_architect)
-  - [Viewer](clients/web/anyplace_viewer)
-  - [Viewer Campus](clients/web/anyplace_viewer_campus)
-- [Simulator](clients/simulator)
-- Other:
-  - [iOS](clients/deprecated/ios/)
-  - [Windows Phone](clients/deprecated/windows-phone/)
-  - [RobotOS](clients/robotos/)
-  - [Linux](clients/linux/)
-  - [macOS](clients/macos/)
-
-</details>
+1. **Android 12 to 17 OS Compatibility:**
+   * Canonicalized activity package definitions in `lib-android/src/main/AndroidManifest.xml` to prevent `ActivityNotFoundException`.
+   * Registered `CvBackendLoginActivity` and `SmasLoginActivity` in the manifest.
+2. **16 KB Page-Alignment Support (Android 14/15/16):**
+   * Configured `useLegacyPackaging = true` for native JNI libraries (`libtensorflowlite_jni.so`, `libtensorflowlite_gpu_jni.so`) to pass APK alignment checks on devices with 16 KB memory pages.
+3. **Settings Screen & Navigation Fixes:**
+   * Replaced custom multi-arg Fragment constructors with zero-arg constructors required by Android `FragmentManager`.
+   * Pointed Settings button on login screen to `SettingsAnyplaceServerActivity`.
+4. **Network & Null Safety Hardening:**
+   * Default-initialized `path` in `RetrofitHolderSmas` with `/smas/api`.
+   * Added `init` blocks in Retrofit holders to safely instantiate base URLs.
+   * Handled non-JSON / HTML HTTP errors safely in `SmasLoginViewModel` and `AnyplaceLoginViewModel` without throwing `NullPointerException`.
 
 ---
+
+## 📚 Research Publications & Citations
+
+If you use Anyplace or E-JUST Interactive Map in academic research, please cite:
+
+1. **The Anyplace 4.0 IoT Localization Architecture**  
+   *Paschalis Mpeis, Thierry Roussel, Manish Kumar, Constantinos Costa, Christos Laoudias, Denis Capot-Ray, Demetrios Zeinalipour-Yazti*  
+   *Proceedings of the 21st IEEE International Conference on Mobile Data Management (MDM '20), 2020.*
+
+2. **The Anatomy of the Anyplace Indoor Navigation Service**  
+   *Demetrios Zeinalipour-Yazti and Christos Laoudias*  
+   *ACM SIGSPATIAL Special (SIGSPATIAL '17), Vol. 9, pp. 3-10, 2017.*
+
+3. **Internet-Based Indoor Navigation Services**  
+   *Demetrios Zeinalipour-Yazti, Christos Laoudias, Kyriakos Georgiou, Georgios Chatzimilioudis*  
+   *IEEE Internet Computing, vol. 21, no. 4, pp. 54-63, 2017.*
+
 ---
 
-## 5. LATEST DEVELOPMENT VERSION
-To test the latest development version you can fork the [develop branch](https://github.com/dmsl/anyplace/tree/develop).
+## 🤝 Contributing & License
 
-DEV Testing: [ap-dev.cs.ucy.ac.cy](https://ap-dev.cs.ucy.ac.cy)
-
----
----
-
-# Contributors: 
-- University of Cyprus (Cyprus)
-- University of Pittsburgh (USA)
-- University of Mannheim (Germany)
-- Alstom (France)
-- Infosys (India)
-
----
----
-
-# Links
-
-## [Contributing](CONTRIBUTING.md)
-
-## [Team](https://anyplace.cs.ucy.ac.cy/#about)
-
-## [License](LICENSE.txt)
+* **License:** [MIT License](LICENSE.txt)
+* **Contributions:** Pull requests are welcome! Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) before submitting code changes.
