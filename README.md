@@ -1,194 +1,364 @@
 <div align="center">
 
 # 📍 E-JUST Interactive Map & Anyplace Indoor Navigation System
+### *Production-Grade Self-Hosting & Deployment Architecture Guide*
 
-### *An Advanced, GPS-Less Indoor Localization, Navigation & Mapping Platform for Smart Campuses*
-
-[![Android Build](https://img.shields.io/badge/Android-SDK_31_%7C_Java_17-3DDC84?style=for-the-badge&logo=android&logoColor=white)](clients/android-new/)
-[![Target Android](https://img.shields.io/badge/Compatibility-Android_12_--_17-0052CC?style=for-the-badge&logo=android&logoColor=white)](clients/android-new/)
-[![Backend](https://img.shields.io/badge/Backend-Scala_Play_Framework-DC382D?style=for-the-badge&logo=scala&logoColor=white)](server/)
-[![Web Apps](https://img.shields.io/badge/Web_Suite-Architect_%7C_Viewer-FF6C37?style=for-the-badge&logo=html5&logoColor=white)](clients/web/)
-[![License](https://img.shields.io/badge/License-MIT_%2F_Open_Source-blue.svg?style=for-the-badge)](LICENSE.txt)
+[![Server](https://img.shields.io/badge/Backend-Scala_Play_2.8_%7C_MongoDB-DC382D?style=for-the-badge&logo=scala&logoColor=white)](server/)
+[![Web Suite](https://img.shields.io/badge/Frontend-Nginx_%7C_HTML5_%7C_AngularJS-009639?style=for-the-badge&logo=nginx&logoColor=white)](clients/web/)
+[![Android Client](https://img.shields.io/badge/Android-SDK_31_%7C_Java_17-3DDC84?style=for-the-badge&logo=android&logoColor=white)](clients/android-new/)
+[![OS Support](https://img.shields.io/badge/OS_Target-Android_12_--_17-0052CC?style=for-the-badge&logo=android&logoColor=white)](apks/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE.txt)
 
 ---
 
 </div>
 
-## 📌 Executive Overview
-
-**E-JUST Interactive Map (powered by Anyplace)** is a comprehensive, open-source indoor positioning, navigation, and campus mapping system designed for smartphones and web browsers.
-
-In indoor environments like university campuses, convention centers, and hospitals, satellite-based GPS signals are blocked by concrete walls and roofs. This platform solves the indoor navigation challenge by leveraging **crowdsourced Wi-Fi fingerprinting (RSSI)**, **inertial smartphone sensors (IMU)**, and **computer vision (CV)** to deliver accurate, real-time indoor positioning without requiring expensive specialized hardware.
+## 📑 Table of Contents
+1. [Overview & Production Architecture](#-overview--production-architecture)
+2. [Prerequisites & System Requirements](#-prerequisites--system-requirements)
+3. [Step 1: Database Setup (MongoDB)](#-step-1-database-setup-mongodb)
+4. [Step 2: Backend Server Deployment (Scala / Play 2.8)](#-step-2-backend-server-deployment-scala--play-28)
+5. [Step 3: Reverse Proxy, Nginx & SSL Setup (HTTPS)](#-step-3-reverse-proxy-nginx--ssl-setup-https)
+6. [Step 4: Web Applications Setup (Architect & Viewer)](#-step-4-web-applications-setup-architect--viewer)
+7. [Step 5: Android Mobile Suite Setup (Logger App)](#-step-5-android-mobile-suite-setup-logger-app)
+8. [Step 6: Production Operations & Systemd Services](#-step-6-production-operations--systemd-services)
+9. [Troubleshooting & Verification Checklist](#-troubleshooting--verification-checklist)
 
 ---
 
-## 🏗️ System Architecture
+## 🏛️ Overview & Production Architecture
 
-The project consists of three core layers working together seamlessly:
+The **E-JUST Interactive Map & Anyplace Navigation System** provides GPS-less indoor positioning, crowdsourced Wi-Fi fingerprinting (RSSI), and multi-floor navigation.
 
-```mermaid
-graph TD
-    subgraph Web Clients
-        A[Architect Web App] -->|Design Floor Plans & POIs| S[Backend Server]
-        V[Viewer Campus Web App] -->|Browse Buildings & Navigation| S
-        D[Developer Portal API] -->|REST API Docs| S
-    end
+### Production Network Topology
 
-    subgraph Mobile Apps
-        L[Logger Android App] -->|Record Wi-Fi Fingerprints| S
-        N[Navigator Android App] -->|Real-Time Indoor GPS| S
-        C[SMAS Chat & Emergency] -->|Messaging & Locations| S
-    end
-
-    subgraph Backend Core
-        S[Play Framework Server] --> M[(MongoDB / Couchbase DB)]
-    end
+```
+                   +--------------------------------------------------+
+                   |                 CLIENT LAYER                     |
+                   |                                                  |
+                   |   [ Android Logger / Navigator ]    [ Web Browser ] |
+                   +-----------------------+--------------------------+
+                                           |
+                                 HTTPS (Port 443 / SSL)
+                                           v
+                   +--------------------------------------------------+
+                   |               REVERSE PROXY (Nginx)              |
+                   |    - SSL Termination (Let's Encrypt)             |
+                   |    - Serves Static Web Apps (/architect, /viewer)|
+                   |    - Proxies API Requests (/api/v4) -> Port 9000 |
+                   +-----------------------+--------------------------+
+                                           |
+                                HTTP (Port 9000 internal)
+                                           v
+                   +--------------------------------------------------+
+                   |             ANYPLACE BACKEND SERVER              |
+                   |       (Play Framework 2.8 / Scala 2.13)         |
+                   +-----------------------+--------------------------+
+                                           |
+                                  TCP (Port 27017)
+                                           v
+                   +--------------------------------------------------+
+                   |                MONGODB DATABASE                  |
+                   |    - Stores Buildings, Floors, POIs, Wi-Fi Maps  |
+                   +--------------------------------------------------+
 ```
 
 ---
 
-## 🚀 Core Components & Modules
+## 📋 Prerequisites & System Requirements
 
-### 1. 📱 Android Mobile Suite (`clients/android-new/`)
-The native Android ecosystem is built in modern **Kotlin** with **Hilt Dependency Injection**, **Coroutines**, **Jetpack Datastore**, and **Retrofit2**.
+### Hardware Requirements (Server)
+* **CPU:** 4 Cores or higher
+* **RAM:** 8 GB RAM minimum (16 GB recommended for high concurrent Wi-Fi logging)
+* **Disk:** 50 GB NVMe / SSD Storage
 
-* **`logger/` (Anyplace Logger App):**
-  * **Surveying & Fingerprinting Tool:** Used by campus administrators and surveyors to walk floors, pin physical $(X, Y)$ locations on floor maps, and record Wi-Fi Access Point RSSI signals.
-  * **Pre-built APK:** Available directly at [`apks/logger-debug.apk`](apks/logger-debug.apk).
-* **`lib-android/` (Android Core Library):**
-  * Shared UI components, preference fragments, Mapbox/Google Maps integration, object detection (TensorFlow Lite YOLO), and navigation algorithms.
-* **`lib-core/` (Multiplatform Core Library):**
-  * Pure Kotlin network models, Data Transfer Objects (DTOs), and base network response wrappers.
-
----
-
-### 2. 🌐 Web Application Suite (`clients/web/`)
-Built with modern web standards and AngularJS/HTML5:
-
-* **[Architect](clients/web/anyplace_architect/):** An interactive CAD-like map editor allowing campus managers to:
-  * Upload building CAD blueprints and floor plan images.
-  * Set physical GPS anchor points and scales.
-  * Draw indoor walls, hallways, corridors, and Points of Interest (POIs).
-* **[Viewer / Viewer Campus](clients/web/anyplace_viewer_campus/):** Public web portal for students, staff, and visitors to search for rooms, view multi-floor maps, and compute indoor routes.
-* **[Developers Portal](clients/web/developers/):** Interactive Swagger REST API documentation for backend integration.
+### Software Environment
+* **OS:** Ubuntu Linux 20.04 LTS / 22.04 LTS
+* **Java:** OpenJDK 17 (`openjdk-17-jdk`)
+* **Scala & SBT:** Scala 2.13.x & SBT 1.5+
+* **Database:** MongoDB Community Server 4.4 / 5.0 / 6.0
+* **Web Server:** Nginx & Certbot (Let's Encrypt)
+* **Android Build Tools:** Android SDK Platform 31, Build-Tools `30.0.3`
 
 ---
 
-### 3. ⚙️ Backend Server (`server/`)
-* Built with **Scala** and the **Play Framework**.
-* Connects to **Couchbase** and **MongoDB** databases.
-* Exposes RESTful v4 API endpoints for building management, floor plan retrieval, Wi-Fi fingerprint processing, and spatial queries.
+## 🗄️ Step 1: Database Setup (MongoDB)
 
----
-
-### 4. 🤖 Simulators & Specialized Clients
-* **`clients/simulator/`:** Simulator tool for testing large-scale crowdsourced indoor location algorithms.
-* **`clients/robotos/`:** Robot Operating System (ROS) integration module.
-* **`clients/linux/`**, **`clients/macos/`**: Desktop clients.
-
----
-
-## 🛠️ Build & Installation Guide (Android Logger App)
-
-### 📋 Prerequisites
-* **OS:** Linux (Ubuntu), macOS, or Windows
-* **JDK:** OpenJDK 17 (`JAVA_HOME=/usr/lib/jvm/java-1.17.0-openjdk-amd64`)
-* **Android SDK:** Platform 31 (Android 12), Build-Tools `30.0.3`
-
----
-
-### 📥 1. Cloning the Repository
-Always clone with submodules to pull `lib-android` and `lib-core`:
+### 1.1 Install MongoDB Server
+On your Ubuntu production server, install MongoDB:
 
 ```bash
-git clone --recurse-submodules https://github.com/mona585/E-JUST_interactive_Map.git
-cd E-JUST_interactive_Map
+sudo apt-get update
+sudo apt-get install -y gnupg curl
+
+# Import MongoDB GPG key & repository
+curl -fsSL https://www.mongodb.org/static/pgp/server-5.0.asc | sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-5.0.gpg
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-5.0.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-5.0.list
+
+sudo apt-get update
+sudo apt-get install -y mongodb-org
+
+# Enable and start MongoDB
+sudo systemctl daemon-reload
+sudo systemctl enable mongod
+sudo systemctl start mongod
 ```
 
-If already cloned without submodules:
+### 1.2 Configure Anyplace Database & Indexes
+Ensure MongoDB is running on `127.0.0.1:27017`. Create the database:
+
 ```bash
-git submodule update --init --recursive
+mongosh --eval "use anyplace"
 ```
 
 ---
 
-### 🔨 2. Building the Logger APK
-Navigate to `clients/android-new` and compile with Gradle:
+## ⚙️ Step 2: Backend Server Deployment (Scala / Play 2.8)
+
+### 2.1 Clone Repository with Submodules
+Clone the repository recursively on your server:
+
+```bash
+git clone --recurse-submodules https://github.com/mona585/E-JUST_interactive_Map.git /var/www/anyplace
+cd /var/www/anyplace/server
+```
+
+### 2.2 Configure Private Application Settings
+Create private configuration from the example template:
+
+```bash
+cp conf/app.private.example.conf conf/app.private.conf
+```
+
+Edit `conf/app.private.conf` with your text editor (`nano conf/app.private.conf`):
+
+```hocon
+# Application Secret Key (generate a random 64-char string)
+play.http.secret.key = "c3VwZXItc2VjcmV0LXByb2R1Y3Rpb24ta2V5LWZvci1lcmp1c3QtYW55cGxhY2Utc2VydmVy"
+
+# Server Base URL
+server.address = "https://your-domain.com"
+
+# Database Configuration
+mongodb.uri = "mongodb://127.0.0.1:27017/anyplace"
+
+# Password Encryption Salt & Pepper
+password.salt = "anyplace_salt_ejust_2026"
+password.pepper = "anyplace_pepper_ejust_2026"
+
+# Filesystem Roots
+floorPlansRootDir = "/var/www/anyplace/data/floorplans"
+radioMapRawDir = "/var/www/anyplace/data/radiomap/raw"
+radioMapFrozenDir = "/var/www/anyplace/data/radiomap/frozen"
+tilerRootDir = "/var/www/anyplace/server/anyplace_tiler"
+```
+
+Create necessary data directories:
+```bash
+sudo mkdir -p /var/www/anyplace/data/floorplans /var/www/anyplace/data/radiomap/raw /var/www/anyplace/data/radiomap/frozen
+sudo chown -R $USER:$USER /var/www/anyplace/data
+```
+
+### 2.3 Compile & Package Production Binary
+Use SBT to compile and produce a standalone production ZIP distribution:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+sbt clean compile dist
+```
+
+Unzip the distribution package:
+```bash
+cd target/universal
+unzip anyplace-4.3.1.zip
+sudo mv anyplace-4.3.1 /opt/anyplace-server
+```
+
+---
+
+## 🔒 Step 3: Reverse Proxy, Nginx & SSL Setup (HTTPS)
+
+> ⚠️ **CRITICAL NOTE FOR ANDROID 9+ (Android 12–17):**
+> Android enforces HTTPS for all network requests. Running the backend on cleartext HTTP will block mobile connections. **SSL via Nginx is mandatory.**
+
+### 3.1 Install Nginx & Let's Encrypt Certbot
+```bash
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+```
+
+### 3.2 Create Nginx Configuration
+Create `/etc/nginx/sites-available/anyplace.conf`:
+
+```nginx
+server {
+    server_name your-domain.com;
+
+    # Maximum upload size for floor plans & Wi-Fi signal logs
+    client_max_body_size 100M;
+
+    # 1. API Reverse Proxy -> Play Server Port 9000
+    location /api/ {
+        proxy_pass http://127.0.0.1:9000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 2. Architect Web App
+    location /architect {
+        alias /var/www/anyplace/clients/web/anyplace_architect;
+        index index.html;
+        try_files $uri $uri/ /architect/index.html;
+    }
+
+    # 3. Viewer Campus Web App
+    location /viewer {
+        alias /var/www/anyplace/clients/web/anyplace_viewer_campus;
+        index index.html;
+        try_files $uri $uri/ /viewer/index.html;
+    }
+
+    # 4. Developer API Portal
+    location /developers {
+        alias /var/www/anyplace/clients/web/developers;
+        index index.html;
+    }
+
+    # Root redirect
+    location / {
+        redirect /viewer;
+    }
+}
+```
+
+Enable site & obtain SSL certificate:
+```bash
+sudo ln -s /etc/nginx/sites-available/anyplace.conf /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+# Obtain free SSL Certificate
+sudo certbot --nginx -d your-domain.com
+```
+
+---
+
+## 🌐 Step 4: Web Applications Setup (Architect & Viewer)
+
+### 4.1 Update Web App API Configuration
+Configure the web frontends to communicate with your self-hosted backend.
+
+Edit `/var/www/anyplace/clients/web/anyplace_architect/app.js` or `config.json`:
+```javascript
+window.ANYPLACE_SERVER_URL = "https://your-domain.com/api/v4/";
+```
+
+Edit `/var/www/anyplace/clients/web/anyplace_viewer_campus/app.js`:
+```javascript
+window.ANYPLACE_SERVER_URL = "https://your-domain.com/api/v4/";
+```
+
+Set permissions:
+```bash
+sudo chown -R www-data:www-data /var/www/anyplace/clients/web
+```
+
+---
+
+## 📱 Step 5: Android Mobile Suite Setup (Logger App)
+
+The **Anyplace Logger App** is used by campus managers to record Wi-Fi signals indoors.
+
+### 5.1 Build Requirements & Environment
+On your build computer / developer machine:
+* Install **JDK 17**
+* Set `JAVA_HOME=/usr/lib/jvm/java-1.17.0-openjdk-amd64`
+* Ensure Android SDK Platform 31 & Build-Tools `30.0.3` are installed.
+
+### 5.2 Configure Default Server URL in Android Code
+To point the built APK to your self-hosted server by default, edit:
+`clients/android-new/lib-android/src/main/res/values/strings.xml`:
+
+```xml
+<string name="default_pref_server_host">your-domain.com</string>
+<string name="default_pref_server_port">443</string>
+<string name="default_pref_server_protocol">https</string>
+```
+
+### 5.3 Compile Release & Debug APKs
+From `clients/android-new/`:
 
 ```bash
 cd clients/android-new
 export JAVA_HOME=/usr/lib/jvm/java-1.17.0-openjdk-amd64
+
+# Assemble Debug APK
 ./gradlew :logger:assembleDebug
 ```
 
-> ⚡ **Automatic Build Artifact Copying:** The build script is configured to automatically copy the compiled debug APK directly to [`apks/logger-debug.apk`](apks/logger-debug.apk) upon successful build.
+> ⚙️ **Automated APK Destination:**
+> The build script automatically copies the output APK to [`apks/logger-debug.apk`](apks/logger-debug.apk) in the repository root.
 
----
-
-### 📲 3. Installing on Android Device
-Connect your Android phone via USB with USB Debugging enabled, then run:
-
-```bash
-adb install -r logger/build/outputs/apk/debug/logger-debug.apk
-```
-*or directly from the repository output:*
+### 5.4 Installation via ADB
 ```bash
 adb install -r ../../apks/logger-debug.apk
 ```
 
 ---
 
-## 🛠️ Server Setup (Docker)
+## 🛠️ Step 6: Production Operations & Systemd Services
 
-You can launch the full backend server and Couchbase database locally using Docker Compose:
+### 6.1 Create Systemd Service for Anyplace Backend
+Create `/etc/systemd/system/anyplace.service`:
 
-```bash
-cd docker
-docker-compose up -d
+```ini
+[Unit]
+Description=Anyplace Indoor Navigation Play Backend Server
+After=network.target mongod.service
+Requires=mongod.service
+
+[Service]
+Type=simple
+User=mesba7
+WorkingDirectory=/opt/anyplace-server
+ExecStart=/opt/anyplace-server/bin/anyplace -Dhttp.port=9000 -Dconfig.file=/var/www/anyplace/server/conf/application.conf
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=anyplace-server
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-Access the backend service at `http://localhost:8080/api/v4/`.
+Enable & start service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable anyplace
+sudo systemctl start anyplace
+sudo systemctl status anyplace
+```
 
 ---
 
-## 🛠️ Recent Improvements & Stability Updates (Android 12–17)
+## 🔍 Troubleshooting & Verification Checklist
 
-The latest branch updates (`Mesbah_Branch_Test`) introduce key fixes for modern Android OS versions:
-
-1. **Android 12 to 17 OS Compatibility:**
-   * Canonicalized activity package definitions in `lib-android/src/main/AndroidManifest.xml` to prevent `ActivityNotFoundException`.
-   * Registered `CvBackendLoginActivity` and `SmasLoginActivity` in the manifest.
-2. **16 KB Page-Alignment Support (Android 14/15/16):**
-   * Configured `useLegacyPackaging = true` for native JNI libraries (`libtensorflowlite_jni.so`, `libtensorflowlite_gpu_jni.so`) to pass APK alignment checks on devices with 16 KB memory pages.
-3. **Settings Screen & Navigation Fixes:**
-   * Replaced custom multi-arg Fragment constructors with zero-arg constructors required by Android `FragmentManager`.
-   * Pointed Settings button on login screen to `SettingsAnyplaceServerActivity`.
-4. **Network & Null Safety Hardening:**
-   * Default-initialized `path` in `RetrofitHolderSmas` with `/smas/api`.
-   * Added `init` blocks in Retrofit holders to safely instantiate base URLs.
-   * Handled non-JSON / HTML HTTP errors safely in `SmasLoginViewModel` and `AnyplaceLoginViewModel` without throwing `NullPointerException`.
+| Component | Test Command / Endpoint | Expected Output |
+| :--- | :--- | :--- |
+| **MongoDB** | `mongosh --eval "db.adminCommand('ping')"` | `{ ok: 1 }` |
+| **Backend API Version** | `curl -k https://your-domain.com/api/v4/version` | `{"status":"success","version":"4.3.1"}` |
+| **Architect Web App** | Browser: `https://your-domain.com/architect` | Interactive Campus Map & Floor Editor |
+| **Viewer Web App** | Browser: `https://your-domain.com/viewer` | Campus Navigation View |
+| **Android Settings** | In Logger App: Tap ⚙️ **Settings** | Opens Anyplace Server Settings without crash |
+| **APK Build** | `./gradlew :logger:assembleDebug` | `BUILD SUCCESSFUL` -> Output in `apks/logger-debug.apk` |
 
 ---
 
-## 📚 Research Publications & Citations
-
-If you use Anyplace or E-JUST Interactive Map in academic research, please cite:
-
-1. **The Anyplace 4.0 IoT Localization Architecture**  
-   *Paschalis Mpeis, Thierry Roussel, Manish Kumar, Constantinos Costa, Christos Laoudias, Denis Capot-Ray, Demetrios Zeinalipour-Yazti*  
-   *Proceedings of the 21st IEEE International Conference on Mobile Data Management (MDM '20), 2020.*
-
-2. **The Anatomy of the Anyplace Indoor Navigation Service**  
-   *Demetrios Zeinalipour-Yazti and Christos Laoudias*  
-   *ACM SIGSPATIAL Special (SIGSPATIAL '17), Vol. 9, pp. 3-10, 2017.*
-
-3. **Internet-Based Indoor Navigation Services**  
-   *Demetrios Zeinalipour-Yazti, Christos Laoudias, Kyriakos Georgiou, Georgios Chatzimilioudis*  
-   *IEEE Internet Computing, vol. 21, no. 4, pp. 54-63, 2017.*
-
----
-
-## 🤝 Contributing & License
+## 📜 License & Citation
 
 * **License:** [MIT License](LICENSE.txt)
-* **Contributions:** Pull requests are welcome! Please refer to [CONTRIBUTING.md](CONTRIBUTING.md) before submitting code changes.
+* **Citation:**  
+  *The Anyplace 4.0 IoT Localization Architecture*, IEEE MDM 2020.  
+  *Paschalis Mpeis, Thierry Roussel, Manish Kumar, Constantinos Costa, Christos Laoudias, Denis Capot-Ray, Demetrios Zeinalipour-Yazti.*
