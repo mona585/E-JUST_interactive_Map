@@ -72,4 +72,6 @@ $RECYCLE.BIN/
 .idea/misc.xml
 # other files
 *.swp
+.android-sdk/
+
 

@@ -41,6 +41,9 @@ android {
     viewBinding true
   }
   packagingOptions {
+    jniLibs {
+      useLegacyPackaging = true
+    }
     resources {
       excludes += ['META-INF/DEPENDENCIES']
     }
@@ -97,4 +100,13 @@ dependencies {
    testImplementation 'junit:junit:4.13.2'
    androidTestImplementation 'androidx.test.ext:junit:1.1.3'
    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+}
+
+tasks.register('copyApkToRepo', Copy) {
+  from "$buildDir/outputs/apk/debug/logger-debug.apk"
+  into "$rootDir/../apks"
+}
+
+tasks.matching { it.name == 'assembleDebug' }.configureEach {
+  finalizedBy 'copyApkToRepo'
 }

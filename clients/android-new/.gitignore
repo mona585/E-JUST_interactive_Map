@@ -3,7 +3,6 @@ secure.properties
 #
 ### Android ###
 # Built application files
-*.apk
 *.aar
 *.ap_
 *.aab
@@ -21,7 +20,6 @@ out/
 
 # Gradle files
 .gradle/
-build/
 debug/
 
 # Local configuration file (sdk path, etc)
