@@ -104,7 +104,7 @@ dependencies {
 
 tasks.register('copyApkToRepo', Copy) {
   from "$buildDir/outputs/apk/debug/logger-debug.apk"
-  into "$rootDir/../../apks"
+  into "$rootDir/../apks"
 }
 
 tasks.matching { it.name == 'assembleDebug' }.configureEach {
