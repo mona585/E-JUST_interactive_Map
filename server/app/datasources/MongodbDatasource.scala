@@ -95,8 +95,10 @@ object MongodbDatasource {
   }
 
   def createInstance(hostname: String, database: String, username: String, password: String, port: String): MongodbDatasource = {
-    val uri: String = "mongodb://" + username + ":" + password + "@" + hostname + ":" + port
-    mongoClient = MongoClient(uri)
+    val uri =
+  s"mongodb://$username:$password@$hostname:$port/$database?authSource=$database"
+
+mongoClient = MongoClient(uri)
     // TODO check if database anyplace exists
     mdb = mongoClient.getDatabase(database)
     LOG.I(TAG, "connected to database.")
