@@ -2,7 +2,7 @@
 
 echo "=== Stopping Anyplace Local Environment ==="
 
-PID=$(pgrep -f "target/universal/stage/bin/anyplace" || true)
+PID=$(pgrep -f "play.core.server.ProdServerStart" || pgrep -f "target/universal/stage/bin/anyplace" || true)
 
 if [ -n "$PID" ]; then
     echo "[*] Stopping Anyplace server process ($PID)..."

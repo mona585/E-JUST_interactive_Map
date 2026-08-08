@@ -1,5 +1,5 @@
 # Static Web Applications
-GET     /                                                                           controllers.WebAppController.serveArchitect(file="")
+GET     /                                                                           controllers.WebAppController.redirectToArchitect()
 
 GET     /architect                                                                  controllers.WebAppController.AddTrailingSlash()
 GET     /architect/                                                                 controllers.WebAppController.serveArchitect(file="")
@@ -24,6 +24,13 @@ GET     /viewer_campus/*file                                                    
 GET     /developers                                                                 controllers.WebAppController.AddTrailingSlash()
 GET     /developers/                                                                controllers.WebAppController.serveDevelopers(file="")
 GET     /developers/*file                                                           controllers.WebAppController.serveDevelopers(file)
+
+# Root asset fallbacks for Web Applications
+GET     /build/*file                                                                controllers.WebAppController.serveArchitect(file)
+GET     /bower_components/*file                                                     controllers.WebAppController.serveArchitect(file)
+GET     /libs/*file                                                                 controllers.WebAppController.serveArchitect(file)
+GET     /style/*file                                                                controllers.WebAppController.serveArchitect(file)
+GET     /scripts/*file                                                              controllers.WebAppController.serveArchitect(file)
 
 GET     /shared/*file                                                               controllers.Assets.at(path="/public/shared", file)
 GET     /assets/*file                                                               controllers.Assets.at(path="/public", file)

@@ -23,6 +23,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_DIR="$ROOT_DIR/server"
 CLIENT_WEB_DIR="$ROOT_DIR/clients/web"
 
+if [ -e "/var/run/docker.sock" ]; then
+    export DOCKER_HOST="unix:///var/run/docker.sock"
+fi
+
 echo -e "${BLUE}====================================================${NC}"
 echo -e "${BLUE}    Anyplace Standalone Local Installation          ${NC}"
 echo -e "${BLUE}====================================================${NC}"
@@ -184,7 +188,7 @@ if grep -qE 'password\.pepper="(PEPPER|AnyplacePepper123)"' "$CONF_FILE" || ! gr
     sed -i "s|password.pepper=.*|password.pepper=\"$PEPPER\"|g" "$CONF_FILE" 2>/dev/null || echo "password.pepper=\"$PEPPER\"" >> "$CONF_FILE"
 fi
 
-sed -i "s|server.address=.*|server.address=\"http://localhost\"|g" "$CONF_FILE"
+sed -i "s|server.address=.*|server.address=\"https://map.beout.ai\"|g" "$CONF_FILE"
 sed -i "s|server.port=.*|server.port=\"9000\"|g" "$CONF_FILE"
 sed -i "s|mongodb.hostname=.*|mongodb.hostname=\"127.0.0.1\"|g" "$CONF_FILE"
 sed -i "s|mongodb.app.username=.*|mongodb.app.username=\"\"|g" "$CONF_FILE"
@@ -301,6 +305,10 @@ set -e
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_DIR="$ROOT_DIR/server"
 
+if [ -e "/var/run/docker.sock" ]; then
+    export DOCKER_HOST="unix:///var/run/docker.sock"
+fi
+
 # Prioritize Java 11/17 for Anyplace Play framework compatibility
 if [ -d "/usr/lib/jvm/java-11-openjdk-amd64" ]; then
     export JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
@@ -320,7 +328,7 @@ if nc -z 127.0.0.1 27017 &> /dev/null; then
     echo "[✓] MongoDB is running on port 27017."
 elif command -v docker &> /dev/null; then
     echo "[!] MongoDB not detected. Starting MongoDB Docker container..."
-    docker run -d --name anyplace-mongodb -p 27017:27017 -v anyplace_mongo_data:/data/db mongo:latest 2>/dev/null || docker start anyplace-mongodb
+    docker start anyplace-mongodb 2>/dev/null || docker run -d --name anyplace-mongodb -p 27017:27017 -v anyplace_mongo_data:/data/db mongo:latest 2>/dev/null
     sleep 3
     echo "[✓] MongoDB container started."
 else
@@ -328,7 +336,7 @@ else
 fi
 
 # Check if Anyplace is already running on port 9000
-if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null || (command -v nc &> /dev/null && nc -z 127.0.0.1 9000 &> /dev/null); then
+if (command -v nc &> /dev/null && nc -z 127.0.0.1 9000 &> /dev/null); then
     echo "[✓] Anyplace server is already running and listening on port 9000!"
     echo "    - Backend API: http://localhost:9000/api"
     echo "    - Architect Web App: http://localhost:9000/architect/"
@@ -338,6 +346,7 @@ fi
 
 # Remove stale RUNNING_PID lockfile if present from a previous run/crash
 rm -f "$SERVER_DIR/target/universal/stage/RUNNING_PID"
+rm -f "$ROOT_DIR/RUNNING_PID"
 
 # Extract application secret from configuration file
 CONF_PATH="$SERVER_DIR/conf/app.private.conf"
@@ -347,10 +356,18 @@ if [ -z "$APP_SECRET" ]; then
 fi
 
 echo "[*] Launching Anyplace Backend on port 9000..."
-nohup "$SERVER_DIR/target/universal/stage/bin/anyplace" -Dplay.http.secret.key="$APP_SECRET" -Dapplication.secret="$APP_SECRET" -Dhttp.port=9000 > "$ROOT_DIR/anyplace.log" 2>&1 &
+setsid nohup "$SERVER_DIR/target/universal/stage/bin/anyplace" \
+    -J--add-opens=java.base/java.lang=ALL-UNNAMED \
+    -J--add-opens=java.base/java.util=ALL-UNNAMED \
+    -J--add-opens=java.base/java.lang.invoke=ALL-UNNAMED \
+    -J--add-opens=java.base/java.io=ALL-UNNAMED \
+    -Dplay.http.secret.key="$APP_SECRET" \
+    -Dapplication.secret="$APP_SECRET" \
+    -Dhttp.port=9000 > "$ROOT_DIR/anyplace.log" 2>&1 &
+disown || true
 
-sleep 3
-if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
+sleep 4
+if (command -v nc &> /dev/null && nc -z 127.0.0.1 9000 &> /dev/null) || pgrep -f "play.core.server.ProdServerStart" > /dev/null; then
     echo "[✓] Anyplace server started successfully!"
     echo "    - Backend API: http://localhost:9000/api"
     echo "    - Architect Web App: http://localhost:9000/architect/"
@@ -369,7 +386,7 @@ cat << 'EOF' > "$ROOT_DIR/stop.sh"
 
 echo "=== Stopping Anyplace Local Environment ==="
 
-PID=$(pgrep -f "target/universal/stage/bin/anyplace" || true)
+PID=$(pgrep -f "play.core.server.ProdServerStart" || pgrep -f "target/universal/stage/bin/anyplace" || true)
 
 if [ -n "$PID" ]; then
     echo "[*] Stopping Anyplace server process ($PID)..."
@@ -398,7 +415,7 @@ else
 fi
 
 # Check Anyplace Server
-PID=$(pgrep -f "target/universal/stage/bin/anyplace" || true)
+PID=$(pgrep -f "play.core.server.ProdServerStart" || pgrep -f "target/universal/stage/bin/anyplace" || true)
 if [ -n "$PID" ]; then
     echo " [✓] Anyplace Backend (PID $PID): ONLINE (Port 9000)"
 else

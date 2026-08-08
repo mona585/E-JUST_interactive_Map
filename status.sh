@@ -12,7 +12,7 @@ else
 fi
 
 # Check Anyplace Server
-PID=$(pgrep -f "target/universal/stage/bin/anyplace" || true)
+PID=$(pgrep -f "play.core.server.ProdServerStart" || pgrep -f "target/universal/stage/bin/anyplace" || true)
 if [ -n "$PID" ]; then
     echo " [✓] Anyplace Backend (PID $PID): ONLINE (Port 9000)"
 else

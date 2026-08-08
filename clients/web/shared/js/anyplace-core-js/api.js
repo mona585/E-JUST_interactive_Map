@@ -26,7 +26,7 @@
  */
 
 var API = {};
-API.url = "http://localhost:9000/api" // UPDATE THIS
+API.url = "/api";
 
 API.VERSION = API.url + "/version";
 

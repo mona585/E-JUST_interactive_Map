@@ -37,7 +37,7 @@ package controllers
 
 import datasources.SCHEMA
 import play.api.Environment
-import play.api.mvc.{AbstractController, Action, AnyContent, ControllerComponents, Result}
+import play.api.mvc.{AbstractController, Action, AnyContent, ControllerComponents, Result, RequestHeader}
 //import play.Play
 import javax.inject.{Inject, Singleton}
 
@@ -50,11 +50,15 @@ class WebAppController @Inject()(cc: ControllerComponents,
     serveFile(devsDir, file)
   }
 
+  def redirectToArchitect(): Action[AnyContent] = Action {
+    Redirect("/architect/")
+  }
+
   def AddTrailingSlash(): Action[AnyContent] = Action { implicit request =>
     MovedPermanently(request.path + "/")
   }
 
-  def serveArchitect(file: String): Action[AnyContent] = Action {
+  def serveArchitect(file: String): Action[AnyContent] = Action { implicit request =>
     val archiDir = "public/anyplace_architect"
     serveFile(archiDir, file)
   }
@@ -79,10 +83,16 @@ class WebAppController @Inject()(cc: ControllerComponents,
     serveFile(viewerDir, file)
   }
 
-  def serveFile(appDir: String, file_in: String): Result = {
+  def serveFile(appDir: String, file_in: String)(implicit request: RequestHeader = null): Result = {
     val file_str = if (file_in == null || file_in.trim.isEmpty || file_in.trim == "/") "index.html" else file_in.trim
     val reqFile: String = appDir + "/" + file_str
     val subPath: String = reqFile.stripPrefix("public/")
+
+    val reqPathSubPath: Option[String] = if (request != null && request.path != null && request.path.nonEmpty) {
+      val rawPath = request.path.stripPrefix("/")
+      val appName = appDir.stripPrefix("public/")
+      Some(s"$appName/$rawPath")
+    } else None
 
     // 1. Try loading from ClassLoader resource (packaged JAR)
     val resourceStream = env.classLoader.getResourceAsStream(reqFile)
@@ -97,14 +107,31 @@ class WebAppController @Inject()(cc: ControllerComponents,
     }
 
     // 2. Comprehensive physical disk search
+    val altSubPath = reqPathSubPath.getOrElse(subPath)
     val searchPaths = List(
       new java.io.File(env.rootPath, reqFile),
       new java.io.File(env.rootPath, "public/" + subPath),
+      new java.io.File(env.rootPath, "public/" + altSubPath),
       new java.io.File(env.rootPath, "../server/public/" + subPath),
+      new java.io.File(env.rootPath, "../server/public/" + altSubPath),
+      new java.io.File(env.rootPath, "../clients/web/" + subPath),
+      new java.io.File(env.rootPath, "../clients/web/" + altSubPath),
+      new java.io.File(env.rootPath, "../../clients/web/" + subPath),
+      new java.io.File(env.rootPath, "../../clients/web/" + altSubPath),
+      new java.io.File(env.rootPath, "../../../clients/web/" + subPath),
+      new java.io.File(env.rootPath, "../../../clients/web/" + altSubPath),
+      new java.io.File(env.rootPath, "../../../../clients/web/" + subPath),
+      new java.io.File(env.rootPath, "../../../../clients/web/" + altSubPath),
+      new java.io.File("clients/web/" + subPath),
+      new java.io.File("clients/web/" + altSubPath),
+      new java.io.File("../clients/web/" + subPath),
+      new java.io.File("../clients/web/" + altSubPath),
       new java.io.File("server/" + reqFile),
       new java.io.File("server/public/" + subPath),
+      new java.io.File("server/public/" + altSubPath),
       new java.io.File(reqFile),
-      new java.io.File("public/" + subPath)
+      new java.io.File("public/" + subPath),
+      new java.io.File("public/" + altSubPath)
     )
 
     searchPaths.find(f => f.exists() && f.isFile) match {
