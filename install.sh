@@ -303,9 +303,12 @@ else
     echo "[!] WARNING: MongoDB is not running on port 27017. Backend may fail to connect."
 fi
 
-# Check if Anyplace is already running
-if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
-    echo "[!] Anyplace server is already running!"
+# Check if Anyplace is already running on port 9000
+if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null || (command -v nc &> /dev/null && nc -z 127.0.0.1 9000 &> /dev/null); then
+    echo "[✓] Anyplace server is already running and listening on port 9000!"
+    echo "    - Backend API: http://localhost:9000/api"
+    echo "    - Architect Web App: http://localhost:9000/architect/"
+    echo "    - Viewer Web App: http://localhost:9000/viewer/"
     exit 0
 fi
 
