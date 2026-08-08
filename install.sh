@@ -166,12 +166,16 @@ if [ ! -f "$CONF_FILE" ]; then
     sed -i "s|server.address=.*|server.address=\"http://localhost\"|g" "$CONF_FILE"
     sed -i "s|server.port=.*|server.port=\"9000\"|g" "$CONF_FILE"
     sed -i "s|mongodb.hostname=.*|mongodb.hostname=\"127.0.0.1\"|g" "$CONF_FILE"
+    sed -i "s|mongodb.app.username=.*|mongodb.app.username=\"\"|g" "$CONF_FILE"
+    sed -i "s|mongodb.app.password=.*|mongodb.app.password=\"\"|g" "$CONF_FILE"
     sed -i "s|mongodb.port=.*|mongodb.port=27017|g" "$CONF_FILE"
     sed -i "s|mongodb.database=.*|mongodb.database=\"anyplace\"|g" "$CONF_FILE"
 
     echo -e "  [✓] Configuration generated with unique application secrets."
 else
     echo -e "  [✓] Existing $CONF_FILE found."
+    sed -i 's|mongodb.app.username=.*|mongodb.app.username=""|g' "$CONF_FILE"
+    sed -i 's|mongodb.app.password=.*|mongodb.app.password=""|g' "$CONF_FILE"
     # Ensure play.http.secret.key exists in app.private.conf
     if ! grep -q "play.http.secret.key" "$CONF_FILE"; then
         SECRET_VAL=$(grep "application.secret" "$CONF_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "AnyplaceSecretKey2026")
