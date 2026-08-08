@@ -439,22 +439,54 @@ if command -v crontab &> /dev/null; then
     echo -e "  [✓] Cron @reboot auto-start entry registered."
 fi
 
-# Read values from app.private.conf to display
+# Read ALL configuration settings from app.private.conf to display
 CONF_FILE="$SERVER_DIR/conf/app.private.conf"
-DISP_SECRET=$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || echo "Not set")
-DISP_SALT=$(grep "password.salt" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "Not set")
-DISP_PEPPER=$(grep "password.pepper" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "Not set")
-DISP_MONGO_DB=$(grep "mongodb.database" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "anyplace")
+get_conf_val() {
+    grep -E "^[[:space:]]*$1[[:space:]]*=" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | xargs || echo "$2"
+}
 
-echo -e "\n${CYAN}====================================================${NC}"
-echo -e "${CYAN}        GENERATED SYSTEM CREDENTIALS & KEYS         ${NC}"
-echo -e "${CYAN}====================================================${NC}"
-echo -e " Config Location : ${YELLOW}$CONF_FILE${NC}"
-echo -e " Application Key : ${GREEN}$DISP_SECRET${NC}"
-echo -e " Password Salt   : ${GREEN}$DISP_SALT${NC}"
-echo -e " Password Pepper : ${GREEN}$DISP_PEPPER${NC}"
-echo -e " Database        : ${GREEN}127.0.0.1:27017 ($DISP_MONGO_DB)${NC}"
-echo -e "${CYAN}====================================================${NC}"
+DISP_SERVER_ADDR=$(get_conf_val "server.address" "http://localhost")
+DISP_SERVER_PORT=$(get_conf_val "server.port" "9000")
+DISP_APP_SECRET=$(get_conf_val "application.secret" "Not set")
+DISP_PLAY_SECRET=$(get_conf_val "play.http.secret.key" "$DISP_APP_SECRET")
+DISP_SALT=$(get_conf_val "password.salt" "Not set")
+DISP_PEPPER=$(get_conf_val "password.pepper" "Not set")
+DISP_MONGO_HOST=$(get_conf_val "mongodb.hostname" "127.0.0.1")
+DISP_MONGO_PORT=$(get_conf_val "mongodb.port" "27017")
+DISP_MONGO_DB=$(get_conf_val "mongodb.database" "anyplace")
+DISP_MONGO_USER=$(get_conf_val "mongodb.app.username" "")
+DISP_MONGO_PASS=$(get_conf_val "mongodb.app.password" "")
+[ -z "$DISP_MONGO_USER" ] && DISP_MONGO_USER="<none (unauthenticated)>"
+[ -z "$DISP_MONGO_PASS" ] && DISP_MONGO_PASS="<none (unauthenticated)>"
+
+DISP_FLOORPLANS=$(get_conf_val "floorPlansRootDir" "floorplans")
+DISP_RADIOMAPS_RAW=$(get_conf_val "radioMapRawDir" "radiomaps_raw")
+DISP_RADIOMAPS_FROZEN=$(get_conf_val "radioMapFrozenDir" "radiomaps_frozen")
+DISP_TILER=$(get_conf_val "tilerRootDir" "anyplace_tiler")
+
+echo -e "\n${CYAN}========================================================================${NC}"
+echo -e "${CYAN}                ALL ANYPLACE CONFIGURATION SETTINGS                     ${NC}"
+echo -e "${CYAN}========================================================================${NC}"
+echo -e " Configuration File   : ${YELLOW}$CONF_FILE${NC}"
+echo -e " ------------------------------------------------------------------------"
+echo -e " Server Address       : ${GREEN}$DISP_SERVER_ADDR${NC}"
+echo -e " Server Port          : ${GREEN}$DISP_SERVER_PORT${NC}"
+echo -e " Application Secret   : ${GREEN}$DISP_APP_SECRET${NC}"
+echo -e " Play Secret Key      : ${GREEN}$DISP_PLAY_SECRET${NC}"
+echo -e " Password Salt        : ${GREEN}$DISP_SALT${NC}"
+echo -e " Password Pepper      : ${GREEN}$DISP_PEPPER${NC}"
+echo -e " ------------------------------------------------------------------------"
+echo -e " MongoDB Hostname     : ${GREEN}$DISP_MONGO_HOST${NC}"
+echo -e " MongoDB Port         : ${GREEN}$DISP_MONGO_PORT${NC}"
+echo -e " MongoDB Database     : ${GREEN}$DISP_MONGO_DB${NC}"
+echo -e " MongoDB Username     : ${GREEN}$DISP_MONGO_USER${NC}"
+echo -e " MongoDB Password     : ${GREEN}$DISP_MONGO_PASS${NC}"
+echo -e " ------------------------------------------------------------------------"
+echo -e " Floorplans Directory : ${GREEN}$SERVER_DIR/$DISP_FLOORPLANS${NC}"
+echo -e " Radiomaps Raw Dir    : ${GREEN}$SERVER_DIR/$DISP_RADIOMAPS_RAW${NC}"
+echo -e " Radiomaps Frozen Dir : ${GREEN}$SERVER_DIR/$DISP_RADIOMAPS_FROZEN${NC}"
+echo -e " Tiler Directory      : ${GREEN}$SERVER_DIR/$DISP_TILER${NC}"
+echo -e "${CYAN}========================================================================${NC}"
 
 echo -e "\n${GREEN}====================================================${NC}"
 echo -e "${GREEN}      ANYPLACE INSTALLATION COMPLETE!               ${NC}"
