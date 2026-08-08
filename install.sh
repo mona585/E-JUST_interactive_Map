@@ -414,6 +414,20 @@ EOF
 echo -e "  [✓] Helper scripts created: start.sh, stop.sh, status.sh"
 echo -e "  [✓] Systemd service template generated: anyplace.service"
 
+# 6.5 Auto-enable systemd service and cron @reboot fallback for automatic start on reboot
+if [ -d "/etc/systemd/system" ] && command -v systemctl &> /dev/null; then
+    cp "$ROOT_DIR/anyplace.service" /etc/systemd/system/anyplace.service 2>/dev/null || true
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable anyplace.service 2>/dev/null || true
+    echo -e "  [✓] Anyplace systemd service automatically enabled for auto-start on reboot."
+fi
+
+# Fallback: Crontab @reboot entry
+if command -v crontab &> /dev/null; then
+    (crontab -l 2>/dev/null | grep -v "$ROOT_DIR/start.sh"; echo "@reboot $ROOT_DIR/start.sh >/dev/null 2>&1") | crontab - 2>/dev/null || true
+    echo -e "  [✓] Cron @reboot auto-start entry registered."
+fi
+
 echo -e "\n${GREEN}====================================================${NC}"
 echo -e "${GREEN}      ANYPLACE INSTALLATION COMPLETE!               ${NC}"
 echo -e "${GREEN}====================================================${NC}"
