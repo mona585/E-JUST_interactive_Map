@@ -277,6 +277,9 @@ elif [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
     export PATH="$JAVA_HOME/bin:$PATH"
 fi
 
+# Java 17 reflection permissions required by Guice / CGLIB
+export JDK_JAVA_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED ${JDK_JAVA_OPTIONS:-}"
+
 echo "=== Starting Anyplace Local Environment ==="
 
 # Check MongoDB
@@ -298,7 +301,7 @@ if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
 fi
 
 echo "[*] Launching Anyplace Backend on port 9000..."
-nohup "$SERVER_DIR/target/universal/stage/bin/anyplace" -J--add-opens=java.base/java.lang=ALL-UNNAMED -J--add-opens=java.base/java.util=ALL-UNNAMED -Dhttp.port=9000 > "$ROOT_DIR/anyplace.log" 2>&1 &
+nohup "$SERVER_DIR/target/universal/stage/bin/anyplace" -Dhttp.port=9000 > "$ROOT_DIR/anyplace.log" 2>&1 &
 
 sleep 3
 if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
