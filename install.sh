@@ -149,39 +149,50 @@ mkdir -p "$SERVER_DIR/public"
 CONF_FILE="$SERVER_DIR/conf/app.private.conf"
 CONF_EXAMPLE="$SERVER_DIR/conf/app.private.example.conf"
 
-if [ ! -f "$CONF_FILE" ]; then
-    echo -e "  [+] Creating private configuration: $CONF_FILE"
-    
-    # Generate random secret keys
-    APP_SECRET=$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32 || date +%s | md5sum | head -c 32)
-    SALT=$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16 || echo "AnyplaceSalt123")
-    PEPPER=$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16 || echo "AnyplacePepper123")
-
-    cp "$CONF_EXAMPLE" "$CONF_FILE"
-    
-    # Update configuration parameters
-    sed -i "s|application.secret=.*|application.secret=\"$APP_SECRET\"\nplay.http.secret.key=\"$APP_SECRET\"|g" "$CONF_FILE"
-    sed -i "s|password.salt=.*|password.salt=\"$SALT\"|g" "$CONF_FILE"
-    sed -i "s|password.pepper=.*|password.pepper=\"$PEPPER\"|g" "$CONF_FILE"
-    sed -i "s|server.address=.*|server.address=\"http://localhost\"|g" "$CONF_FILE"
-    sed -i "s|server.port=.*|server.port=\"9000\"|g" "$CONF_FILE"
-    sed -i "s|mongodb.hostname=.*|mongodb.hostname=\"127.0.0.1\"|g" "$CONF_FILE"
-    sed -i "s|mongodb.app.username=.*|mongodb.app.username=\"\"|g" "$CONF_FILE"
-    sed -i "s|mongodb.app.password=.*|mongodb.app.password=\"\"|g" "$CONF_FILE"
-    sed -i "s|mongodb.port=.*|mongodb.port=27017|g" "$CONF_FILE"
-    sed -i "s|mongodb.database=.*|mongodb.database=\"anyplace\"|g" "$CONF_FILE"
-
-    echo -e "  [✓] Configuration generated with unique application secrets."
-else
-    echo -e "  [✓] Existing $CONF_FILE found."
-    sed -i 's|mongodb.app.username=.*|mongodb.app.username=""|g' "$CONF_FILE"
-    sed -i 's|mongodb.app.password=.*|mongodb.app.password=""|g' "$CONF_FILE"
-    # Ensure play.http.secret.key exists in app.private.conf
-    if ! grep -q "play.http.secret.key" "$CONF_FILE"; then
-        SECRET_VAL=$(grep "application.secret" "$CONF_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "AnyplaceSecretKey2026")
-        echo "play.http.secret.key=\"$SECRET_VAL\"" >> "$CONF_FILE"
+# Helper functions for cryptographically strong random strings
+generate_random_hex() {
+    if command -v openssl &> /dev/null; then
+        openssl rand -hex "$1"
+    else
+        head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c "$(( $1 * 2 ))"
     fi
+}
+
+APP_SECRET=$(generate_random_hex 32)
+SALT=$(generate_random_hex 16)
+PEPPER=$(generate_random_hex 16)
+
+if [ ! -f "$CONF_FILE" ]; then
+    echo -e "  [+] Creating private configuration with auto-generated secrets: $CONF_FILE"
+    cp "$CONF_EXAMPLE" "$CONF_FILE"
 fi
+
+# Automatically update parameters and replace placeholder secrets with generated secure keys
+sed -i "s|application.secret=.*|application.secret=\"$APP_SECRET\"|g" "$CONF_FILE"
+if grep -q "play.http.secret.key" "$CONF_FILE"; then
+    sed -i "s|play.http.secret.key=.*|play.http.secret.key=\"$APP_SECRET\"|g" "$CONF_FILE"
+else
+    echo "play.http.secret.key=\"$APP_SECRET\"" >> "$CONF_FILE"
+fi
+
+# Replace salt and pepper if default placeholders exist or during initial creation
+if grep -qE 'password\.salt="(SALT|AnyplaceSalt123)"' "$CONF_FILE" || ! grep -q "password.salt" "$CONF_FILE"; then
+    sed -i "s|password.salt=.*|password.salt=\"$SALT\"|g" "$CONF_FILE" 2>/dev/null || echo "password.salt=\"$SALT\"" >> "$CONF_FILE"
+fi
+
+if grep -qE 'password\.pepper="(PEPPER|AnyplacePepper123)"' "$CONF_FILE" || ! grep -q "password.pepper" "$CONF_FILE"; then
+    sed -i "s|password.pepper=.*|password.pepper=\"$PEPPER\"|g" "$CONF_FILE" 2>/dev/null || echo "password.pepper=\"$PEPPER\"" >> "$CONF_FILE"
+fi
+
+sed -i "s|server.address=.*|server.address=\"http://localhost\"|g" "$CONF_FILE"
+sed -i "s|server.port=.*|server.port=\"9000\"|g" "$CONF_FILE"
+sed -i "s|mongodb.hostname=.*|mongodb.hostname=\"127.0.0.1\"|g" "$CONF_FILE"
+sed -i "s|mongodb.app.username=.*|mongodb.app.username=\"\"|g" "$CONF_FILE"
+sed -i "s|mongodb.app.password=.*|mongodb.app.password=\"\"|g" "$CONF_FILE"
+sed -i "s|mongodb.port=.*|mongodb.port=27017|g" "$CONF_FILE"
+sed -i "s|mongodb.database=.*|mongodb.database=\"anyplace\"|g" "$CONF_FILE"
+
+echo -e "  [✓] All passwords, application secrets, salt, and pepper automatically generated and saved."
 
 # ------------------------------------------------------------------------------
 # 3. Configure Web Client API Endpoint
