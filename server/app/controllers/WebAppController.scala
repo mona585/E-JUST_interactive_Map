@@ -80,21 +80,63 @@ class WebAppController @Inject()(cc: ControllerComponents,
   }
 
   def serveFile(appDir: String, file_in: String): Result = {
-    var header = ("", "")
     var file_str = file_in
 
     if (file_str == null) {
-      return NotFound("")
-    }
-    if (file_str.trim().isEmpty || file_str.trim() == "index.html") {
       file_str = "index.html"
-      header = ("Content-Disposition", "inline")
     }
+    if (file_str.trim().isEmpty || file_str.trim() == "/") {
+      file_str = "index.html"
+    }
+
     val reqFile: String = appDir + "/" + file_str
-    val file = env.classLoader.getResourceAsStream(reqFile)
-    if (file != null)
-      Ok(scala.io.Source.fromInputStream(file, "UTF-8").mkString).as("text/html")
-    else
-      NotFound
+
+    // 1. Try loading from ClassLoader resource (packaged JAR)
+    var is: java.io.InputStream = env.classLoader.getResourceAsStream(reqFile)
+
+    // 2. Fallback to physical filesystem paths if null
+    if (is == null) {
+      val candidates = List(
+        new java.io.File(env.rootPath, reqFile),
+        new java.io.File(reqFile),
+        new java.io.File("server", reqFile),
+        new java.io.File("public", file_str)
+      )
+      candidates.find(_.exists()).foreach { f =>
+        try { is = new java.io.FileInputStream(f) } catch { case _: Exception => }
+      }
+    }
+
+    if (is != null) {
+      try {
+        val bytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get("").toAbsolutePath.resolve(reqFile))
+        Ok(bytes).as(getMimeType(file_str))
+      } catch {
+        case _: Exception =>
+          val content = scala.io.Source.fromInputStream(is, "UTF-8").mkString
+          Ok(content).as(getMimeType(file_str))
+      }
+    } else {
+      NotFound(s"File not found: $file_str in $appDir")
+    }
+  }
+
+  private def getMimeType(fileName: String): String = {
+    val ext = if (fileName.contains(".")) fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase else ""
+    ext match {
+      case "html" | "htm" => "text/html; charset=utf-8"
+      case "js"           => "application/javascript; charset=utf-8"
+      case "css"          => "text/css; charset=utf-8"
+      case "json"         => "application/json; charset=utf-8"
+      case "png"          => "image/png"
+      case "jpg" | "jpeg" => "image/jpeg"
+      case "gif"          => "image/gif"
+      case "svg"          => "image/svg+xml"
+      case "ico"          => "image/x-icon"
+      case "woff"         => "font/woff"
+      case "woff2"        => "font/woff2"
+      case "ttf"          => "font/ttf"
+      case _              => "application/octet-stream"
+    }
   }
 }

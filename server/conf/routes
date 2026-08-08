@@ -1,29 +1,29 @@
-# Static Web Applications & Root Route
-GET     /                                                                           controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
+# Static Web Applications
+GET     /                                                                           controllers.WebAppController.serveArchitect(file="")
 
-GET     /architect                                                                  controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
-GET     /architect/                                                                 controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
-GET     /architect/*file                                                            controllers.Assets.at(path="/public/anyplace_architect", file)
+GET     /architect                                                                  controllers.WebAppController.AddTrailingSlash()
+GET     /architect/                                                                 controllers.WebAppController.serveArchitect(file="")
+GET     /architect/*file                                                            controllers.WebAppController.serveArchitect(file)
 
-GET     /anyplace_architect                                                         controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
-GET     /anyplace_architect/                                                        controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
-GET     /anyplace_architect/*file                                                   controllers.Assets.at(path="/public/anyplace_architect", file)
+GET     /anyplace_architect                                                         controllers.WebAppController.AddTrailingSlash()
+GET     /anyplace_architect/                                                        controllers.WebAppController.serveArchitect(file="")
+GET     /anyplace_architect/*file                                                   controllers.WebAppController.serveArchitect(file)
 
-GET     /viewer                                                                     controllers.Assets.at(path="/public/anyplace_viewer", file="index.html")
-GET     /viewer/                                                                    controllers.Assets.at(path="/public/anyplace_viewer", file="index.html")
-GET     /viewer/*file                                                               controllers.Assets.at(path="/public/anyplace_viewer", file)
+GET     /viewer                                                                     controllers.WebAppController.AddTrailingSlash()
+GET     /viewer/                                                                    controllers.WebAppController.serveViewer(file="")
+GET     /viewer/*file                                                               controllers.WebAppController.serveViewer(file)
 
-GET     /anyplace_viewer                                                            controllers.Assets.at(path="/public/anyplace_viewer", file="index.html")
-GET     /anyplace_viewer/                                                           controllers.Assets.at(path="/public/anyplace_viewer", file="index.html")
-GET     /anyplace_viewer/*file                                                      controllers.Assets.at(path="/public/anyplace_viewer", file)
+GET     /anyplace_viewer                                                            controllers.WebAppController.AddTrailingSlash()
+GET     /anyplace_viewer/                                                           controllers.WebAppController.serveViewer(file="")
+GET     /anyplace_viewer/*file                                                      controllers.WebAppController.serveViewer(file)
 
-GET     /viewer_campus                                                              controllers.Assets.at(path="/public/anyplace_viewer_campus", file="index.html")
-GET     /viewer_campus/                                                             controllers.Assets.at(path="/public/anyplace_viewer_campus", file="index.html")
-GET     /viewer_campus/*file                                                        controllers.Assets.at(path="/public/anyplace_viewer_campus", file)
+GET     /viewer_campus                                                              controllers.WebAppController.AddTrailingSlash()
+GET     /viewer_campus/                                                             controllers.WebAppController.serveViewer(file="")
+GET     /viewer_campus/*file                                                        controllers.WebAppController.serveViewer(file)
 
-GET     /anyplace_viewer_campus                                                     controllers.Assets.at(path="/public/anyplace_viewer_campus", file="index.html")
-GET     /anyplace_viewer_campus/                                                    controllers.Assets.at(path="/public/anyplace_viewer_campus", file="index.html")
-GET     /anyplace_viewer_campus/*file                                               controllers.Assets.at(path="/public/anyplace_viewer_campus", file)
+GET     /developers                                                                 controllers.WebAppController.AddTrailingSlash()
+GET     /developers/                                                                controllers.WebAppController.serveDevelopers(file="")
+GET     /developers/*file                                                           controllers.WebAppController.serveDevelopers(file)
 
 GET     /shared/*file                                                               controllers.Assets.at(path="/public/shared", file)
 GET     /assets/*file                                                               controllers.Assets.at(path="/public", file)
