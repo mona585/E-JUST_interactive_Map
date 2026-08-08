@@ -210,7 +210,7 @@ server {
         alias /var/www/anyplace/clients/web/anyplace_architect;
         index index.html;
         try_files $uri $uri/ /architect/index.html;
-    }
+    }g
 
     # 3. Viewer Campus Web App
     location /viewer {
