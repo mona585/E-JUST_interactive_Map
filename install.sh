@@ -235,8 +235,11 @@ build_web_app() {
         fi
 
         # Sync/copy compiled build files into server/public directory
+        local SHORT_NAME=$(echo "$APP_NAME" | sed 's/anyplace_//g')
         mkdir -p "$SERVER_DIR/public/$APP_NAME"
+        mkdir -p "$SERVER_DIR/public/$SHORT_NAME"
         cp -r "$APP_DIR/"* "$SERVER_DIR/public/$APP_NAME/" 2>/dev/null || true
+        cp -r "$APP_DIR/"* "$SERVER_DIR/public/$SHORT_NAME/" 2>/dev/null || true
         echo -e "  [✓] $APP_NAME compiled and deployed to server public assets."
     fi
 }

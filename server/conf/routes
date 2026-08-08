@@ -1,16 +1,29 @@
 # Static Web Applications & Root Route
-GET     /                                                                           controllers.Assets.at(path="/public/architect", file="index.html")
-GET     /architect                                                                  controllers.Assets.at(path="/public/architect", file="index.html")
-GET     /architect/                                                                 controllers.Assets.at(path="/public/architect", file="index.html")
-GET     /architect/*file                                                            controllers.Assets.at(path="/public/architect", file)
+GET     /                                                                           controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
 
-GET     /viewer                                                                     controllers.Assets.at(path="/public/viewer", file="index.html")
-GET     /viewer/                                                                    controllers.Assets.at(path="/public/viewer", file="index.html")
-GET     /viewer/*file                                                               controllers.Assets.at(path="/public/viewer", file)
+GET     /architect                                                                  controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
+GET     /architect/                                                                 controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
+GET     /architect/*file                                                            controllers.Assets.at(path="/public/anyplace_architect", file)
 
-GET     /viewer_campus                                                              controllers.Assets.at(path="/public/viewer_campus", file="index.html")
-GET     /viewer_campus/                                                             controllers.Assets.at(path="/public/viewer_campus", file="index.html")
-GET     /viewer_campus/*file                                                        controllers.Assets.at(path="/public/viewer_campus", file)
+GET     /anyplace_architect                                                         controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
+GET     /anyplace_architect/                                                        controllers.Assets.at(path="/public/anyplace_architect", file="index.html")
+GET     /anyplace_architect/*file                                                   controllers.Assets.at(path="/public/anyplace_architect", file)
+
+GET     /viewer                                                                     controllers.Assets.at(path="/public/anyplace_viewer", file="index.html")
+GET     /viewer/                                                                    controllers.Assets.at(path="/public/anyplace_viewer", file="index.html")
+GET     /viewer/*file                                                               controllers.Assets.at(path="/public/anyplace_viewer", file)
+
+GET     /anyplace_viewer                                                            controllers.Assets.at(path="/public/anyplace_viewer", file="index.html")
+GET     /anyplace_viewer/                                                           controllers.Assets.at(path="/public/anyplace_viewer", file="index.html")
+GET     /anyplace_viewer/*file                                                      controllers.Assets.at(path="/public/anyplace_viewer", file)
+
+GET     /viewer_campus                                                              controllers.Assets.at(path="/public/anyplace_viewer_campus", file="index.html")
+GET     /viewer_campus/                                                             controllers.Assets.at(path="/public/anyplace_viewer_campus", file="index.html")
+GET     /viewer_campus/*file                                                        controllers.Assets.at(path="/public/anyplace_viewer_campus", file)
+
+GET     /anyplace_viewer_campus                                                     controllers.Assets.at(path="/public/anyplace_viewer_campus", file="index.html")
+GET     /anyplace_viewer_campus/                                                    controllers.Assets.at(path="/public/anyplace_viewer_campus", file="index.html")
+GET     /anyplace_viewer_campus/*file                                               controllers.Assets.at(path="/public/anyplace_viewer_campus", file)
 
 GET     /shared/*file                                                               controllers.Assets.at(path="/public/shared", file)
 GET     /assets/*file                                                               controllers.Assets.at(path="/public", file)
