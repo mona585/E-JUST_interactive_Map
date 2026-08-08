@@ -439,6 +439,23 @@ if command -v crontab &> /dev/null; then
     echo -e "  [✓] Cron @reboot auto-start entry registered."
 fi
 
+# Read values from app.private.conf to display
+CONF_FILE="$SERVER_DIR/conf/app.private.conf"
+DISP_SECRET=$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || echo "Not set")
+DISP_SALT=$(grep "password.salt" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "Not set")
+DISP_PEPPER=$(grep "password.pepper" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "Not set")
+DISP_MONGO_DB=$(grep "mongodb.database" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "anyplace")
+
+echo -e "\n${CYAN}====================================================${NC}"
+echo -e "${CYAN}        GENERATED SYSTEM CREDENTIALS & KEYS         ${NC}"
+echo -e "${CYAN}====================================================${NC}"
+echo -e " Config Location : ${YELLOW}$CONF_FILE${NC}"
+echo -e " Application Key : ${GREEN}$DISP_SECRET${NC}"
+echo -e " Password Salt   : ${GREEN}$DISP_SALT${NC}"
+echo -e " Password Pepper : ${GREEN}$DISP_PEPPER${NC}"
+echo -e " Database        : ${GREEN}127.0.0.1:27017 ($DISP_MONGO_DB)${NC}"
+echo -e "${CYAN}====================================================${NC}"
+
 echo -e "\n${GREEN}====================================================${NC}"
 echo -e "${GREEN}      ANYPLACE INSTALLATION COMPLETE!               ${NC}"
 echo -e "${GREEN}====================================================${NC}"
