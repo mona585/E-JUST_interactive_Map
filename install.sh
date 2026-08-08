@@ -14,6 +14,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Set UTF-8 encoding for Java and SBT to avoid character encoding errors on minimal Linux containers
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+export JAVA_OPTS="-Dfile.encoding=UTF-8 ${JAVA_OPTS:-}"
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_DIR="$ROOT_DIR/server"
 CLIENT_WEB_DIR="$ROOT_DIR/clients/web"
@@ -239,10 +244,10 @@ SBT_LAUNCHER="$SERVER_DIR/sbt-dist/bin/sbt-launch.jar"
 
 if [ -f "$SBT_LAUNCHER" ]; then
     echo -e "  [*] Compiling backend using sbt launcher..."
-    java -jar "$SBT_LAUNCHER" stage
+    java -Dfile.encoding=UTF-8 -jar "$SBT_LAUNCHER" stage
 elif command -v sbt &> /dev/null; then
     echo -e "  [*] Compiling backend using system sbt..."
-    sbt stage
+    JAVA_OPTS="-Dfile.encoding=UTF-8 $JAVA_OPTS" sbt stage
 else
     echo -e "  ${RED}[✗] Unable to find sbt executable or sbt-launch.jar!${NC}"
     exit 1
