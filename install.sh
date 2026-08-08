@@ -298,7 +298,7 @@ if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
 fi
 
 echo "[*] Launching Anyplace Backend on port 9000..."
-nohup "$SERVER_DIR/target/universal/stage/bin/anyplace" -Dhttp.port=9000 > "$ROOT_DIR/anyplace.log" 2>&1 &
+nohup "$SERVER_DIR/target/universal/stage/bin/anyplace" -J--add-opens=java.base/java.lang=ALL-UNNAMED -J--add-opens=java.base/java.util=ALL-UNNAMED -Dhttp.port=9000 > "$ROOT_DIR/anyplace.log" 2>&1 &
 
 sleep 3
 if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
@@ -375,7 +375,7 @@ After=network.target mongodb.service docker.service
 Type=simple
 User=$USER
 WorkingDirectory=$ROOT_DIR
-ExecStart=$SERVER_DIR/target/universal/stage/bin/anyplace -Dhttp.port=9000
+ExecStart=$SERVER_DIR/target/universal/stage/bin/anyplace -J--add-opens=java.base/java.lang=ALL-UNNAMED -J--add-opens=java.base/java.util=ALL-UNNAMED -Dhttp.port=9000
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:$ROOT_DIR/anyplace.log
