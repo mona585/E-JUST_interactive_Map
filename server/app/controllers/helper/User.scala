@@ -138,14 +138,23 @@ class User @Inject()(pds: ProxyDataSource,
   }
 
   def getEncryptedPassword(password: String): String = {
-    val salt = conf.get[String]("password.salt")
-    val pepper = conf.get[String]("password.pepper")
+    val salt = conf.getOptional[String]("password.salt").getOrElse("AnyplaceSalt123")
+    val pepper = conf.getOptional[String]("password.pepper").getOrElse("AnyplacePepper123")
 
     val str = salt + password + pepper
     val encryptedPwd = encryptInternal(str)
     LOG.D5("pwd: '" + str + "'")
     LOG.D5("encrypted: '" + encryptedPwd + "'")
     encryptedPwd
+  }
+
+  def getEncryptedPasswordDefault(password: String): String = {
+    val str = "AnyplaceSalt123" + password + "AnyplacePepper123"
+    encryptInternal(str)
+  }
+
+  def getEncryptedPasswordRaw(password: String): String = {
+    encryptInternal(password)
   }
 
   private def encryptInternal(password: String): String = {

@@ -74,7 +74,13 @@ class UserController @Inject()(cc: ControllerComponents,
         LOG.D4("loginLocal: " + json)
         val username = (json \ SCHEMA.fUsername).as[String]
         val password = (json \ SCHEMA.fPassword).as[String]
-        val storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPassword(password))
+        var storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPassword(password))
+        if (storedUser == null) {
+          storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPasswordDefault(password))
+        }
+        if (storedUser == null) {
+          storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPasswordRaw(password))
+        }
         if (storedUser == null) return RESPONSE.BAD("Incorrect username or password.")
         if (storedUser.size > 1) return RESPONSE.BAD("More than one users were found.")
         val accessToken = (storedUser.head \ SCHEMA.fAccessToken).as[String]

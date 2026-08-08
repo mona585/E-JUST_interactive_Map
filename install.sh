@@ -179,13 +179,13 @@ else
     echo "play.http.secret.key=\"$APP_SECRET\"" >> "$CONF_FILE"
 fi
 
-# Replace salt and pepper if default placeholders exist or during initial creation
-if grep -qE 'password\.salt="(SALT|AnyplaceSalt123)"' "$CONF_FILE" || ! grep -q "password.salt" "$CONF_FILE"; then
-    sed -i "s|password.salt=.*|password.salt=\"$SALT\"|g" "$CONF_FILE" 2>/dev/null || echo "password.salt=\"$SALT\"" >> "$CONF_FILE"
+# Ensure password salt and pepper exist without mutating existing hashes
+if ! grep -q "password.salt" "$CONF_FILE"; then
+    echo 'password.salt="AnyplaceSalt123"' >> "$CONF_FILE"
 fi
 
-if grep -qE 'password\.pepper="(PEPPER|AnyplacePepper123)"' "$CONF_FILE" || ! grep -q "password.pepper" "$CONF_FILE"; then
-    sed -i "s|password.pepper=.*|password.pepper=\"$PEPPER\"|g" "$CONF_FILE" 2>/dev/null || echo "password.pepper=\"$PEPPER\"" >> "$CONF_FILE"
+if ! grep -q "password.pepper" "$CONF_FILE"; then
+    echo 'password.pepper="AnyplacePepper123"' >> "$CONF_FILE"
 fi
 
 sed -i "s|server.address=.*|server.address=\"https://map.beout.ai\"|g" "$CONF_FILE"
