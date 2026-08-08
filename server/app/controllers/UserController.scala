@@ -335,5 +335,62 @@ class UserController @Inject()(cc: ControllerComponents,
     RESPONSE.OK(response, msg)
   }
 
+  def smasLogin(): Action[AnyContent] = Action {
+    implicit request =>
+      def inner(request: Request[AnyContent]): Result = {
+        val anyReq: OAuth2Request = new OAuth2Request(request)
+        var username: String = null
+        var password: String = null
+
+        if (anyReq.assertJsonBody()) {
+          val json = anyReq.getJsonBody()
+          username = (json \ "uid").asOpt[String].getOrElse((json \ SCHEMA.fUsername).asOpt[String].orNull)
+          password = (json \ "password").asOpt[String].orNull
+        } else if (anyReq.assertFormUrlEncodedBody()) {
+          val form = anyReq.getFormEncodedBody()
+          username = form.get("uid").flatMap(_.headOption).getOrElse(form.get(SCHEMA.fUsername).flatMap(_.headOption).orNull)
+          password = form.get("password").flatMap(_.headOption).orNull
+        }
+
+        if (username == null || password == null) {
+          val errJson = Json.obj("status" -> "err", "sessionid" -> "", "uid" -> "", "descr" -> "Missing username or password.")
+          return Ok(errJson.toString).as("application/json")
+        }
+
+        var storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPassword(password))
+        if (storedUser == null) {
+          storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPasswordDefault(password))
+        }
+        if (storedUser == null) {
+          storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPasswordRaw(password))
+        }
+
+        if (storedUser == null) {
+          val errJson = Json.obj("status" -> "err", "sessionid" -> "", "uid" -> username, "descr" -> "Incorrect username or password.")
+          return Ok(errJson.toString).as("application/json")
+        }
+
+        val accessToken = (storedUser.head \ SCHEMA.fAccessToken).asOpt[String].getOrElse("local_session_" + username)
+        val uidStr = (storedUser.head \ SCHEMA.fUsername).asOpt[String].getOrElse(username)
+
+        val resJson = Json.obj(
+          "status" -> "success",
+          "sessionid" -> accessToken,
+          "uid" -> uidStr,
+          "descr" -> "Successfully logged in."
+        )
+        Ok(resJson.toString).as("application/json")
+      }
+      inner(request)
+  }
+
+  def smasVersion(): Action[AnyContent] = Action {
+    implicit request =>
+      val resJson = Json.obj(
+        "status" -> "success",
+        "version" -> "4.3.1"
+      )
+      Ok(resJson.toString).as("application/json")
+  }
 }
 

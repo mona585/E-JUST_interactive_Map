@@ -36,6 +36,10 @@ GET     /shared/*file                                                           
 GET     /assets/*file                                                               controllers.Assets.at(path="/public", file)
 GET     /floortiles/zip/*file                                                       controllers.ExternalAssets.at(path="/floor_plans", file)
 
+# SMAS / CV Backend Routes
+POST    /smas/login.php                                                             controllers.UserController.smasLogin()
+POST    /smas/version.php                                                           controllers.UserController.smasVersion()
+
 # API Routes
 ->      /                                                                           api.Routes
 
