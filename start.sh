@@ -36,6 +36,9 @@ if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
     exit 0
 fi
 
+# Remove stale RUNNING_PID lockfile if present from a previous run/crash
+rm -f "$SERVER_DIR/target/universal/stage/RUNNING_PID"
+
 # Extract application secret from configuration file
 CONF_PATH="$SERVER_DIR/conf/app.private.conf"
 APP_SECRET=$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || echo "AnyplaceSecretKey2026")
