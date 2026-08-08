@@ -80,44 +80,46 @@ class WebAppController @Inject()(cc: ControllerComponents,
   }
 
   def serveFile(appDir: String, file_in: String): Result = {
-    var file_str = file_in
-
-    if (file_str == null) {
-      file_str = "index.html"
-    }
-    if (file_str.trim().isEmpty || file_str.trim() == "/") {
-      file_str = "index.html"
-    }
-
+    val file_str = if (file_in == null || file_in.trim.isEmpty || file_in.trim == "/") "index.html" else file_in.trim
     val reqFile: String = appDir + "/" + file_str
+    val subPath: String = reqFile.stripPrefix("public/")
 
     // 1. Try loading from ClassLoader resource (packaged JAR)
-    var is: java.io.InputStream = env.classLoader.getResourceAsStream(reqFile)
-
-    // 2. Fallback to physical filesystem paths if null
-    if (is == null) {
-      val candidates = List(
-        new java.io.File(env.rootPath, reqFile),
-        new java.io.File(reqFile),
-        new java.io.File("server", reqFile),
-        new java.io.File("public", file_str)
-      )
-      candidates.find(_.exists()).foreach { f =>
-        try { is = new java.io.FileInputStream(f) } catch { case _: Exception => }
+    val resourceStream = env.classLoader.getResourceAsStream(reqFile)
+    if (resourceStream != null) {
+      try {
+        val bytes = org.apache.commons.io.IOUtils.toByteArray(resourceStream)
+        resourceStream.close()
+        return Ok(bytes).as(getMimeType(file_str))
+      } catch {
+        case _: Exception => // fallback to file system search
       }
     }
 
-    if (is != null) {
-      try {
-        val bytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get("").toAbsolutePath.resolve(reqFile))
-        Ok(bytes).as(getMimeType(file_str))
-      } catch {
-        case _: Exception =>
-          val content = scala.io.Source.fromInputStream(is, "UTF-8").mkString
-          Ok(content).as(getMimeType(file_str))
-      }
-    } else {
-      NotFound(s"File not found: $file_str in $appDir")
+    // 2. Comprehensive physical disk search
+    val searchPaths = List(
+      new java.io.File(env.rootPath, reqFile),
+      new java.io.File(env.rootPath, "public/" + subPath),
+      new java.io.File(env.rootPath, "../server/public/" + subPath),
+      new java.io.File("server/" + reqFile),
+      new java.io.File("server/public/" + subPath),
+      new java.io.File(reqFile),
+      new java.io.File("public/" + subPath)
+    )
+
+    searchPaths.find(f => f.exists() && f.isFile) match {
+      case Some(foundFile) =>
+        try {
+          val bytes = java.nio.file.Files.readAllBytes(foundFile.toPath)
+          Ok(bytes).as(getMimeType(file_str))
+        } catch {
+          case e: Exception =>
+            utils.LOG.E(s"Error reading file ${foundFile.getAbsolutePath}: ${e.getMessage}")
+            NotFound(s"Error reading file: $file_str")
+        }
+      case None =>
+        utils.LOG.E(s"File NOT found anywhere for reqFile: $reqFile. Searched paths: ${searchPaths.map(_.getAbsolutePath).mkString(", ")}")
+        NotFound(s"File not found: $file_str in $appDir")
     }
   }
 

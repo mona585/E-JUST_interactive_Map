@@ -234,12 +234,20 @@ build_web_app() {
             npx --yes grunt deploy || true
         fi
 
-        # Sync/copy compiled build files into server/public directory
+        # Sync/copy compiled build files into server/public, stage/public, and root/public directories
         local SHORT_NAME=$(echo "$APP_NAME" | sed 's/anyplace_//g')
-        mkdir -p "$SERVER_DIR/public/$APP_NAME"
-        mkdir -p "$SERVER_DIR/public/$SHORT_NAME"
+        mkdir -p "$SERVER_DIR/public/$APP_NAME" "$SERVER_DIR/public/$SHORT_NAME"
+        mkdir -p "$SERVER_DIR/target/universal/stage/public/$APP_NAME" "$SERVER_DIR/target/universal/stage/public/$SHORT_NAME"
+        mkdir -p "$ROOT_DIR/public/$APP_NAME" "$ROOT_DIR/public/$SHORT_NAME"
+
         cp -r "$APP_DIR/"* "$SERVER_DIR/public/$APP_NAME/" 2>/dev/null || true
         cp -r "$APP_DIR/"* "$SERVER_DIR/public/$SHORT_NAME/" 2>/dev/null || true
+
+        cp -r "$APP_DIR/"* "$SERVER_DIR/target/universal/stage/public/$APP_NAME/" 2>/dev/null || true
+        cp -r "$APP_DIR/"* "$SERVER_DIR/target/universal/stage/public/$SHORT_NAME/" 2>/dev/null || true
+
+        cp -r "$APP_DIR/"* "$ROOT_DIR/public/$APP_NAME/" 2>/dev/null || true
+        cp -r "$APP_DIR/"* "$ROOT_DIR/public/$SHORT_NAME/" 2>/dev/null || true
         echo -e "  [✓] $APP_NAME compiled and deployed to server public assets."
     fi
 }
@@ -248,10 +256,12 @@ build_web_app "anyplace_architect"
 build_web_app "anyplace_viewer"
 build_web_app "anyplace_viewer_campus"
 
-# Copy shared assets to server/public/shared
+# Copy shared assets to all public/shared targets
 if [ -d "$CLIENT_WEB_DIR/shared" ]; then
-    mkdir -p "$SERVER_DIR/public/shared"
+    mkdir -p "$SERVER_DIR/public/shared" "$SERVER_DIR/target/universal/stage/public/shared" "$ROOT_DIR/public/shared"
     cp -r "$CLIENT_WEB_DIR/shared/"* "$SERVER_DIR/public/shared/" 2>/dev/null || true
+    cp -r "$CLIENT_WEB_DIR/shared/"* "$SERVER_DIR/target/universal/stage/public/shared/" 2>/dev/null || true
+    cp -r "$CLIENT_WEB_DIR/shared/"* "$ROOT_DIR/public/shared/" 2>/dev/null || true
 fi
 
 # ------------------------------------------------------------------------------
