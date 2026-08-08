@@ -390,8 +390,9 @@ After=network.target mongodb.service docker.service
 Type=simple
 User=$USER
 WorkingDirectory=$ROOT_DIR
-ExecStart=$SERVER_DIR/target/universal/stage/bin/anyplace -J--add-opens=java.base/java.lang=ALL-UNNAMED -J--add-opens=java.base/java.util=ALL-UNNAMED -Dhttp.port=9000
-Restart=on-failure
+Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
+ExecStart=$SERVER_DIR/target/universal/stage/bin/anyplace -Dplay.http.secret.key=$APP_SECRET -Dapplication.secret=$APP_SECRET -Dhttp.port=9000
+Restart=always
 RestartSec=5
 StandardOutput=append:$ROOT_DIR/anyplace.log
 StandardError=append:$ROOT_DIR/anyplace.log

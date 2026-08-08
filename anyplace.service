@@ -1,0 +1,17 @@
+[Unit]
+Description=Anyplace Indoor Navigation Service
+After=network.target mongodb.service docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/E-JUST_interactive_Map
+Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
+ExecStart=/root/E-JUST_interactive_Map/server/target/universal/stage/bin/anyplace -Dplay.http.secret.key=AnyplaceSecretKey2026 -Dapplication.secret=AnyplaceSecretKey2026 -Dhttp.port=9000
+Restart=always
+RestartSec=5
+StandardOutput=append:/root/E-JUST_interactive_Map/anyplace.log
+StandardError=append:/root/E-JUST_interactive_Map/anyplace.log
+
+[Install]
+WantedBy=multi-user.target
