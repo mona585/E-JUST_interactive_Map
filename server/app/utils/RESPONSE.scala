@@ -75,49 +75,49 @@ object RESPONSE {
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(400))
-                Results.BadRequest(res.toString)
+                Results.BadRequest(res.toString).as("application/json")
 
             case Response.OK =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("success")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(200))
-                Results.Ok(res.toString)
+                Results.Ok(res.toString).as("application/json")
 
             case Response.FORBIDDEN =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(401))
-                Results.Forbidden(res.toString)
+                Results.Forbidden(res.toString).as("application/json")
 
             case Response.UNAUTHORIZED_ACCESS =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(403))
-                Results.Unauthorized(res.toString)
+                Results.Unauthorized(res.toString).as("application/json")
 
             case Response.INTERNAL_SERVER_ERROR =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(500))
-                Results.InternalServerError(res.toString)
+                Results.InternalServerError(res.toString).as("application/json")
 
             case Response.NOT_FOUND =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(404))
-                Results.NotFound(res.toString)
+                Results.NotFound(res.toString).as("application/json")
 
             case _ =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString("Unknown Action")) +
                   ("status_code" -> JsNumber(403))
-                Results.BadRequest(res.toString)
+                Results.BadRequest(res.toString).as("application/json")
         }
     }
 
