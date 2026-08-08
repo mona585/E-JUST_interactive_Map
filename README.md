@@ -14,6 +14,7 @@
 </div>
 
 ## 📑 Table of Contents
+0. [⚡ Quick Standalone Local Installation (install.sh)](#-quick-standalone-local-installation)
 1. [Overview & Production Architecture](#-overview--production-architecture)
 2. [Prerequisites & System Requirements](#-prerequisites--system-requirements)
 3. [Step 1: Database Setup (MongoDB)](#-step-1-database-setup-mongodb)
@@ -23,6 +24,21 @@
 7. [Step 5: Android Mobile Suite Setup (Logger App)](#-step-5-android-mobile-suite-setup-logger-app)
 8. [Step 6: Production Operations & Systemd Services](#-step-6-production-operations--systemd-services)
 9. [Troubleshooting & Verification Checklist](#-troubleshooting--verification-checklist)
+
+---
+
+## ⚡ Quick Standalone Local Installation
+
+To host the entire Anyplace system locally on your server in one command:
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+- **Control Scripts**: `./start.sh` | `./stop.sh` | `./status.sh`
+- **Nginx Proxy Manager Setup**: See [LOCAL_SETUP_NGINX_PROXY_MANAGER.md](file:///home/mesba7/Documents/Github/E-JUST_interactive_Map/LOCAL_SETUP_NGINX_PROXY_MANAGER.md) for step-by-step NPM proxy host & SSL configuration.
+
 
 ---
 
@@ -210,7 +226,7 @@ server {
         alias /var/www/anyplace/clients/web/anyplace_architect;
         index index.html;
         try_files $uri $uri/ /architect/index.html;
-    }
+    }g
 
     # 3. Viewer Campus Web App
     location /viewer {
