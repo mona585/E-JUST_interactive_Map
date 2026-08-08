@@ -1,29 +1,23 @@
-# Not mounting to /api due to swagger documentation generation. It is manually appended api.routess
-### NoDocs ###
-->  /    api.Routes
-
-# Not in use.
-# the below tag (NoDocs) hides the documentation
-### NoDocs ###
-POST        /api/user/auth/admin/migration/run                                  controllers.UserAdminController.migrateToMongoDB()
-
-###########
-### RESOURCES:
-###########
-## OTHER:
-# must match application.conf
-GET /floortiles/zip/*file                                                           controllers.ExternalAssets.at(path="/floor_plans", file)
-
 # Static Web Applications & Root Route
-GET     /                                                                           controllers.Assets.at(path="/public", file="architect/index.html")
-GET     /architect                                                                  controllers.Assets.at(path="/public", file="architect/index.html")
+GET     /                                                                           controllers.Assets.at(path="/public/architect", file="index.html")
+GET     /architect                                                                  controllers.Assets.at(path="/public/architect", file="index.html")
+GET     /architect/                                                                 controllers.Assets.at(path="/public/architect", file="index.html")
 GET     /architect/*file                                                            controllers.Assets.at(path="/public/architect", file)
-GET     /viewer                                                                     controllers.Assets.at(path="/public", file="viewer/index.html")
-GET     /viewer/*file                                                               controllers.Assets.at(path="/public/viewer", file)
-GET     /viewer_campus                                                              controllers.Assets.at(path="/public", file="viewer_campus/index.html")
-GET     /viewer_campus/*file                                                        controllers.Assets.at(path="/public/viewer_campus", file)
-GET     /shared/*file                                                               controllers.Assets.at(path="/public/shared", file)
 
-# maps from /public to /assets
-# needed for publishing online the swagger file (/assets/swagger.json)
+GET     /viewer                                                                     controllers.Assets.at(path="/public/viewer", file="index.html")
+GET     /viewer/                                                                    controllers.Assets.at(path="/public/viewer", file="index.html")
+GET     /viewer/*file                                                               controllers.Assets.at(path="/public/viewer", file)
+
+GET     /viewer_campus                                                              controllers.Assets.at(path="/public/viewer_campus", file="index.html")
+GET     /viewer_campus/                                                             controllers.Assets.at(path="/public/viewer_campus", file="index.html")
+GET     /viewer_campus/*file                                                        controllers.Assets.at(path="/public/viewer_campus", file)
+
+GET     /shared/*file                                                               controllers.Assets.at(path="/public/shared", file)
 GET     /assets/*file                                                               controllers.Assets.at(path="/public", file)
+GET     /floortiles/zip/*file                                                       controllers.ExternalAssets.at(path="/floor_plans", file)
+
+# API Routes
+->      /                                                                           api.Routes
+
+# Admin Migration
+POST    /api/user/auth/admin/migration/run                                          controllers.UserAdminController.migrateToMongoDB()
