@@ -23,10 +23,21 @@ echo -e "${BLUE}    Anyplace Standalone Local Installation          ${NC}"
 echo -e "${BLUE}====================================================${NC}"
 echo -e "Installation path: ${YELLOW}$ROOT_DIR${NC}\n"
 
-# ------------------------------------------------------------------------------
-# 1. System Requirements & Dependency Check
-# ------------------------------------------------------------------------------
-echo -e "${BLUE}[1/6] Checking system dependencies...${NC}"
+# Helper function to auto-install missing packages on Debian/Ubuntu
+pkg_install() {
+    local PKG=$1
+    echo -e "  [+] Auto-installing missing package: ${YELLOW}$PKG${NC}..."
+    if command -v apt-get &> /dev/null; then
+        if [ "$EUID" -eq 0 ]; then
+            apt-get update -qq && apt-get install -y $PKG
+        elif command -v sudo &> /dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y $PKG
+        else
+            echo -e "  ${RED}[✗] Cannot install $PKG automatically (root or sudo required).${NC}"
+            return 1
+        fi
+    fi
+}
 
 # Ensure compatible Java (Java 11 or 17) is prioritized over newer unsupported JVMs
 if [ -d "/usr/lib/jvm/java-11-openjdk-amd64" ]; then
@@ -38,45 +49,67 @@ elif [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
 fi
 
 # Check Java
+if ! command -v java &> /dev/null; then
+    echo -e "  [!] Java is missing. Attempting automatic installation of OpenJDK 17..."
+    pkg_install "openjdk-17-jdk" || true
+
+    if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
+        export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
+        export PATH="$JAVA_HOME/bin:$PATH"
+    fi
+fi
+
 if command -v java &> /dev/null; then
     JAVA_VER=$(java -version 2>&1 | head -n 1)
     echo -e "  [✓] Java detected: $JAVA_VER"
 else
-    echo -e "  ${RED}[✗] Java is missing! Please install OpenJDK 11 or OpenJDK 17.${NC}"
-    echo -e "      On Ubuntu/Debian: sudo apt update && sudo apt install -y openjdk-17-jdk"
+    echo -e "  ${RED}[✗] Java is missing! Please run: apt update && apt install -y openjdk-17-jdk${NC}"
     exit 1
 fi
 
 # Check Node.js and NPM
+if ! command -v node &> /dev/null || ! command -v npm &> /dev/null; then
+    echo -e "  [!] Node.js or NPM missing. Attempting automatic installation..."
+    pkg_install "nodejs npm" || true
+fi
+
 if command -v node &> /dev/null && command -v npm &> /dev/null; then
     NODE_VER=$(node -v)
     NPM_VER=$(npm -v)
     echo -e "  [✓] Node.js ($NODE_VER) and NPM ($NPM_VER) detected."
 else
-    echo -e "  ${RED}[✗] Node.js and NPM are required!${NC}"
-    echo -e "      On Ubuntu/Debian: sudo apt update && sudo apt install -y nodejs npm"
+    echo -e "  ${RED}[✗] Node.js and NPM missing! Please run: apt update && apt install -y nodejs npm${NC}"
     exit 1
 fi
 
 # Check ImageMagick (required for floorplan tiler)
+if ! command -v convert &> /dev/null && ! command -v gm &> /dev/null; then
+    echo -e "  [!] ImageMagick missing. Attempting automatic installation..."
+    pkg_install "imagemagick" || true
+fi
+
 if command -v convert &> /dev/null || command -v gm &> /dev/null; then
     echo -e "  [✓] ImageMagick / GraphicsMagick detected."
 else
     echo -e "  ${YELLOW}[!] ImageMagick not found. Installing image processing tools is recommended for tiler.${NC}"
-    echo -e "      On Ubuntu/Debian: sudo apt install -y imagemagick"
+fi
+
+# Check netcat
+if ! command -v nc &> /dev/null; then
+    pkg_install "netcat-openbsd" || true
 fi
 
 # Check MongoDB or Docker
 HAS_MONGO=false
-if command -v mongod &> /dev/null || nc -z 127.0.0.1 27017 &> /dev/null; then
+if command -v mongod &> /dev/null || (command -v nc &> /dev/null && nc -z 127.0.0.1 27017 &> /dev/null); then
     HAS_MONGO=true
     echo -e "  [✓] Local MongoDB service detected on port 27017."
 elif command -v docker &> /dev/null; then
     HAS_MONGO=true
     echo -e "  [✓] Docker detected. Will launch MongoDB container on port 27017 if needed."
 else
-    echo -e "  ${YELLOW}[!] Neither local MongoDB nor Docker was detected running on port 27017.${NC}"
-    echo -e "      Make sure MongoDB is running or install Docker/MongoDB before starting Anyplace."
+    echo -e "  ${YELLOW}[!] Neither local MongoDB nor Docker was detected on port 27017.${NC}"
+    echo -e "      Auto-installing Docker/MongoDB is recommended (apt install -y docker.io or mongodb)."
 fi
 
 # ------------------------------------------------------------------------------
