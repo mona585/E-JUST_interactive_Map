@@ -99,17 +99,34 @@ if ! command -v nc &> /dev/null; then
     pkg_install "netcat-openbsd" || true
 fi
 
-# Check MongoDB or Docker
+# Check MongoDB or Docker & Auto-Install/Start if missing
 HAS_MONGO=false
 if command -v mongod &> /dev/null || (command -v nc &> /dev/null && nc -z 127.0.0.1 27017 &> /dev/null); then
     HAS_MONGO=true
     echo -e "  [✓] Local MongoDB service detected on port 27017."
 elif command -v docker &> /dev/null; then
     HAS_MONGO=true
-    echo -e "  [✓] Docker detected. Will launch MongoDB container on port 27017 if needed."
+    echo -e "  [✓] Docker detected. Starting MongoDB container on port 27017..."
+    docker run -d --name anyplace-mongodb -p 27017:27017 -v anyplace_mongo_data:/data/db mongo:latest 2>/dev/null || docker start anyplace-mongodb 2>/dev/null || true
 else
-    echo -e "  ${YELLOW}[!] Neither local MongoDB nor Docker was detected on port 27017.${NC}"
-    echo -e "      Auto-installing Docker/MongoDB is recommended (apt install -y docker.io or mongodb)."
+    echo -e "  [!] Neither local MongoDB nor Docker was detected on port 27017."
+    echo -e "      Attempting automatic installation of MongoDB service..."
+    pkg_install "mongodb" || pkg_install "mongodb-server" || pkg_install "docker.io" || true
+    
+    if command -v systemctl &> /dev/null; then
+        systemctl enable --now mongodb 2>/dev/null || systemctl enable --now docker 2>/dev/null || true
+    elif command -v service &> /dev/null; then
+        service mongodb start 2>/dev/null || service docker start 2>/dev/null || true
+    fi
+
+    if command -v docker &> /dev/null; then
+        docker run -d --name anyplace-mongodb -p 27017:27017 -v anyplace_mongo_data:/data/db mongo:latest 2>/dev/null || docker start anyplace-mongodb 2>/dev/null || true
+    fi
+
+    if command -v mongod &> /dev/null || (command -v nc &> /dev/null && nc -z 127.0.0.1 27017 &> /dev/null); then
+        HAS_MONGO=true
+        echo -e "  [✓] MongoDB service successfully configured and running."
+    fi
 fi
 
 # ------------------------------------------------------------------------------
