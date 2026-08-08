@@ -53,8 +53,21 @@ class OAuth2Request(request: Request[AnyContent], enableCORS: Boolean) {
 
   def getAccessToken(): String = {
     val headers = this.mRequest.headers
-    val apiKey = headers.get(SCHEMA.fAccessToken)
-    if (apiKey.nonEmpty) return apiKey.get
+    var apiKey = headers.get(SCHEMA.fAccessToken)
+    if (apiKey.nonEmpty && apiKey.get.trim.nonEmpty) return apiKey.get
+
+    apiKey = headers.get("key")
+    if (apiKey.nonEmpty && apiKey.get.trim.nonEmpty) return apiKey.get
+
+    if (assertJsonBody() && mJsonBody != null) {
+      val tokenJson = (mJsonBody \ SCHEMA.fAccessToken).asOpt[String]
+        .orElse((mJsonBody \ "key").asOpt[String])
+      if (tokenJson.nonEmpty && tokenJson.get.trim.nonEmpty) return tokenJson.get
+    }
+
+    val paramToken = mRequest.getQueryString(SCHEMA.fAccessToken)
+      .orElse(mRequest.getQueryString("key"))
+    if (paramToken.nonEmpty && paramToken.get.trim.nonEmpty) return paramToken.get
 
     null
   }

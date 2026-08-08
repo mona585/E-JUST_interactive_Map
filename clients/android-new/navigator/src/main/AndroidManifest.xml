@@ -35,7 +35,8 @@
         android:exported="true"
         android:theme="@style/AppTheme.Compat.Fullscreen"
         android:screenOrientation="portrait"
-        android:label="Navigator Login" />
+        android:label="Navigator Login"
+        tools:replace="android:label" />
   </application>
   <uses-permission android:name="com.google.android.providers.gsf.permission.READ_GSERVICES" />
   <!--
