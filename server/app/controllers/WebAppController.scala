@@ -88,7 +88,7 @@ class WebAppController @Inject()(cc: ControllerComponents,
     val resourceStream = env.classLoader.getResourceAsStream(reqFile)
     if (resourceStream != null) {
       try {
-        val bytes = org.apache.commons.io.IOUtils.toByteArray(resourceStream)
+        val bytes = resourceStream.readAllBytes()
         resourceStream.close()
         return Ok(bytes).as(getMimeType(file_str))
       } catch {
