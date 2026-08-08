@@ -33,7 +33,7 @@ Run the single-command automated installer:
 
 ```bash
 git clone https://github.com/mona585/E-JUST_interactive_Map.git
-cd Anyplace
+cd E-JUST_interactive_Map
 chmod +x install.sh
 ./install.sh
 ```
