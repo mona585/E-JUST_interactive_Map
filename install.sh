@@ -160,7 +160,7 @@ if [ ! -f "$CONF_FILE" ]; then
     cp "$CONF_EXAMPLE" "$CONF_FILE"
     
     # Update configuration parameters
-    sed -i "s|application.secret=.*|application.secret=\"$APP_SECRET\"|g" "$CONF_FILE"
+    sed -i "s|application.secret=.*|application.secret=\"$APP_SECRET\"\nplay.http.secret.key=\"$APP_SECRET\"|g" "$CONF_FILE"
     sed -i "s|password.salt=.*|password.salt=\"$SALT\"|g" "$CONF_FILE"
     sed -i "s|password.pepper=.*|password.pepper=\"$PEPPER\"|g" "$CONF_FILE"
     sed -i "s|server.address=.*|server.address=\"http://localhost\"|g" "$CONF_FILE"
@@ -172,6 +172,11 @@ if [ ! -f "$CONF_FILE" ]; then
     echo -e "  [✓] Configuration generated with unique application secrets."
 else
     echo -e "  [✓] Existing $CONF_FILE found."
+    # Ensure play.http.secret.key exists in app.private.conf
+    if ! grep -q "play.http.secret.key" "$CONF_FILE"; then
+        SECRET_VAL=$(grep "application.secret" "$CONF_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "AnyplaceSecretKey2026")
+        echo "play.http.secret.key=\"$SECRET_VAL\"" >> "$CONF_FILE"
+    fi
 fi
 
 # ------------------------------------------------------------------------------
@@ -300,8 +305,15 @@ if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
     exit 0
 fi
 
+# Extract application secret from configuration file
+CONF_PATH="$SERVER_DIR/conf/app.private.conf"
+APP_SECRET=$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || echo "AnyplaceSecretKey2026")
+if [ -z "$APP_SECRET" ]; then
+    APP_SECRET="AnyplaceSecretKey2026"
+fi
+
 echo "[*] Launching Anyplace Backend on port 9000..."
-nohup "$SERVER_DIR/target/universal/stage/bin/anyplace" -Dhttp.port=9000 > "$ROOT_DIR/anyplace.log" 2>&1 &
+nohup "$SERVER_DIR/target/universal/stage/bin/anyplace" -Dplay.http.secret.key="$APP_SECRET" -Dapplication.secret="$APP_SECRET" -Dhttp.port=9000 > "$ROOT_DIR/anyplace.log" 2>&1 &
 
 sleep 3
 if pgrep -f "target/universal/stage/bin/anyplace" > /dev/null; then
