@@ -32,7 +32,7 @@ This document provides step-by-step instructions to deploy the **Anyplace Indoor
 Run the single-command automated installer:
 
 ```bash
-git clone https://github.com/dmsl/anyplace.git
+git clone https://github.com/mona585/E-JUST_interactive_Map.git
 cd Anyplace
 chmod +x install.sh
 ./install.sh
