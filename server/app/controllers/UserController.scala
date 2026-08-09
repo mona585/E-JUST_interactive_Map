@@ -388,7 +388,8 @@ class UserController @Inject()(cc: ControllerComponents,
     implicit request =>
       val resJson = Json.obj(
         "status" -> "success",
-        "version" -> "4.3.1"
+        "descr" -> "SMAS version",
+        "rows" -> Json.obj("version" -> "4.3.1")
       )
       Ok(resJson.toString).as("application/json")
   }
