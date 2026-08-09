@@ -247,11 +247,11 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         }
         var floor_file: File = null
         try {
-          val srcFile = try { floorplan.ref.path.toFile } catch { case _: Throwable => floorplan.ref.file }
+          val srcFile = floorplan.ref.path.toFile
           floor_file = tilerHelper.storeFloorPlanToServer(buid, floorNum, srcFile)
         } catch {
           case e: Throwable =>
-            LOG.E("Cannot save floorplan on server: " + e.getMessage, e)
+            LOG.E("Floorplan", "Cannot save floorplan on server: " + e.getMessage)
             return RESPONSE.BAD("Cannot save floorplan on the server: " + e.getMessage)
         }
         val top_left_lat = top_right_lat
@@ -260,7 +260,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           tilerHelper.tileImage(floor_file, top_left_lat, top_left_lng)
         } catch {
           case e: Throwable =>
-            LOG.E("Could not create floorplan tiles: " + e.getMessage, e)
+            LOG.E("Floorplan", "Could not create floorplan tiles: " + e.getMessage)
             return RESPONSE.BAD("Could not create floorplan tiles on the server: " + e.getMessage)
         }
         LOG.I("Successfully tiled: " + floor_file.toString)
@@ -323,11 +323,11 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         }
         var floor_file: File = null
         try {
-          val srcFile = try { floorplan.ref.path.toFile } catch { case _: Throwable => floorplan.ref.file }
+          val srcFile = floorplan.ref.path.toFile
           floor_file = tilerHelper.storeFloorPlanToServer(buid, floorNum, srcFile)
         } catch {
           case e: Throwable =>
-            LOG.E("Cannot save floorplan on server: " + e.getMessage, e)
+            LOG.E("Floorplan", "Cannot save floorplan on server: " + e.getMessage)
             return RESPONSE.BAD("Cannot save floorplan: " + e.getMessage)
         }
         val top_left_lat = top_right_lat
@@ -336,7 +336,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           tilerHelper.tileImageWithZoom(floor_file, top_left_lat, top_left_lng, zoom)
         } catch {
           case e: Throwable =>
-            LOG.E("Cannot create floorplan tiles: " + e.getMessage, e)
+            LOG.E("Floorplan", "Cannot create floorplan tiles: " + e.getMessage)
             return RESPONSE.BAD("Cannot create floorplan tiles: " + e.getMessage)
         }
         LOG.I("Successfully tiled: " + floor_file.toString)
