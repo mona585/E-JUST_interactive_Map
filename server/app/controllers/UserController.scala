@@ -393,5 +393,38 @@ class UserController @Inject()(cc: ControllerComponents,
       )
       Ok(resJson.toString).as("application/json")
   }
+
+  def smasCvModelsGet(): Action[AnyContent] = Action {
+    implicit request =>
+      val classes = Json.arr(
+        Json.obj("oid" -> 1, "cid" -> 0, "modelid" -> 1, "name" -> "person", "modeldescr" -> "lashco"),
+        Json.obj("oid" -> 2, "cid" -> 1, "modelid" -> 1, "name" -> "chair", "modeldescr" -> "lashco"),
+        Json.obj("oid" -> 3, "cid" -> 0, "modelid" -> 2, "name" -> "door", "modeldescr" -> "ucyco"),
+        Json.obj("oid" -> 4, "cid" -> 0, "modelid" -> 3, "name" -> "person", "modeldescr" -> "coco"),
+        Json.obj("oid" -> 5, "cid" -> 1, "modelid" -> 3, "name" -> "chair", "modeldescr" -> "coco"),
+        Json.obj("oid" -> 6, "cid" -> 2, "modelid" -> 3, "name" -> "table", "modeldescr" -> "coco")
+      )
+      val resJson = Json.obj(
+        "status" -> "success",
+        "uid" -> "admin",
+        "rows" -> classes
+      )
+      Ok(resJson.toString).as("application/json")
+  }
+
+  def smasCvModelFilesGet(): Action[AnyContent] = Action {
+    implicit request =>
+      val resJson = Json.obj(
+        "status" -> "success",
+        "uid" -> "admin",
+        "descr" -> "Model files fetched",
+        "rows" -> Json.obj(
+          "modelid" -> 3,
+          "classes" -> "person\nchair\ntable\n",
+          "weights" -> ""
+        )
+      )
+      Ok(resJson.toString).as("application/json")
+  }
 }
 
