@@ -1731,3 +1731,8 @@ POST /api/heatmap/floor/average/timestamp/3          controllers.HeatmapControll
 #          description: Successful operation
 ###
 POST /api/heatmap/floor/average/timestamp/tiles      controllers.HeatmapController.floorWifiTimestampTiles()
+
+POST /smas/login.php                                         controllers.UserController.smasLogin()
+POST /smas/version.php                                       controllers.UserController.smasVersion()
+POST /smas/cv-models-get.php                                 controllers.UserController.smasCvModelsGet()
+POST /smas/cv-model-files-get.php                            controllers.UserController.smasCvModelFilesGet()

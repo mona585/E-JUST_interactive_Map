@@ -39,6 +39,8 @@ GET     /floortiles/zip/*file                                                   
 # SMAS / CV Backend Routes
 POST    /smas/login.php                                                             controllers.UserController.smasLogin()
 POST    /smas/version.php                                                           controllers.UserController.smasVersion()
+POST    /smas/cv-models-get.php                                                     controllers.UserController.smasCvModelsGet()
+POST    /smas/cv-model-files-get.php                                                controllers.UserController.smasCvModelFilesGet()
 
 # API Routes
 ->      /                                                                           api.Routes

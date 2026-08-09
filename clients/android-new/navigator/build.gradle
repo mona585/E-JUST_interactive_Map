@@ -88,11 +88,6 @@ dependencies {
   //// DEPENDENCY INJECTION (dagger/hilt)
   implementation "com.google.dagger:hilt-android:$ver_hilt"
   kapt "com.google.dagger:hilt-android-compiler:$ver_hilt"
-  implementation 'androidx.legacy:legacy-support-v4:1.0.0'
-
-  implementation 'com.google.android.gms:play-services-location:18.0.0'
-  implementation 'androidx.constraintlayout:constraintlayout:2.0.4'
-
   implementation 'com.squareup.okhttp3:okhttp:4.3.1'
   // Retrofit
   implementation 'com.squareup.retrofit2:retrofit:2.9.0'
