@@ -14,6 +14,8 @@ clients/.env
 .gradle/
 **/build/
 bin/
+!server/sbt-dist/bin/*.jar
+!server/sbt-dist/bin/
 out/
 *.class
 *.jar
