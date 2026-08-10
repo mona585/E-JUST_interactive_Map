@@ -18,6 +18,7 @@ bin/
 out/
 *.class
 *.jar
+!server/lib/*.jar
 !server/sbt-dist/bin/sbt-launch.jar
 *.war
 *.ear
