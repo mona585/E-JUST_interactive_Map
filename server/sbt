@@ -1,3 +1,10 @@
 #!/usr/bin/env bash
-
-./sbt-dist/bin/sbt "$@"
+# Use system sbt if available, otherwise fall back to bundled sbt-dist
+if command -v sbt >/dev/null 2>&1; then
+    exec sbt "$@"
+elif [ -f "./sbt-dist/bin/sbt" ]; then
+    exec ./sbt-dist/bin/sbt "$@"
+else
+    echo "Error: sbt not found. Run ./build --server to auto-install it." >&2
+    exit 1
+fi
