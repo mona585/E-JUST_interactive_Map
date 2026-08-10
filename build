@@ -62,7 +62,34 @@ BUILD_MODE="${1:---all}"
 build_server() {
     echo -e "\n${CYAN}[1/2] Building Anyplace Backend Server Production Package...${NC}"
     cd "$ROOT_DIR/server"
-    
+
+    # Auto-install Java 11 if missing
+    if ! java -version 2>&1 | grep -q "11\|17"; then
+        echo -e "${YELLOW}[!] Java 11 not found. Installing OpenJDK 11...${NC}"
+        apt-get install -y openjdk-11-jdk 2>/dev/null || yum install -y java-11-openjdk-devel 2>/dev/null || true
+    fi
+
+    # Detect Java Home
+    for JH in /usr/lib/jvm/java-1.11.0-openjdk-amd64 /usr/lib/jvm/java-11-openjdk-amd64 /usr/lib/jvm/java-11; do
+        if [ -d "$JH" ]; then
+            export JAVA_HOME="$JH"
+            export PATH="$JAVA_HOME/bin:$PATH"
+            break
+        fi
+    done
+
+    # Auto-download sbt if sbt-dist is missing
+    if [ ! -f "$ROOT_DIR/server/sbt-dist/bin/sbt" ]; then
+        echo -e "${YELLOW}[!] sbt-dist not found. Downloading SBT...${NC}"
+        SBT_VERSION="1.5.5"
+        SBT_TGZ="sbt-${SBT_VERSION}.tgz"
+        curl -fL "https://github.com/sbt/sbt/releases/download/v${SBT_VERSION}/${SBT_TGZ}" -o "/tmp/${SBT_TGZ}"
+        tar -xzf "/tmp/${SBT_TGZ}" -C "/tmp/"
+        mkdir -p "$ROOT_DIR/server/sbt-dist"
+        cp -r "/tmp/sbt/." "$ROOT_DIR/server/sbt-dist/"
+        echo -e "${GREEN}[✓] SBT downloaded successfully.${NC}"
+    fi
+
     # Run Play Framework SBT Dist command
     ./sbt clean dist
     
