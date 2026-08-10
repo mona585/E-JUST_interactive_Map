@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Anyplace Platform - Automated Production Build & Deployment Packager
+# Domain: map.beout.ai
+# ==============================================================================
+
+set -e
+
+# Repository Root Directory
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+# Colors for terminal formatting
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+echo -e "${CYAN}====================================================${NC}"
+echo -e "${CYAN}   Anyplace Platform Production Build System         ${NC}"
+echo -e "${CYAN}   Target Domain: map.beout.ai                       ${NC}"
+echo -e "${CYAN}====================================================${NC}"
+
+# Check for environment configuration or auto-initialize from .env.example
+if [ ! -f "$ROOT_DIR/.env" ] && [ -f "$ROOT_DIR/.env.example" ]; then
+    echo -e "${YELLOW}[!] Initializing .env from .env.example...${NC}"
+    cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
+fi
+
+if [ ! -f "$ROOT_DIR/server/.env" ] && [ -f "$ROOT_DIR/server/.env.example" ]; then
+    cp "$ROOT_DIR/server/.env.example" "$ROOT_DIR/server/.env"
+fi
+
+if [ ! -f "$ROOT_DIR/clients/.env" ] && [ -f "$ROOT_DIR/clients/.env.example" ]; then
+    cp "$ROOT_DIR/clients/.env.example" "$ROOT_DIR/clients/.env"
+fi
+
+ENV_FILE="$ROOT_DIR/.env"
+if [ -f "$ROOT_DIR/server/.env" ]; then
+    ENV_FILE="$ROOT_DIR/server/.env"
+fi
+
+if [ -f "$ENV_FILE" ]; then
+    echo -e "${GREEN}[+] Loading environment settings from $ENV_FILE...${NC}"
+    export $(grep -v '^#' "$ENV_FILE" | xargs)
+else
+    echo -e "${YELLOW}[!] Warning: No .env file found. Using default production settings.${NC}"
+    export SERVER_HOST="map.beout.ai"
+    export SERVER_PORT="443"
+    export SERVER_URL="https://map.beout.ai"
+fi
+
+# Set Java 11 environment
+if [ -d "/usr/lib/jvm/java-1.11.0-openjdk-amd64" ]; then
+    export JAVA_HOME="/usr/lib/jvm/java-1.11.0-openjdk-amd64"
+    export PATH="$JAVA_HOME/bin:$PATH"
+fi
+
+BUILD_MODE="${1:---all}"
+
+build_server() {
+    echo -e "\n${CYAN}[1/2] Building Anyplace Backend Server Production Package...${NC}"
+    cd "$ROOT_DIR/server"
+    
+    # Run Play Framework SBT Dist command
+    ./sbt clean dist
+    
+    DIST_ZIP=$(find target/universal -name "anyplace-*.zip" | head -n 1)
+    
+    if [ -z "$DIST_ZIP" ] || [ ! -f "$DIST_ZIP" ]; then
+        echo -e "${RED}[X] Error: Server build failed or dist zip not found.${NC}"
+        exit 1
+    fi
+    
+    mkdir -p "$ROOT_DIR/dist"
+    cp "$DIST_ZIP" "$ROOT_DIR/dist/anyplace-server-production.zip"
+    
+    # Create VM deployment script inside dist/
+    cat << 'EOF' > "$ROOT_DIR/dist/deploy_to_vm.sh"
+#!/usr/bin/env bash
+# ==============================================================================
+# Script to run Anyplace Server on Target VM
+# ==============================================================================
+
+set -e
+PORT=${1:-9000}
+
+echo "[+] Unpacking Anyplace Server..."
+unzip -q -o anyplace-server-production.zip
+SERVER_DIR=$(find . -maxdepth 1 -type d -name "anyplace-*" | head -n 1)
+
+cd "$SERVER_DIR"
+chmod +x bin/anyplace
+
+# Remove old PID lock if existing
+rm -f RUNNING_PID
+
+echo "[+] Starting Anyplace Server on port $PORT..."
+./bin/anyplace -Dhttp.port="$PORT" -Dplay.http.secret.key="${APPLICATION_SECRET:-anyplace_secret_key_2026}"
+EOF
+    chmod +x "$ROOT_DIR/dist/deploy_to_vm.sh"
+    
+    echo -e "${GREEN}[✓] Production Server Bundle Created successfully:${NC}"
+    echo -e "    -> ${YELLOW}$ROOT_DIR/dist/anyplace-server-production.zip${NC}"
+    echo -e "    -> ${YELLOW}$ROOT_DIR/dist/deploy_to_vm.sh${NC}"
+}
+
+build_clients() {
+    echo -e "\n${CYAN}[2/2] Building Android Client APKs...${NC}"
+    
+    mkdir -p "$ROOT_DIR/apk generated"
+    
+    # Build Legacy Client
+    echo -e "${CYAN}[+] Compiling Legacy Anyplace Client...${NC}"
+    cd "$ROOT_DIR/clients/android"
+    ./gradlew assembleDebug
+    cp Anyplace/build/outputs/apk/debug/Anyplace-debug.apk "$ROOT_DIR/apk generated/Anyplace-Legacy.apk"
+    
+    # Build Modern Clients
+    echo -e "${CYAN}[+] Compiling Modern Navigator & Logger Clients...${NC}"
+    cd "$ROOT_DIR/clients/android-new"
+    ./gradlew assembleDebug
+    cp navigator/build/outputs/apk/debug/navigator-debug.apk "$ROOT_DIR/apk generated/Anyplace-Navigator.apk"
+    cp logger/build/outputs/apk/debug/logger-debug.apk "$ROOT_DIR/apk generated/Anyplace-Logger.apk"
+    
+    echo -e "${GREEN}[✓] Android Client APKs Created successfully:${NC}"
+    echo -e "    -> ${YELLOW}$ROOT_DIR/apk generated/Anyplace-Legacy.apk${NC}"
+    echo -e "    -> ${YELLOW}$ROOT_DIR/apk generated/Anyplace-Navigator.apk${NC}"
+    echo -e "    -> ${YELLOW}$ROOT_DIR/apk generated/Anyplace-Logger.apk${NC}"
+}
+
+case "$BUILD_MODE" in
+    --server)
+        build_server
+        ;;
+    --clients)
+        build_clients
+        ;;
+    --all)
+        build_server
+        build_clients
+        ;;
+    *)
+        echo "Usage: ./build [--server | --clients | --all]"
+        exit 1
+        ;;
+esac
+
+echo -e "\n${GREEN}====================================================${NC}"
+echo -e "${GREEN}   BUILD COMPLETE!                                  ${NC}"
+echo -e "${GREEN}   To deploy server to another VM:                  ${NC}"
+echo -e "${YELLOW}   scp -r dist/ user@your-vm-ip:/opt/anyplace      ${NC}"
+echo -e "${YELLOW}   ssh user@your-vm-ip 'cd /opt/anyplace && ./deploy_to_vm.sh'${NC}"
+echo -e "${GREEN}====================================================${NC}"

@@ -1,0 +1,89 @@
+apply plugin: 'com.android.application'
+
+android {
+
+    compileSdkVersion 26
+    useLibrary 'org.apache.http.legacy'
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src']
+            resources.srcDirs = ['src']
+            aidl.srcDirs = ['src']
+            renderscript.srcDirs = ['src']
+            res.srcDirs = ['res']
+            assets.srcDirs = ['assets']
+        }
+
+        // Move the tests to tests/java, tests/res, etc...
+        androidTest.setRoot('tests')
+
+        // Move the build types to build-types/<type>
+        // For instance, build-types/debug/java, build-types/debug/AndroidManifest.xml, ...
+        // This moves them out of them default location under src/<type>/... which would
+        // conflict with src/ being used by the main source set.
+        // Adding new build types or product flavors should be accompanied
+        // by a similar customization.
+        debug.setRoot('build-types/debug')
+        release.setRoot('build-types/release')
+    }
+
+    /*
+    signingConfigs {
+        config {
+            keyAlias 'Anyplace'
+            keyPassword 'abcdef'
+            storeFile file('D:/XP_Documents/University of Cyprus/9 Term/Play Store/Files/ucy.keystore')
+            storePassword 'abcdef'
+        }
+    }
+    */
+
+    buildTypes {
+        debug {
+            debuggable = true
+            // signingConfig signingConfigs.config
+        }
+        release {
+            // signingConfig signingConfigs.config
+        }
+    }
+
+    lintOptions{
+        abortOnError false
+    }
+
+    defaultConfig {
+        applicationId "cy.ac.ucy.cs.anyplace.navigator"
+        targetSdkVersion 29
+        minSdkVersion 14
+
+        // Read settings from clients/.env or central .env file
+        def envFile = file("../.env")
+        if (!envFile.exists()) {
+            envFile = file("../../.env")
+        }
+        def envProps = new Properties()
+        if (envFile.exists()) {
+            envFile.withInputStream { envProps.load(it) }
+        }
+        def keyVal = envProps.getProperty("MAPS_API_KEY") ?: ""
+        def serverUrl = envProps.getProperty("SERVER_URL") ?: "https://map.beout.ai"
+
+        resValue "string", "maps_api_key", keyVal
+        resValue "string", "default_server_ip_address", serverUrl
+    }
+}
+
+dependencies {
+    implementation fileTree(include: '*.jar', dir: 'libs')
+    implementation project(':library')
+    implementation project(':actionbarsherlock')
+    implementation 'com.android.support:support-v4:19.1.0'
+
+    api group: 'org.apache.httpcomponents' , name: 'httpclient-android' , version: '4.3.5.1'
+    api('org.apache.httpcomponents:httpmime:4.3') {
+        exclude module: "httpclient"
+    }
+}

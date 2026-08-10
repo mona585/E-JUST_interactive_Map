@@ -1,0 +1,55 @@
+# ==========================================
+# Anyplace Platform - Comprehensive .gitignore
+# ==========================================
+
+# Environment & Secret Configuration Files
+.env
+*.env
+server/.env
+clients/.env
+**/secure.properties
+**/MAPS_API_KEY
+
+# Java & Gradle Build Artifacts
+.gradle/
+**/build/
+bin/
+out/
+*.class
+*.jar
+*.war
+*.ear
+
+# SBT & Scala Build Artifacts
+**/target/
+project/target/
+project/project/
+.sbt/
+.bsp/
+
+# Android Generated Files & Logs
+*.apk
+*.aab
+apk generated/
+captures/
+.externalNativeBuild
+.cxx/
+local.properties
+
+# IDE & Editor Settings
+.idea/
+*.iml
+.vscode/
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# OS & System Files
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*~
