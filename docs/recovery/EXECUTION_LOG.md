@@ -165,7 +165,7 @@ This document records the step-by-step execution, evidence, and verification of 
   - Empty space payload test: PASSED (`HTTP 200` with `{"spaces":[],"buildings":[]}`).
   - `sbt test`: PASSED (6 total examples, 0 failures, 0 errors).
 - **Definition of Done result**: PASSED. Database baseline initialization script is reproducible and the backend operates cleanly on empty state.
-- **Commit**: `[Phase 5]` (to be committed)
+- **Commit**: `64fe617`
 
 ---
 
