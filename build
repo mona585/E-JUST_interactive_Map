@@ -59,8 +59,23 @@ fi
 
 BUILD_MODE="${1:---all}"
 
+build_web_apps() {
+    echo -e "\n${CYAN}[+] Building Web Applications (Architect, Viewer, Viewer Campus)...${NC}"
+    for app_dir in anyplace_architect anyplace_viewer anyplace_viewer_campus; do
+        echo -e "${CYAN}    Building $app_dir...${NC}"
+        (
+            cd "$ROOT_DIR/server/public/$app_dir"
+            bower install --allow-root --config.interactive=false
+            npm install
+            grunt deploy
+        )
+    done
+    echo -e "${GREEN}[✓] Web applications built successfully.${NC}"
+}
+
 build_server() {
     echo -e "\n${CYAN}[1/2] Building Anyplace Backend Server Production Package...${NC}"
+    build_web_apps
     cd "$ROOT_DIR/server"
 
     # Auto-install Java 11 if missing

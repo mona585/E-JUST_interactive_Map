@@ -117,8 +117,32 @@ This document records the step-by-step execution, evidence, and verification of 
   - `/api/version` endpoint test: PASSED (HTTP 200 JSON).
   - `/api/mapping/space/public` endpoint test: PASSED (HTTP 200 JSON).
 - **Definition of Done result**: PASSED. Backend test suite compiles and runs cleanly with green status documenting core API behavior.
-- **Commit**: `ecfbe6b`
+- **Commit**: `0ef265f`
 
 ---
+
+## Phase 4 — Restore Web Assets and Developer API
+
+- **Starting state**: Commit `0ef265f`. Web apps lacked precompiled `build/` assets (R-05), resulting in 404 responses for bundled JS/CSS; Swagger JSON specification routing was verified (R-06, R-12).
+- **Problems addressed**: R-05 (missing frontend web assets), R-06 (stale/broken Swagger specification path), R-12 (installer omitted frontend build step).
+- **Files changed**:
+  - `server/public/anyplace_viewer_campus/bower.json` (added `"angular-aria": "1.5.8"` resolution for non-interactive automated installs)
+  - `build` (added `build_web_apps` routine invoking `bower install --config.interactive=false`, `npm install`, and `grunt deploy` prior to `sbt dist`)
+  - `docs/recovery/EXECUTION_LOG.md`
+- **Actions taken**:
+  1. Updated `bower.json` in `anyplace_viewer_campus` to specify missing resolution for `angular-aria`.
+  2. Executed Grunt build pipelines (`concat`, `uglify`, `cssmin`, `imagemin`) across `anyplace_architect`, `anyplace_viewer`, and `anyplace_viewer_campus` to generate `build/js/anyplace.min.js` and `build/css/anyplace.min.css`.
+  3. Integrated `build_web_apps` into root `./build` script.
+  4. Verified runtime routing for `/architect/` (200 OK), `/viewer/` (200 OK), `/developers/` (200 OK), and `/assets/swagger.json` (200 OK with full OpenAPI 2.0 definition).
+  5. Verified static web assets load without 404s (`architect/build/js/anyplace.min.js` 200, `viewer/build/js/anyplace.min.js` 200, `developers/js/swagger-ui-bundle.js` 200).
+- **Validation**:
+  - `architect`, `viewer`, `viewer_campus` Grunt builds: PASSED.
+  - `./build --server`: PASSED (Built web assets, generated Swagger spec, created `dist/anyplace-server-production.zip`).
+  - Runtime asset HTTP status check: PASSED (All 200 OK).
+- **Definition of Done result**: PASSED. Entry pages, required assets, and Swagger return 200 from a clean artifact.
+- **Commit**: `[Phase 4]` (to be committed)
+
+---
+
 
 

@@ -16,10 +16,10 @@ chmod +x bin/anyplace
 # Remove old PID lock if existing
 rm -f RUNNING_PID
 
-if [ -z "$APPLICATION_SECRET" ]; then
+if [ -z "\$APPLICATION_SECRET" ]; then
     echo "[!] Error: APPLICATION_SECRET environment variable must be set to run Anyplace Server." >&2
     exit 1
 fi
 
-echo "[+] Starting Anyplace Server on port $PORT..."
-./bin/anyplace -Dhttp.port="$PORT" -Dplay.http.secret.key="$APPLICATION_SECRET"
+echo "[+] Starting Anyplace Server on port \$PORT..."
+./bin/anyplace -Dhttp.port="\$PORT" -Dplay.http.secret.key="\$APPLICATION_SECRET"
