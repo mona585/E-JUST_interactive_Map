@@ -12,7 +12,7 @@ dist
 /RUNNING_PID
 /.settings
 /target/
-/conf/application.conf
+!/conf/application.conf
 /floor_plans/
 public/anyplace_architect/bower_components/
 public/anyplace_architect/build/

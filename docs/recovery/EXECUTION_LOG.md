@@ -66,6 +66,34 @@ This document records the step-by-step execution, evidence, and verification of 
   - Tiler tools check: all required binaries present and executable (PASSED).
   - Web tools check: `grunt-cli v1.5.0` and `bower 1.8.14` ready (PASSED).
 - **Definition of Done result**: PASSED. Target Linux/Ubuntu toolchain fully pinned, repeatable, and verified with clean backend compile.
-- **Commit**: `1971e3f`
+- **Commit**: `2ba13a8`
 
 ---
+
+## Phase 2 — Make Backend Startup and MongoDB Connectivity Reproducible
+
+- **Starting state**: Commit `2ba13a8`. OpenJDK 11 pinned as JVM target.
+- **Problems addressed**: R-02 (service configuration safety), R-03 (JVM/startup stability), R-13 (startup telemetry).
+- **Files changed**:
+  - `server/app/Anyplace.scala` (disabled Google Analytics telemetry by default under D-09 policy)
+  - `server/conf/application.conf` (created canonical configuration aggregator importing `app.base.conf`, `app.play.conf`, and `app.private.conf`)
+  - `server/conf/app.private.conf` (created protected local staging configuration)
+  - `server/conf/logback.xml` (fixed logback keyword `%5Level` -> `%5level`)
+  - `docs/recovery/EXECUTION_LOG.md`
+- **Actions taken**:
+  1. Created `server/conf/application.conf` to explicitly chain configuration files.
+  2. Provisioned protected local staging configuration `server/conf/app.private.conf` specifying localhost-bound MongoDB settings and secret keys.
+  3. Modified `server/app/Anyplace.scala` to evaluate `analytics.enabled` (defaulting to false under D-09 policy) rather than sending unconditional startup telemetry to Google Analytics.
+  4. Fixed logback pattern syntax in `server/conf/logback.xml`.
+  5. Performed two consecutive clean server start/stop cycles using `JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 sbt "run 9000"`.
+- **Validation**:
+  - `GET /api/version`: HTTP 200 `{"version":"4.2.6","variant":"local","port":"9000","address":"localhost"}` (PASSED).
+  - `POST /api/mapping/space/public`: HTTP 200 `{"spaces":[],"buildings":[]}` (proves MongoDB connection, database selection, and collection read) (PASSED).
+  - Telemetry verification: Server output confirmed `External analytics disabled by default (D-09 policy)` (PASSED).
+  - MongoDB network binding: Verified `127.0.0.1:27017` LISTEN only (PASSED).
+  - Two consecutive clean start/stop cycles completed cleanly without error (PASSED).
+- **Definition of Done result**: PASSED. Backend startup and MongoDB connectivity are reproducible and safe.
+- **Commit**: `[Phase 2]` (to be committed)
+
+---
+

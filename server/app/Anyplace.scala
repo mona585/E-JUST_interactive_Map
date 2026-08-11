@@ -78,11 +78,20 @@ class Anyplace @Inject() (conf: Configuration) (appLifecycle: ApplicationLifecyc
    * Log the entry point from server installation
    */
   def logAnalyticsInstallation(): Unit = {
-    JGoogleAnalyticsTracker.setProxy(System.getenv("http_proxy"))
-    val config = new AnalyticsConfigData("UA-61313158-2")
-    val tracker = new JGoogleAnalyticsTracker(config, GoogleAnalyticsVersion.V_4_7_2)
-    tracker.trackEvent("Anyplace Installation", "Anyplace Server start", "Anyplace logging")
-    LOG.D("logAnalyticsInstallation: done")
+    val enabled = conf.getOptional[Boolean]("analytics.enabled").getOrElse(false)
+    if (enabled) {
+      try {
+        JGoogleAnalyticsTracker.setProxy(System.getenv("http_proxy"))
+        val config = new AnalyticsConfigData("UA-61313158-2")
+        val tracker = new JGoogleAnalyticsTracker(config, GoogleAnalyticsVersion.V_4_7_2)
+        tracker.trackEvent("Anyplace Installation", "Anyplace Server start", "Anyplace logging")
+        LOG.D("logAnalyticsInstallation: done")
+      } catch {
+        case e: Exception => LOG.E("logAnalyticsInstallation: failed", e)
+      }
+    } else {
+      LOG.I("External analytics disabled by default (D-09 policy).")
+    }
   }
 }
 
