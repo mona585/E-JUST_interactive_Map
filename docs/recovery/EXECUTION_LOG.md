@@ -255,7 +255,48 @@ This document records the step-by-step execution, evidence, and verification of 
 - **Definition of Done result**: PASSED. All active runtime domain references detached from legacy external domains.
 - **Commit**: `f11f095`
 
+## Phase 9 — Security and End-to-End Regression Gate
+
+- **Starting state**: Commit `f7d17b0`. CORS open to all origins (null). CSP `default-src 'self'` would break Google Maps/Fonts/CDN used by web clients. `DatabaseBaselineSpec` had test-isolation failure due to duplicate emails across runs.
+- **Problems addressed**: R-09 and all remaining verification gaps. Final gate before recovery acceptance.
+- **Files changed**:
+  - `server/conf/app.play.conf` — CSP updated to allow CDN origins (Google Maps, Google Fonts, Google APIs, cdnjs); CORS `allowedOrigins` changed from open `null` to deployment-configurable `${?cors.allowedOrigins}`; `referrerPolicy = "strict-origin-when-cross-origin"` added.
+  - `server/conf/app.private.example.conf` — documented `cors.allowedOrigins` and `analytics.enabled` keys.
+  - `server/test/DatabaseBaselineSpec.scala` — fixed test isolation: uses unique per-run `System.nanoTime()` tag for email/username to avoid duplicate-email 400 collisions across repeated `sbt test` runs.
+  - `server/test/SecurityRegressionSpec.scala` — new Phase 9 regression gate (13 tests).
+- **Actions taken**:
+  1. Hardened `app.play.conf` — CSP to allow only known CDN origins; CORS to reject unknown origins via configurable allowlist; added referrer policy.
+  2. Updated `app.private.example.conf` with documented CORS/analytics keys.
+  3. Diagnosed `DatabaseBaselineSpec` failures (duplicate email from prior runs); fixed with unique per-run tag approach.
+  4. Wrote `SecurityRegressionSpec` covering all Phase 9 gates.
+  5. Iteratively ran specs until all pass.
+- **Definition of Done checks** (all VERIFIED):
+  - `sbt test`: **19/19 PASSED** (ApplicationSpec 3/3, DatabaseBaselineSpec 3/3, SecurityRegressionSpec 13/13).
+  - Security headers: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 1; mode=block`, `Content-Security-Policy` all present on API responses.
+  - CORS: `http://localhost:9000` origin echoed; `https://evil.example.com` NOT echoed.
+  - Admin role: second registrant always receives `"type": "user"`, never `"admin"`.
+  - Credential security: plaintext password value absent from register response.
+  - Analytics: `INFO | External analytics disabled by default (D-09 policy).` logged on every server start.
+  - Staging credentials absent from all git-tracked files (secret scan clean).
+- **Definition of Done result**: PASSED. System is safe to expose and operates as one integrated deployment. Recovery gate closed.
+- **Commits**: `29153c6` (security + tests), `f7d17b0` (Phase 8 log), `f11f095` (Phase 8 domains)
+
 ---
 
+## Recovery Complete
 
+All phases 0–9 have been executed and verified. The E-JUST Anyplace system is recovered.
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| 0 — Contain Secrets & Freeze Baseline | ✅ COMPLETE | `e00b496`, `172a0b4` |
+| 1 — Pin Toolchains | ✅ COMPLETE | `1971e3f`, `2ba13a8` |
+| 2 — Backend Startup & MongoDB | ✅ COMPLETE | `279c19c`, `2d1a0e8` |
+| 3 — Backend Test & Core API Baseline | ✅ COMPLETE | `ecfbe6b`, `0ef265f` |
+| 4 — Web Assets & Developer API | ✅ COMPLETE | `a0508e2`, `cbb9015` |
+| 5 — Empty Data Baseline & Hydration Contract | ✅ COMPLETE | `64fe617`, `549a01a` |
+| 6 — Floorplan/Tiler Pipeline | ✅ COMPLETE | `73ed02a`, `d1af442` |
+| 7 — Android Logger & Navigator | ✅ COMPLETE | `c544857`, `611775c` |
+| 8 — Detach from Legacy Domains | ✅ COMPLETE | `f11f095`, `f7d17b0` |
+| 9 — Security & Regression Gate | ✅ COMPLETE | `29153c6` |
 
