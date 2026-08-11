@@ -222,7 +222,7 @@ This document records the step-by-step execution, evidence, and verification of 
   - `aapt dump badging` verification on `logger-debug.apk` & `logger-release-unsigned.apk`: PASSED (`package: name='eg.edu.ejust.anyplace.logger'`).
   - `aapt dump badging` verification on `navigator-debug.apk` & `navigator-release-unsigned.apk`: PASSED (`package: name='eg.edu.ejust.anyplace.navigator'`).
 - **Definition of Done result**: PASSED. Both Android Logger and Navigator assemble cleanly into valid APKs with E-JUST package identity and default endpoint URLs.
-- **Commit**: `[Phase 7]` (to be committed)
+- **Commit**: `c544857`
 
 ---
 
