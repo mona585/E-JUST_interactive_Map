@@ -224,10 +224,38 @@ This document records the step-by-step execution, evidence, and verification of 
 - **Definition of Done result**: PASSED. Both Android Logger and Navigator assemble cleanly into valid APKs with E-JUST package identity and default endpoint URLs.
 - **Commit**: `c544857`
 
+## Phase 8 — Detach the Active System from Original Domains
+
+- **Starting state**: Commit `611775c`. Active runtime references still pointing to legacy external domains (`map.beout.ai`, `anyplace.cs.ucy.ac.cy`, `ap-dev.cs.ucy.ac.cy`, `ap.cs.ucy.ac.cy`, `dmsl.cs.ucy.ac.cy`, `ucy.ac.cy`) across env templates, build scripts, Android Java sources, and web client share-URL generators.
+- **Problems addressed**: R-16 (domain coupling / configuration — active runtime endpoints not tied to deployment-supplied base URL).
+- **Scope decision**: Per recovery report guidance, license/copyright header strings (`* URL: http://anyplace.cs.ucy.ac.cy`, `* Contact: anyplace@cs.ucy.ac.cy`) left intact (historical attribution, no security/runtime impact). Old Android client (`clients/android/`, D-03 excluded scope) left unchanged.
+- **Files changed**:
+  - `.env.example` — `SERVER_HOST`, `SERVER_URL`: `map.beout.ai` → `anyplace.ejust.edu.eg`
+  - `server/.env.example` — same correction
+  - `build` — header comment, banner echo, fallback export defaults: `map.beout.ai` → `anyplace.ejust.edu.eg`
+  - `clients/android-new/logger/.../AnyplaceApp.java` — hardcoded Anyplace SDK constructor host: `ap-dev.cs.ucy.ac.cy` → `anyplace.ejust.edu.eg`
+  - `clients/android-new/logger/.../AnyplaceAboutActivity.java` — onClick browser intents: UCY/DMSL/UCY → E-JUST URLs
+  - `clients/android-new/logger/.../LoggerPrefs.java` — onClick Architect link: UCY Architect → E-JUST Architect
+  - `clients/android-new/navigator/.../AnyplaceAboutActivity.java` — onClick browser intents: UCY/DMSL/UCY → E-JUST URLs
+  - `clients/android-new/navigator/src/main/AndroidManifest.xml` — deep-link intent-filter host: `ap.cs.ucy.ac.cy` → `anyplace.ejust.edu.eg`
+  - `server/public/anyplace_viewer/app.js` — `getBuildingViewerUrl()`: hardcoded UCY base → `window.location.origin + "/viewer/?buid=..."`
+  - `server/public/anyplace_viewer/controllers/PoiController.js` — POI share URL: hardcoded UCY base → `window.location.origin + "/viewer/?..."`
+  - `server/public/anyplace_viewer_campus/app.js` — `getBuildingViewerUrl()`: hardcoded UCY base → `window.location.origin + "/viewer/?buid=..."`
+  - `server/public/anyplace_viewer_campus/controllers/PoiController.js` — campus POI share URL: hardcoded UCY base → `window.location.origin + "/viewer/?cuid=..."`
+- **Actions taken**:
+  1. Ran `grep_search` across all source trees for `map.beout.ai`, `ucy.ac.cy`, `beout.ai` to produce a full inventory.
+  2. Classified each hit as: runtime-active (must fix), license header (leave), excluded scope (leave).
+  3. Applied targeted one-line replacements to all runtime-active references (12 files).
+  4. Used `window.location.origin` for Viewer/Campus share URLs so links work on any deployment without reconfiguration.
+  5. Committed all changes.
+- **Definition of Done checks**:
+  - `grep -r "map.beout.ai" --include="*.sh" --include="*.example" --include="*.js" --include="*.java" --include="*.xml" --include="*.gradle" server/ clients/android-new/ .env.example build`: 0 runtime references remaining.
+  - Navigator deep-link intent-filter host updated to `anyplace.ejust.edu.eg`.
+  - Viewer/Campus share URLs are now deployment-agnostic (`window.location.origin`).
+- **Definition of Done result**: PASSED. All active runtime domain references detached from legacy external domains.
+- **Commit**: `f11f095`
+
 ---
-
-
-
 
 
 
