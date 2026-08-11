@@ -16,6 +16,7 @@ lazy val root = (project in file("."))
       "com.typesafe.play" %% "play-json" % "2.10.0-RC5",
       "com.typesafe.play" %% "play" % "2.8.8",
       "org.mongodb.scala" %% "mongo-scala-driver" % "4.3.0",
+      "com.typesafe.play" %% "play-specs2" % "2.8.8" % Test
     ),
     scalacOptions ++= Seq(
       "-feature",

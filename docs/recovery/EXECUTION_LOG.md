@@ -93,7 +93,32 @@ This document records the step-by-step execution, evidence, and verification of 
   - MongoDB network binding: Verified `127.0.0.1:27017` LISTEN only (PASSED).
   - Two consecutive clean start/stop cycles completed cleanly without error (PASSED).
 - **Definition of Done result**: PASSED. Backend startup and MongoDB connectivity are reproducible and safe.
-- **Commit**: `279c19c`
+- **Commit**: `2d1a0e8`
 
 ---
+
+## Phase 3 — Restore the Backend Test and Core API Baseline
+
+- **Starting state**: Commit `2d1a0e8`. `sbt test` failed to compile due to missing `play-specs2` test dependencies (R-04) and `server/test` ignored in `server/.gitignore`.
+- **Problems addressed**: R-04 (uncompilable backend test suite), core API verification baseline.
+- **Files changed**:
+  - `server/build.sbt` (added `"com.typesafe.play" %% "play-specs2" % "2.8.8" % Test` dependency)
+  - `server/.gitignore` (unignored `!test/` directory to allow tracking backend test suites)
+  - `server/test/ApplicationSpec.scala` (created core API integration specification with gzip-aware response extraction helper)
+  - `docs/recovery/EXECUTION_LOG.md`
+- **Actions taken**:
+  1. Updated `server/build.sbt` to add `play-specs2` test dependency.
+  2. Modified `server/.gitignore` to allow tracking `server/test/`.
+  3. Created `server/test/ApplicationSpec.scala` testing unmapped route redirects (303), `/api/version` (200 JSON), and `/api/mapping/space/public` (200 JSON).
+  4. Executed `JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 sbt test` to verify clean compilation and execution of the backend test suite.
+- **Validation**:
+  - `sbt test`: PASSED (3 examples, 0 failures, 0 errors in 5.9s).
+  - Unmapped route test: PASSED (HTTP 303 redirect).
+  - `/api/version` endpoint test: PASSED (HTTP 200 JSON).
+  - `/api/mapping/space/public` endpoint test: PASSED (HTTP 200 JSON).
+- **Definition of Done result**: PASSED. Backend test suite compiles and runs cleanly with green status documenting core API behavior.
+- **Commit**: `[Phase 3]` (to be committed)
+
+---
+
 
