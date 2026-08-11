@@ -140,9 +140,35 @@ This document records the step-by-step execution, evidence, and verification of 
   - `./build --server`: PASSED (Built web assets, generated Swagger spec, created `dist/anyplace-server-production.zip`).
   - Runtime asset HTTP status check: PASSED (All 200 OK).
 - **Definition of Done result**: PASSED. Entry pages, required assets, and Swagger return 200 from a clean artifact.
-- **Commit**: `a0508e2`
+- **Commit**: `cbb9015`
 
 ---
+
+## Phase 5 — Establish the Empty Data Baseline and Hydration Contract
+
+- **Starting state**: Commit `cbb9015`. Missing schema initialization tooling (R-07, R-13) and legacy fallback data dependencies (R-18).
+- **Problems addressed**: R-07 (empty database seed script missing), R-13 (database tooling out-of-date), R-18 (hardcoded fallback data dependencies).
+- **Files changed**:
+  - `server/database/init_schema.js` (created MongoDB schema baseline script with collection definitions and 2DSphere spatial indexes)
+  - `server/database/init_database.sh` (created reproducible database initialization and reset tool with `--drop` support)
+  - `server/test/DatabaseBaselineSpec.scala` (created automated spec verifying empty database baseline, initial admin registration, subsequent user registration, and empty space payload contracts)
+  - `docs/recovery/EXECUTION_LOG.md`
+- **Actions taken**:
+  1. Built `init_schema.js` creating core MongoDB collections (`users`, `spaces`, `campuses`, `floorplans`, `pois`, `edges`, `fingerprintsWifi`, `accessPointsWifi`) and 2DSphere geospatial indexes.
+  2. Built `init_database.sh` script providing repeatable DB wipe (`mongosh --eval "db.dropDatabase()"`) and baseline creation.
+  3. Executed `./server/database/init_database.sh --drop` and verified clean initialization on MongoDB v6.0.29.
+  4. Created `DatabaseBaselineSpec.scala` and executed `sbt test`.
+- **Validation**:
+  - `init_database.sh --drop`: PASSED (Database wiped and 15 collections/indexes initialized clean).
+  - First user registration test: PASSED (Assigned `admin` role).
+  - Second user registration test: PASSED (Assigned `user` role).
+  - Empty space payload test: PASSED (`HTTP 200` with `{"spaces":[],"buildings":[]}`).
+  - `sbt test`: PASSED (6 total examples, 0 failures, 0 errors).
+- **Definition of Done result**: PASSED. Database baseline initialization script is reproducible and the backend operates cleanly on empty state.
+- **Commit**: `[Phase 5]` (to be committed)
+
+---
+
 
 
 
