@@ -95,11 +95,11 @@ object MongodbDatasource {
   }
 
   def createInstance(hostname: String, database: String, username: String, password: String, port: String): MongodbDatasource = {
-    val uri = if (username != null && username.trim.nonEmpty && password != null && password.trim.nonEmpty)
-      s"mongodb://$username:$password@$hostname:$port/$database?authSource=$database"
-    else
-      s"mongodb://$hostname:$port/$database"
-
+    val uri: String = if (username != null && username.trim.nonEmpty) {
+      "mongodb://" + username + ":" + password + "@" + hostname + ":" + port
+    } else {
+      "mongodb://" + hostname + ":" + port
+    }
     mongoClient = MongoClient(uri)
     // TODO check if database anyplace exists
     mdb = mongoClient.getDatabase(database)
@@ -613,7 +613,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor, SCHEMA.fX -> x, SCHEMA.fY -> y, SCHEMA.fHeading -> heading)
     val fingerprintLookUp = collection.find(query)
     val awaited = Await.result(fingerprintLookUp.toFuture(), Duration.Inf)
-    val res = awaited.asInstanceOf[List[Document]]
+    val res = awaited.toList
     if (res.size > 0)
       return true
     return false
@@ -1594,7 +1594,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val query = BsonDocument(SCHEMA.fFloorNumber -> floor_number)
     val floorLookUp = collection.find(query)
     val awaited = Await.result(floorLookUp.toFuture(), Duration.Inf)
-    val res = awaited.asInstanceOf[List[Document]]
+    val res = awaited.toList
     val floorplans = convertJson(res)
     var unique = 0
     var uniqBuid = ""
@@ -1625,7 +1625,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor_number)
     val fingerprintLookUp = collection.find(query)
     val awaited = Await.result(fingerprintLookUp.toFuture(), Duration.Inf)
-    val res = awaited.asInstanceOf[List[Document]]
+    val res = awaited.toList
     val rssLog = convertJson(res)
     // splitting Measurements[MAC, rss] to buid, floor, .., MAC, rss, ... (old form)
     if (rssLog.size > 0) {
@@ -1832,7 +1832,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val query = BsonDocument(SCHEMA.fUsername -> username, SCHEMA.fPassword -> password)
     val userLookUp = collection.find(query)
     val awaited = Await.result(userLookUp.toFuture(), Duration.Inf)
-    val res = awaited.asInstanceOf[List[Document]]
+    val res = awaited.toList
     if (convertJson(res).isEmpty)
       return null
 
@@ -1844,7 +1844,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val query = BsonDocument(SCHEMA.fAccessToken -> accessToken)
     val userLookUp = collection.find(query)
     val awaited = Await.result(userLookUp.toFuture(), Duration.Inf)
-    val res = awaited.asInstanceOf[List[Document]]
+    val res = awaited.toList
     if (convertJson(res).isEmpty)
       return null
 
@@ -1856,7 +1856,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val query = BsonDocument(SCHEMA.fOwnerId -> ownerId)
     val userLookUp = collection.find(query)
     val awaited = Await.result(userLookUp.toFuture(), Duration.Inf)
-    val res = awaited.asInstanceOf[List[Document]]
+    val res = awaited.toList
     if (convertJson(res).isEmpty)
       return null
 

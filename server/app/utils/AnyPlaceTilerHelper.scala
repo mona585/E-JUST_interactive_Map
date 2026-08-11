@@ -84,18 +84,17 @@ class AnyPlaceTilerHelper @Inject()(cc: ControllerComponents,
 
         LOG.D3("storeFloorPlanToServer: dir: " + dir.getAbsolutePath)
         LOG.D3("storeFloorPlanToServer: file: " + file.getAbsolutePath)
-        if (!dir.exists()) {
-            dir.mkdirs()
+        LOG.D3("storeFloorPlanToServer: file size: " + file.length())
+        dir.mkdirs()
+        if (!dir.isDirectory || !dir.canWrite || !dir.canExecute) {
+            throw new AnyPlaceException("Floor plans directory is inaccessible!")
         }
         val name = "fl" + "_" + floor_number
         val dest_f = new File(dir, name)
-        try {
-            java.nio.file.Files.copy(file.toPath, dest_f.toPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-        } catch {
-            case e: Exception =>
-                LOG.E("Failed to copy floorplan: " + e.getMessage, e)
-                throw new AnyPlaceException("Failed to copy floorplan file: " + e.getMessage)
-        }
+        var fout: FileOutputStream = null
+        fout = new FileOutputStream(dest_f)
+        Files.copy(file.toPath, fout)
+        fout.close()
         dest_f
     }
 

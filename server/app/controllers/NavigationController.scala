@@ -53,8 +53,7 @@ import scala.jdk.CollectionConverters.CollectionHasAsScala
 class NavigationController @Inject()(cc: ControllerComponents,
                                      pds: ProxyDataSource)
   extends AbstractController(cc) {
-  /** Limit route's distance in km (kilometers). 0 disables the check */
-  val ROUTE_MAX_DISTANCE = 5
+  val ROUTE_MAX_DISTANCE_ALLOWED = 5.0
 
   def getBuildingById: Action[AnyContent] = Action {
     implicit request =>
@@ -206,7 +205,7 @@ class NavigationController @Inject()(cc: ControllerComponents,
           if (startingPoi == null) {
             val msg = "Navigation is not supported from your position."
             return RESPONSE.BAD(msg)
-          } else if (ROUTE_MAX_DISTANCE > 0 && min_distance > ROUTE_MAX_DISTANCE) {
+          } else if (min_distance > ROUTE_MAX_DISTANCE_ALLOWED) {
             val msg = "No Navigation supported at this position: startingPoi>=5km"
             LOG.D1(msg)
             return RESPONSE.BAD(msg)

@@ -12,7 +12,7 @@ dist
 /RUNNING_PID
 /.settings
 /target/
-/conf/application.conf
+!/conf/application.conf
 /floor_plans/
 public/anyplace_architect/bower_components/
 public/anyplace_architect/build/
@@ -22,7 +22,7 @@ public/anyplace_viewer_campus/bower_components/
 public/anyplace_viewer_campus/build/
 radiomaps_frozen/
 radio_test/
-test/
+!test/
 crlbs_data/
 /conf/ap.application.conf
 conf/public/
@@ -124,4 +124,3 @@ fabric.properties
 
 .idea/modules/anyplace-build.iml
 .idea/modules/anyplace.iml
-.idea/play2_project_settings.xml

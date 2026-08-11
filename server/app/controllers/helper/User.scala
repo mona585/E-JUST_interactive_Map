@@ -62,10 +62,7 @@ class User @Inject()(pds: ProxyDataSource,
     var res = ""
     try {
       res = Network.GET(gURL)
-      // TODO: fill User/Account profile of database with: given_name (first name), and the family_name (last name),
-      // when a user logs in (in the case these were empty before).
-      // The picture URL could be updated each time (and this replicated on the mobile app as well).
-      LOG.D4("verifyGoogleUser: " + res)
+      LOG.D2("verifyGoogleUser: " + res)
     } catch {
       case e: Exception => LOG.E("verifyId", e)
     }
@@ -138,23 +135,14 @@ class User @Inject()(pds: ProxyDataSource,
   }
 
   def getEncryptedPassword(password: String): String = {
-    val salt = conf.getOptional[String]("password.salt").getOrElse("AnyplaceSalt123")
-    val pepper = conf.getOptional[String]("password.pepper").getOrElse("AnyplacePepper123")
+    val salt = conf.get[String]("password.salt")
+    val pepper = conf.get[String]("password.pepper")
 
     val str = salt + password + pepper
     val encryptedPwd = encryptInternal(str)
     LOG.D5("pwd: '" + str + "'")
     LOG.D5("encrypted: '" + encryptedPwd + "'")
     encryptedPwd
-  }
-
-  def getEncryptedPasswordDefault(password: String): String = {
-    val str = "AnyplaceSalt123" + password + "AnyplacePepper123"
-    encryptInternal(str)
-  }
-
-  def getEncryptedPasswordRaw(password: String): String = {
-    encryptInternal(password)
   }
 
   private def encryptInternal(password: String): String = {

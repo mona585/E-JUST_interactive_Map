@@ -247,21 +247,16 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         }
         var floor_file: File = null
         try {
-          val srcFile = floorplan.ref.path.toFile
-          floor_file = tilerHelper.storeFloorPlanToServer(buid, floorNum, srcFile)
+          floor_file = tilerHelper.storeFloorPlanToServer(buid, floorNum, floorplan.ref.file)
         } catch {
-          case e: Throwable =>
-            LOG.E("Floorplan", "Cannot save floorplan on server: " + e.getMessage)
-            return RESPONSE.BAD("Cannot save floorplan on the server: " + e.getMessage)
+          case e: AnyPlaceException => return RESPONSE.BAD("Cannot save floorplan on the server.")
         }
         val top_left_lat = top_right_lat
         val top_left_lng = bottom_left_lng
         try {
           tilerHelper.tileImage(floor_file, top_left_lat, top_left_lng)
         } catch {
-          case e: Throwable =>
-            LOG.E("Floorplan", "Could not create floorplan tiles: " + e.getMessage)
-            return RESPONSE.BAD("Could not create floorplan tiles on the server: " + e.getMessage)
+          case e: AnyPlaceException => return RESPONSE.BAD("Could not create floorplan tiles on the server.")
         }
         LOG.I("Successfully tiled: " + floor_file.toString)
         return RESPONSE.OK("Successfully updated floorplan.")
@@ -323,21 +318,16 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         }
         var floor_file: File = null
         try {
-          val srcFile = floorplan.ref.path.toFile
-          floor_file = tilerHelper.storeFloorPlanToServer(buid, floorNum, srcFile)
+          floor_file = tilerHelper.storeFloorPlanToServer(buid, floorNum, floorplan.ref.path.toFile)
         } catch {
-          case e: Throwable =>
-            LOG.E("Floorplan", "Cannot save floorplan on server: " + e.getMessage)
-            return RESPONSE.BAD("Cannot save floorplan: " + e.getMessage)
+          case _: AnyPlaceException => return RESPONSE.BAD("Cannot save floorplan.")
         }
         val top_left_lat = top_right_lat
         val top_left_lng = bottom_left_lng
         try {
           tilerHelper.tileImageWithZoom(floor_file, top_left_lat, top_left_lng, zoom)
         } catch {
-          case e: Throwable =>
-            LOG.E("Floorplan", "Cannot create floorplan tiles: " + e.getMessage)
-            return RESPONSE.BAD("Cannot create floorplan tiles: " + e.getMessage)
+          case _: AnyPlaceException => return RESPONSE.BAD("Cannot create floorplan tiles.")
         }
         LOG.I("Successfully tiled: " + floor_file.toString)
 

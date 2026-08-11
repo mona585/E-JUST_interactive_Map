@@ -37,7 +37,7 @@ package controllers
 
 import datasources.SCHEMA
 import play.api.Environment
-import play.api.mvc.{AbstractController, Action, AnyContent, ControllerComponents, Result, RequestHeader}
+import play.api.mvc.{AbstractController, Action, AnyContent, ControllerComponents, Result}
 //import play.Play
 import javax.inject.{Inject, Singleton}
 
@@ -50,15 +50,11 @@ class WebAppController @Inject()(cc: ControllerComponents,
     serveFile(devsDir, file)
   }
 
-  def redirectToArchitect(): Action[AnyContent] = Action {
-    Redirect("/architect/")
-  }
-
   def AddTrailingSlash(): Action[AnyContent] = Action { implicit request =>
     MovedPermanently(request.path + "/")
   }
 
-  def serveArchitect(file: String): Action[AnyContent] = Action { implicit request =>
+  def serveArchitect(file: String): Action[AnyContent] = Action {
     val archiDir = "public/anyplace_architect"
     serveFile(archiDir, file)
   }
@@ -83,89 +79,22 @@ class WebAppController @Inject()(cc: ControllerComponents,
     serveFile(viewerDir, file)
   }
 
-  def serveFile(appDir: String, file_in: String)(implicit request: RequestHeader = null): Result = {
-    val file_str = if (file_in == null || file_in.trim.isEmpty || file_in.trim == "/") "index.html" else file_in.trim
+  def serveFile(appDir: String, file_in: String): Result = {
+    var header = ("", "")
+    var file_str = file_in
+
+    if (file_str == null) {
+      return NotFound("")
+    }
+    if (file_str.trim().isEmpty || file_str.trim() == "index.html") {
+      file_str = "index.html"
+      header = ("Content-Disposition", "inline")
+    }
     val reqFile: String = appDir + "/" + file_str
-    val subPath: String = reqFile.stripPrefix("public/")
-
-    val reqPathSubPath: Option[String] = if (request != null && request.path != null && request.path.nonEmpty) {
-      val rawPath = request.path.stripPrefix("/")
-      val appName = appDir.stripPrefix("public/")
-      Some(s"$appName/$rawPath")
-    } else None
-
-    // 1. Try loading from ClassLoader resource (packaged JAR)
-    val resourceStream = env.classLoader.getResourceAsStream(reqFile)
-    if (resourceStream != null) {
-      try {
-        val bytes = resourceStream.readAllBytes()
-        resourceStream.close()
-        return Ok(bytes).as(getMimeType(file_str))
-      } catch {
-        case _: Exception => // fallback to file system search
-      }
-    }
-
-    // 2. Comprehensive physical disk search
-    val altSubPath = reqPathSubPath.getOrElse(subPath)
-    val searchPaths = List(
-      new java.io.File(env.rootPath, reqFile),
-      new java.io.File(env.rootPath, "public/" + subPath),
-      new java.io.File(env.rootPath, "public/" + altSubPath),
-      new java.io.File(env.rootPath, "../server/public/" + subPath),
-      new java.io.File(env.rootPath, "../server/public/" + altSubPath),
-      new java.io.File(env.rootPath, "../clients/web/" + subPath),
-      new java.io.File(env.rootPath, "../clients/web/" + altSubPath),
-      new java.io.File(env.rootPath, "../../clients/web/" + subPath),
-      new java.io.File(env.rootPath, "../../clients/web/" + altSubPath),
-      new java.io.File(env.rootPath, "../../../clients/web/" + subPath),
-      new java.io.File(env.rootPath, "../../../clients/web/" + altSubPath),
-      new java.io.File(env.rootPath, "../../../../clients/web/" + subPath),
-      new java.io.File(env.rootPath, "../../../../clients/web/" + altSubPath),
-      new java.io.File("clients/web/" + subPath),
-      new java.io.File("clients/web/" + altSubPath),
-      new java.io.File("../clients/web/" + subPath),
-      new java.io.File("../clients/web/" + altSubPath),
-      new java.io.File("server/" + reqFile),
-      new java.io.File("server/public/" + subPath),
-      new java.io.File("server/public/" + altSubPath),
-      new java.io.File(reqFile),
-      new java.io.File("public/" + subPath),
-      new java.io.File("public/" + altSubPath)
-    )
-
-    searchPaths.find(f => f.exists() && f.isFile) match {
-      case Some(foundFile) =>
-        try {
-          val bytes = java.nio.file.Files.readAllBytes(foundFile.toPath)
-          Ok(bytes).as(getMimeType(file_str))
-        } catch {
-          case e: Exception =>
-            utils.LOG.E(s"Error reading file ${foundFile.getAbsolutePath}: ${e.getMessage}")
-            NotFound(s"Error reading file: $file_str")
-        }
-      case None =>
-        utils.LOG.E(s"File NOT found anywhere for reqFile: $reqFile. Searched paths: ${searchPaths.map(_.getAbsolutePath).mkString(", ")}")
-        NotFound(s"File not found: $file_str in $appDir")
-    }
-  }
-
-  private def getMimeType(fileName: String): String = {
-    val ext = if (fileName.contains(".")) fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase else ""
-    ext match {
-      case "html" | "htm" => "text/html; charset=utf-8"
-      case "js"           => "application/javascript; charset=utf-8"
-      case "css"          => "text/css; charset=utf-8"
-      case "json"         => "application/json; charset=utf-8"
-      case "png"          => "image/png"
-      case "jpg" | "jpeg" => "image/jpeg"
-      case "gif"          => "image/gif"
-      case "svg"          => "image/svg+xml"
-      case "ico"          => "image/x-icon"
-      case "woff"         => "font/woff"
-      case "woff2"        => "font/woff2"
-      case "ttf"          => "font/ttf"
-      case _              => "application/octet-stream"
-    }
+    val file = env.classLoader.getResourceAsStream(reqFile)
+    if (file != null)
+      Ok(scala.io.Source.fromInputStream(file, "UTF-8").mkString).as("text/html")
+    else
+      NotFound
   }
 }

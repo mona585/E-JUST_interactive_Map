@@ -8,6 +8,12 @@ consumes:
   - application/json
 produces:
   - application/json
+parameters:
+  - in: body
+    name: Body
+    required: true
+    schema:
+    type: object
 info:
   title: "Anyplace API"
   description: |
@@ -40,29 +46,9 @@ tags:
   - name: "Space:Floorplan"
     description: "Floorplan images and floor tiles"
   - name: "Space:POI"
-    description: |-
-      A Point of Interest (POI) in a floor.
-      The POI type might be:
-              - from a predefined list (e.g., elevator, stair, entrance)
-              - any other custom type (from a string)
-              - or the special `connector` type.
-
-      **Special POI `connector` type:**
-      A **connector** is essentially an edge on the **navigation map**.
-      A **navigation map** contains edges (either connectors or regular POIs), and vertices ([Space:Connection](#/Space%3AConnection)).
-
-      The non-connector POIs **must be leafs**. In simpler words, a non-connector POI can be either the beginning,
-      or the end of a **route**, but never in between. This was a design decision.
-
-      To create a **connector**, one must drag [this](/architect/build/images/edge-connector.png) icon from the architect.
-
+    description: "A Point of Interest (POI) in a floor."
   - name: "Space:Connection"
-    description: |-
-      Allows navigation between POIs.
-      That is the vertice between edges (POIs).
-      It does not contain a location, but instead the two POIs it links.
-      The POIs can be either a `connector` POI or a non-connector POI (regular POI).
-      Regular POIs are always at the beginning or at the end of a calculated route (see [Space:POI](#/Space%3APOI)).
+    description: "A route in a building. It joins two connector POIs."
   - name: "Space:Campus"
     description: "A collection of spaces."
   - name: "Radiomap"
@@ -186,23 +172,6 @@ definitions:
       is_published:
         type: string
         example: "true"
-  SetCoOwners:
-    type: object
-    properties:
-      buid:
-        type: string
-        example: building_abc-1234-abc_567
-      co_owners:
-        type: array
-        items:
-          type: string
-        example: [ userID1, userID2 ]
-  CanAccess:
-    type: object
-    properties:
-      buid:
-        type: string
-        example: building_abc-1234-abc_567
   SpaceDelete:
     type: object
     properties:
@@ -403,7 +372,7 @@ definitions:
     type: object
     properties:
       external:
-          type: string
+          external: string
           example: google
       access_token:
           type: string
@@ -775,3 +744,4 @@ definitions:
       timestampY:
         type: string
         example: 1617117985695
+

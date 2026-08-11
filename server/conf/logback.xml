@@ -4,7 +4,7 @@
   <appender name="FILE" class="ch.qos.logback.core.FileAppender">
      <file>${application.home}/logs/application.log</file>
      <encoder>
-         <pattern>%20.-20logger{20}  | %d{"dd/MM/YY HH:mm:ss"} | %5Level | %message%n%xException{5}</pattern>
+         <pattern>%20.-20logger{20}  | %d{"dd/MM/YY HH:mm:ss"} | %5level | %message%n%xException{5}</pattern>
      </encoder>
    </appender>
 

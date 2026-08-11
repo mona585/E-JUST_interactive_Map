@@ -1,24 +1,22 @@
 import com.typesafe.config.ConfigFactory
 
 val conf = ConfigFactory.parseFile(new File("conf/app.base.conf")).resolve()
-
-val _scalaVersion = conf.getString("scala.version")
-val _appVersion = conf.getString("application.version")
-val _appName= conf.getString("application.name")
-val _maintainer= conf.getString("application.maintainer")
+val appVersion = conf.getString("application.version")
+val appName= conf.getString("application.name")
 
 lazy val root = (project in file("."))
   .enablePlugins(PlayScala, SwaggerPlugin)
   .settings(
-    name := _appName,
-    version := _appVersion,
-    maintainer := _maintainer,
-    scalaVersion := _scalaVersion,
+    name := appName,
+    version := appVersion,
+    maintainer := "anyplace@cs.ucy.ac.cy",
+    scalaVersion := "2.13.6",
     libraryDependencies ++= Seq(
       guice,
       "com.typesafe.play" %% "play-json" % "2.10.0-RC5",
-      "com.typesafe.play" %% "play" % "2.8.13",
-      "org.mongodb.scala" %% "mongo-scala-driver" % "4.4.0",
+      "com.typesafe.play" %% "play" % "2.8.8",
+      "org.mongodb.scala" %% "mongo-scala-driver" % "4.3.0",
+      "com.typesafe.play" %% "play-specs2" % "2.8.8" % Test
     ),
     scalacOptions ++= Seq(
       "-feature",
