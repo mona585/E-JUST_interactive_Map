@@ -191,9 +191,41 @@ This document records the step-by-step execution, evidence, and verification of 
 - **Validation**:
   - `start-anyplace-tiler.sh` execution test: PASSED (Successfully generated `static_tiles/19`, `20`, `21`, `22`, `bounds.txt`, and `tiles_archive.zip`).
 - **Definition of Done result**: PASSED. End-to-end tile generation creates valid tile tree and archive from reference floorplan image without process hangs or path errors.
-- **Commit**: `73ed02a`
+- **Commit**: `d1af442`
 
 ---
+
+## Phase 7 — Recover Android Logger and Navigator
+
+- **Starting state**: Commit `d1af442`. Legacy package names `cy.ac.ucy.cs.anyplace.*`, missing Android SDK build tools, legacy external server defaults (`map.beout.ai`), missing `gradle-wrapper.jar`.
+- **Problems addressed**: R-03, R-04, R-05, R-10, R-14, R-15, R-17 (Android Logger & Navigator recovery, identity rebrand, SDK pinning, default E-JUST server configuration).
+- **Files changed**:
+  - `clients/android-new/logger/build.gradle` (rebranded `applicationId` to `eg.edu.ejust.anyplace.logger`, updated default server URL)
+  - `clients/android-new/navigator/build.gradle` (rebranded `applicationId` to `eg.edu.ejust.anyplace.navigator`, updated default server URL)
+  - `clients/android-new/gradle/wrapper/gradle-wrapper.jar` (generated Gradle 6.5.1 wrapper JAR)
+  - `clients/android-new/gradle/wrapper/gradle-wrapper.properties` (pinned Gradle distribution URL `gradle-6.5.1-all.zip`)
+  - `clients/android-new/local.properties` (configured `sdk.dir=/opt/android-sdk`)
+  - `clients/.env` (updated `SERVER_HOST=anyplace.ejust.edu.eg` and `SERVER_URL=http://anyplace.ejust.edu.eg:443`)
+  - `clients/.env.example` (updated `SERVER_HOST=anyplace.ejust.edu.eg` and `SERVER_URL=http://anyplace.ejust.edu.eg:443`)
+  - `docs/recovery/EXECUTION_LOG.md`
+- **Actions taken**:
+  1. Installed Android SDK Command Line Tools (`commandlinetools-linux-9477386_latest.zip`) into `/opt/android-sdk`.
+  2. Accepted SDK licenses and installed `platforms;android-29` and `build-tools;29.0.2`.
+  3. Provisioned `clients/android-new/local.properties` pointing to `sdk.dir=/opt/android-sdk`.
+  4. Rebranded Android `applicationId` in `logger/build.gradle` and `navigator/build.gradle` to `eg.edu.ejust.anyplace.logger` and `eg.edu.ejust.anyplace.navigator` under Decision D-01 and D-02.
+  5. Configured default API server endpoints to E-JUST infrastructure (`http://anyplace.ejust.edu.eg:443`) under Decision D-06.
+  6. Generated Gradle wrapper 6.5.1 JAR.
+  7. Executed `./gradlew assembleDebug` and `./gradlew assembleRelease`.
+- **Validation**:
+  - `./gradlew assembleDebug`: PASSED (`BUILD SUCCESSFUL in 1m 20s`).
+  - `./gradlew assembleRelease`: PASSED (`BUILD SUCCESSFUL in 1m 11s`).
+  - `aapt dump badging` verification on `logger-debug.apk` & `logger-release-unsigned.apk`: PASSED (`package: name='eg.edu.ejust.anyplace.logger'`).
+  - `aapt dump badging` verification on `navigator-debug.apk` & `navigator-release-unsigned.apk`: PASSED (`package: name='eg.edu.ejust.anyplace.navigator'`).
+- **Definition of Done result**: PASSED. Both Android Logger and Navigator assemble cleanly into valid APKs with E-JUST package identity and default endpoint URLs.
+- **Commit**: `[Phase 7]` (to be committed)
+
+---
+
 
 
 
