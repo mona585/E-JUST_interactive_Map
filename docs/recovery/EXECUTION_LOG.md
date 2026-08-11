@@ -66,6 +66,6 @@ This document records the step-by-step execution, evidence, and verification of 
   - Tiler tools check: all required binaries present and executable (PASSED).
   - Web tools check: `grunt-cli v1.5.0` and `bower 1.8.14` ready (PASSED).
 - **Definition of Done result**: PASSED. Target Linux/Ubuntu toolchain fully pinned, repeatable, and verified with clean backend compile.
-- **Commit**: `[Phase 1]` (to be committed)
+- **Commit**: `1971e3f`
 
 ---
