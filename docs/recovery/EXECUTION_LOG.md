@@ -117,7 +117,7 @@ This document records the step-by-step execution, evidence, and verification of 
   - `/api/version` endpoint test: PASSED (HTTP 200 JSON).
   - `/api/mapping/space/public` endpoint test: PASSED (HTTP 200 JSON).
 - **Definition of Done result**: PASSED. Backend test suite compiles and runs cleanly with green status documenting core API behavior.
-- **Commit**: `[Phase 3]` (to be committed)
+- **Commit**: `ecfbe6b`
 
 ---
 
