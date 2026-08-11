@@ -165,9 +165,36 @@ This document records the step-by-step execution, evidence, and verification of 
   - Empty space payload test: PASSED (`HTTP 200` with `{"spaces":[],"buildings":[]}`).
   - `sbt test`: PASSED (6 total examples, 0 failures, 0 errors).
 - **Definition of Done result**: PASSED. Database baseline initialization script is reproducible and the backend operates cleanly on empty state.
-- **Commit**: `64fe617`
+- **Commit**: `549a01a`
 
 ---
+
+## Phase 6 — Verify and Repair the Floorplan/Tiler Pipeline
+
+- **Starting state**: Commit `549a01a`. `start-anyplace-tiler.sh` failed under Ubuntu 22.04 LTS (R-08) due to `python` missing (only `python3` available), missing `chmod +x` on helper scripts, Python 2 -> 3 `bytes` parsing error in `getImageInfoFromFile2`, uninstalled `zip` system dependency, and slow `advpng -4` zopfli re-compression.
+- **Problems addressed**: R-08 (floorplan/tiler pipeline failures).
+- **Files changed**:
+  - `server/anyplace_tiler/start-anyplace-tiler.sh` (added `python3` detection fallback and executable invocation)
+  - `docker/anyplace/tiler/start-anyplace-tiler.sh` (added `python3` detection fallback and executable invocation)
+  - `server/anyplace_tiler/anyplace-tiler.py` (fixed Python 3 stdout `bytes` decoding and quote stripping in `getImageInfoFromFile2`)
+  - `docker/anyplace/tiler/anyplace-tiler.py` (fixed Python 3 stdout `bytes` decoding and quote stripping in `getImageInfoFromFile2`)
+  - `server/anyplace_tiler/googletilecutter-0.11.sh` (optimized `advpng` compression level from `-4` zopfli to `-2` libdeflate)
+  - `docker/anyplace/tiler/googletilecutter-0.11.sh` (optimized `advpng` compression level from `-4` zopfli to `-2` libdeflate)
+  - `docs/recovery/EXECUTION_LOG.md`
+- **Actions taken**:
+  1. Updated `start-anyplace-tiler.sh` in both server and docker trees to detect `python3` when `python` binary alias is absent.
+  2. Applied `chmod +x` permissions to all tiler `.sh` and `.py` scripts.
+  3. Fixed `getImageInfoFromFile2` in `anyplace-tiler.py` to properly decode subprocess stdout bytes (`dim.decode('utf-8')`) and extract integer dimensions.
+  4. Installed `zip` utility (`apt-get install -y zip`) required by `fix-tile-structure.sh`.
+  5. Updated `googletilecutter-0.11.sh` to use `advpng -2` for fast, reliable tile compression.
+  6. Verified end-to-end tile generation on a test floorplan image across zoom levels 19 to 22.
+- **Validation**:
+  - `start-anyplace-tiler.sh` execution test: PASSED (Successfully generated `static_tiles/19`, `20`, `21`, `22`, `bounds.txt`, and `tiles_archive.zip`).
+- **Definition of Done result**: PASSED. End-to-end tile generation creates valid tile tree and archive from reference floorplan image without process hangs or path errors.
+- **Commit**: `[Phase 6]` (to be committed)
+
+---
+
 
 
 

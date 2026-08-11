@@ -115,14 +115,13 @@ def getImageInfoFromFile(filename):
 
 def getImageInfoFromFile2(filename):
     path = filename
-    dim = subprocess.Popen(["identify","-format","\"%w,%h\"",path], stdout=subprocess.PIPE).communicate()[0]
-    #print(str(dim))
-    imageInfo = str(dim)[0:]
-    print("image info as returned by identify[w,h]: "+ imageInfo)
+    dim = subprocess.Popen(["identify","-format","%w,%h",path], stdout=subprocess.PIPE).communicate()[0]
+    imageInfo = dim.decode('utf-8').strip().strip('"')
+    print("image info as returned by identify[w,h]: " + imageInfo)
     try:
-        (width, height) = [ int(x) for x in re.sub('[\t\r\n"]', '', imageInfo).split(',') ]
-    except:
-        print('getImageInfoFromFile2:: Error while getting image info!')
+        (width, height) = [ int(x) for x in imageInfo.split(',') ]
+    except Exception as e:
+        print('getImageInfoFromFile2:: Error while getting image info: ' + str(e))
         sys.exit(1)
 
     return (width,height)
