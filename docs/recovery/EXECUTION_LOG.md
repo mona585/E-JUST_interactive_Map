@@ -37,6 +37,35 @@ This document records the step-by-step execution, evidence, and verification of 
   - Secret scan across configuration templates verified clean (no literal production keys).
   - `dist/deploy_to_vm.sh` checked for secret enforcement.
 - **Definition of Done result**: PASSED. Exposed values removed from template files, protected environment parameterization enforced, gitignore verified.
-- **Commit**: `e00b496`
+- **Commit**: `172a0b4`
+
+---
+
+## Phase 1 — Pin the Linux/Ubuntu Toolchains
+
+- **Starting state**: Commit `172a0b4`. System running Ubuntu 22.04.5 LTS (Jammy Jellyfish).
+- **Problems addressed**: R-03 (JVM/startup toolchain contract), R-07 (Android library build setup), R-08 (tiler Linux toolchain), R-12 (web build toolchain).
+- **Tool versions pinned**:
+  - **Operating System**: Ubuntu 22.04.5 LTS (x86_64)
+  - **JVM / Java**: OpenJDK 11 (`/usr/lib/jvm/java-11-openjdk-amd64`, OpenJDK 11.0.26)
+  - **sbt**: 1.9.9 (using Scala 2.13.8, Play 2.8.13)
+  - **Node / npm**: Node.js v22.23.2, npm 10.9.8
+  - **Web Build Tools**: `grunt-cli` v1.5.0, `bower` 1.8.14 installed globally
+  - **MongoDB**: `mongod` v6.0.29 bound to `127.0.0.1:27017`
+  - **Tiler Tools**: ImageMagick 6.9.11-60 Q16 (`convert`, `identify`), `advpng` (advancecomp), Python 3.10.12
+- **Actions taken**:
+  1. Ran preflight tool audits for OS, JDK, sbt, Node/npm, MongoDB, and floorplan tiler utilities.
+  2. Verified OpenJDK 11 installation at `/usr/lib/jvm/java-11-openjdk-amd64` for Play 2.8 runtime compatibility.
+  3. Installed global web build dependencies `grunt-cli` and `bower` via npm.
+  4. Executed full backend compilation using `JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 sbt compile` (compiled 69 Scala and 6 Java sources cleanly in 33s).
+  5. Validated MongoDB service binding on `127.0.0.1:27017` (localhost-only, no public port exposure).
+  6. Validated native floorplan tiler binaries (`convert`, `identify`, `advpng`, `python3`).
+- **Validation**:
+  - `sbt compile`: PASSED (0 errors).
+  - Mongo network check: `127.0.0.1:27017` LISTEN only (PASSED).
+  - Tiler tools check: all required binaries present and executable (PASSED).
+  - Web tools check: `grunt-cli v1.5.0` and `bower 1.8.14` ready (PASSED).
+- **Definition of Done result**: PASSED. Target Linux/Ubuntu toolchain fully pinned, repeatable, and verified with clean backend compile.
+- **Commit**: `[Phase 1]` (to be committed)
 
 ---
