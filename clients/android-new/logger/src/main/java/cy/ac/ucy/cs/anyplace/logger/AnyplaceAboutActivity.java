@@ -81,7 +81,7 @@ public class AnyplaceAboutActivity extends Activity {
 		img.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://anyplace.cs.ucy.ac.cy/"));
+				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://anyplace.ejust.edu.eg:443/"));
 				startActivity(browserIntent);
 			}
 		});
@@ -90,7 +90,7 @@ public class AnyplaceAboutActivity extends Activity {
 		img.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://dmsl.cs.ucy.ac.cy/"));
+				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://ejust.edu.eg/"));
 				startActivity(browserIntent);
 			}
 		});
@@ -108,7 +108,7 @@ public class AnyplaceAboutActivity extends Activity {
 		img.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://www.ucy.ac.cy/"));
+				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://ejust.edu.eg/"));
 				startActivity(browserIntent);
 			}
 		});

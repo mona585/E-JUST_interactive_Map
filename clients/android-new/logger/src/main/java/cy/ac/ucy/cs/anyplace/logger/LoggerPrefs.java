@@ -107,7 +107,7 @@ public class LoggerPrefs extends PreferenceActivity implements OnSharedPreferenc
 			@Override
 			public boolean onPreferenceClick(Preference preference) {
 				
-				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://anyplace.cs.ucy.ac.cy/architect/"));
+				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://anyplace.ejust.edu.eg:443/architect/"));
 				startActivity(browserIntent);
 				return true;
 			}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Anyplace Platform - Automated Production Build & Deployment Packager
-# Domain: map.beout.ai
+# Domain: anyplace.ejust.edu.eg
 # ==============================================================================
 
 set -e
@@ -19,7 +19,7 @@ NC='\033[0m' # No Color
 
 echo -e "${CYAN}====================================================${NC}"
 echo -e "${CYAN}   Anyplace Platform Production Build System         ${NC}"
-echo -e "${CYAN}   Target Domain: map.beout.ai                       ${NC}"
+echo -e "${CYAN}   Target Domain: anyplace.ejust.edu.eg               ${NC}"
 echo -e "${CYAN}====================================================${NC}"
 
 # Check for environment configuration or auto-initialize from .env.example
@@ -46,9 +46,9 @@ if [ -f "$ENV_FILE" ]; then
     export $(grep -v '^#' "$ENV_FILE" | xargs)
 else
     echo -e "${YELLOW}[!] Warning: No .env file found. Using default production settings.${NC}"
-    export SERVER_HOST="map.beout.ai"
+    export SERVER_HOST="anyplace.ejust.edu.eg"
     export SERVER_PORT="443"
-    export SERVER_URL="https://map.beout.ai"
+    export SERVER_URL="http://anyplace.ejust.edu.eg:443"
 fi
 
 # Set Java 11 environment

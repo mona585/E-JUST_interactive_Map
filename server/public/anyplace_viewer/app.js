@@ -380,7 +380,7 @@ app.factory('AnyplaceService', ['$rootScope', '$q', function ($rootScope, $q) {
         if (!this.selectedBuilding || !this.selectedBuilding.buid) {
             return "N/A";
         }
-        return "https://anyplace.cs.ucy.ac.cy/viewer/?buid=" + this.selectedBuilding.buid;
+        return window.location.origin + "/viewer/?buid=" + this.selectedBuilding.buid;
     };
 
     anyService.getViewerUrl = function () {
