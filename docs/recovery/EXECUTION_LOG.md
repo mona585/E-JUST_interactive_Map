@@ -37,6 +37,6 @@ This document records the step-by-step execution, evidence, and verification of 
   - Secret scan across configuration templates verified clean (no literal production keys).
   - `dist/deploy_to_vm.sh` checked for secret enforcement.
 - **Definition of Done result**: PASSED. Exposed values removed from template files, protected environment parameterization enforced, gitignore verified.
-- **Commit**: `[Phase 0]` (to be committed)
+- **Commit**: `e00b496`
 
 ---
