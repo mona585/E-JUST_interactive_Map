@@ -191,7 +191,7 @@ This document records the step-by-step execution, evidence, and verification of 
 - **Validation**:
   - `start-anyplace-tiler.sh` execution test: PASSED (Successfully generated `static_tiles/19`, `20`, `21`, `22`, `bounds.txt`, and `tiles_archive.zip`).
 - **Definition of Done result**: PASSED. End-to-end tile generation creates valid tile tree and archive from reference floorplan image without process hangs or path errors.
-- **Commit**: `[Phase 6]` (to be committed)
+- **Commit**: `73ed02a`
 
 ---
 
