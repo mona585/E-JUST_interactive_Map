@@ -93,7 +93,7 @@ This document records the step-by-step execution, evidence, and verification of 
   - MongoDB network binding: Verified `127.0.0.1:27017` LISTEN only (PASSED).
   - Two consecutive clean start/stop cycles completed cleanly without error (PASSED).
 - **Definition of Done result**: PASSED. Backend startup and MongoDB connectivity are reproducible and safe.
-- **Commit**: `[Phase 2]` (to be committed)
+- **Commit**: `279c19c`
 
 ---
 
