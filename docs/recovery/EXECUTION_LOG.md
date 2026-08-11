@@ -140,7 +140,7 @@ This document records the step-by-step execution, evidence, and verification of 
   - `./build --server`: PASSED (Built web assets, generated Swagger spec, created `dist/anyplace-server-production.zip`).
   - Runtime asset HTTP status check: PASSED (All 200 OK).
 - **Definition of Done result**: PASSED. Entry pages, required assets, and Swagger return 200 from a clean artifact.
-- **Commit**: `[Phase 4]` (to be committed)
+- **Commit**: `a0508e2`
 
 ---
 
