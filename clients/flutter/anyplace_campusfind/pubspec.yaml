@@ -44,6 +44,7 @@ dependencies:
   archive: ^4.0.9
   geolocator: ^14.0.3
   flutter_riverpod: ^2.6.1
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:

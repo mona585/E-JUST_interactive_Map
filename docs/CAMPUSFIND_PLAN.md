@@ -631,9 +631,27 @@ Phase 0 (Bug Fixes)     Phase 1 (Foundation)
 | Phase | Status | Notes |
 |---|---|---|
 | 0 | ⏸ Not started | Parallel-ready; fixes in `clients/android/` + `server/` + infra |
-| **1** | ✅ DONE (2026-08-12) | Foundation in `clients/flutter/anyplace_campusfind` |
-| 2 | ⏸ Not started | Blocked on Phase 1 approval |
-| 3–7 | ⏸ Not started | — |
+| 1 | ✅ DONE (2026-08-12) | Foundation in `clients/flutter/anyplace_campusfind` |
+| **2** | ✅ DONE (2026-08-12) | Data layer in `lib/models`, `lib/services`, `lib/utils`, `lib/providers` |
+| 3 | ⏸ Not started | Blocked on Phase 2 approval |
+| 4–7 | ⏸ Not started | — |
+
+**Phase 2 completion record:**
+- Models mirror backend fields exactly (verified against `server/app/models/*.scala` + `datasources/SCHEMA.scala`):
+  - `lib/models/{campus,space,floor,poi,route,position}.dart`
+- `ApiService` extended with typed methods for every public endpoint used:
+  `fetchPublicSpaces`, `fetchCampus`, `fetchFloors`, `fetchPois`, `searchPois`,
+  `fetchNavigationRoute`, `fetchNavigationRouteFromCoords`, `estimatePosition`,
+  `fetchFloorTilesZip`
+- `CacheService` — in-memory dataset + SharedPreferences (campus id, recent waypoints)
+- `BulkLoader` (`lib/providers/bulk_load_provider.dart`) — spaces → floors+POIs per building
+  with `FutureProvider` loading state; note: no public "list campuses" endpoint exists,
+  so bulk load seeds from `space/public` and campus objects are fetched per-cuid
+- `DescriptionParser` — `|`-delimited description parsing (professors, building tags)
+- `CategoryDeriver` — dynamic category discovery (professor/cafeteria/library/lab/other)
+- `TileService` — downloads zip, extracts `static_tiles/` layout, caches to app support
+- `DistanceCalculator` — Haversine + nearest-space
+- Verified: `flutter analyze` 0 issues, 23 tests passing, `flutter build apk --debug` success
 
 **Phase 1 completion record:**
 - `flutter create --org eg.edu.ejust anyplace_campusfind` (Android-only)
