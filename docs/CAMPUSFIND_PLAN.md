@@ -636,7 +636,36 @@ Phase 0 (Bug Fixes)     Phase 1 (Foundation)
 | **3** | ✅ DONE (2026-08-12) | Core screens (campus selection, Home, Map, Search) |
 | **4** | ✅ DONE (2026-08-12) | Detail screens (Building Detail, Professor Profile) |
 | **5** | ✅ DONE (2026-08-12) | Navigation (indoor + outdoor, combined route display) |
-| 6–7 | ⏸ Not started | — |
+| **6** | ✅ DONE (2026-08-12) | Positioning (GPS + Wi-Fi, graceful fallbacks) |
+| **7** | ✅ DONE (2026-08-12) | Polish & error handling (gates, offline, theming, tests, docs) |
+
+**Phase 7 completion record:**
+- Task 7.1 (error handling) — bulk-load loading/error/empty gates with Retry in
+  `MainShell` (`_BulkLoadGate`, `_EmptyDataGate`); campus selector error +
+  Retry; route/position error banners + floorplan-unavailable state; room
+  search now shows a "No rooms match …" message; removed dead
+  `initialLoadProvider` / `initialLoadErrorProvider` state
+- Task 7.2 (offline support) — offline snapshot (`saveOfflineSnapshot` /
+  `loadOfflineSnapshot`) restores spaces/floors/POIs on launch when the live
+  fetch fails, with an `_OfflineBanner` + Retry; `TileService.ensureTiles()`
+  serves previously downloaded floorplan tiles straight from disk (no network
+  call), so floorplans render offline
+- Task 7.3 (UI refinement) — `lib/config/theme.dart`: Material 3 light + dark
+  themes (`ThemeMode.system`) from a single seed with consistent app bar,
+  cards, chips, inputs, nav bar and snack bars; `AnimatedSwitcher` fades
+  between the shell gates and reveals the offline banner
+- Task 7.4 (performance) — bulk fetch already parallelised per building;
+  `TileService.ensureTiles()` avoids re-downloading cached floorplans
+- Task 7.5 (testing) — 62 tests passing (15 new): `test/api_service_test.dart`
+  (8: endpoint parsing, APs-as-JSON, bytes, 5xx/connection error mapping),
+  `test/tile_service_test.dart` (4: extract, cache-hit no re-download, missing
+  cache, broken archive), `test/campus_selection_test.dart` (2: error → Retry
+  → recovery, empty state), room-search no-match widget test; fixed
+  `override_on_non_overriding_member` warning in `cache_service_test.dart`
+- Task 7.6 (documentation) — this plan's Phase 7 section + full app
+  `README.md` (features, setup, dart-defines, offline behaviour, structure)
+- Verified: `flutter analyze` no warnings/errors, `flutter test` 62/62 passed,
+  `flutter build apk --debug` success
 
 **Phase 5 completion record:**
 - `lib/services/outdoor_routing_service.dart` — `OutdoorRoutingService` for the

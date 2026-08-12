@@ -15,6 +15,20 @@ final cacheServiceProvider = Provider<CacheService>((ref) {
   return CacheService();
 });
 
+/// Monotonic counter incremented every time [CacheService] mutates its dataset.
+/// Providers that need to rebuild when cached data changes should watch this
+/// instead of [cacheServiceProvider] (whose identity never changes).
+final StateProvider<int> cacheVersionProvider = StateProvider<int>((ref) => 0);
+
+/// Wires [CacheService.onDataChanged] to bump [cacheVersionProvider].
+/// Call once from MainShell.build().
+void wireCacheNotifications(WidgetRef ref) {
+  final cache = ref.read(cacheServiceProvider);
+  cache.onDataChanged ??= () {
+    ref.read(cacheVersionProvider.notifier).state++;
+  };
+}
+
 /// Provides the floorplan tile downloader/extractor.
 final tileServiceProvider = Provider<TileService>((ref) {
   return TileService(ref.watch(apiServiceProvider));
@@ -23,12 +37,6 @@ final tileServiceProvider = Provider<TileService>((ref) {
 /// Keeps the currently selected campus id (null until the user picks one on
 /// first launch). Persistence is handled by [CacheService].
 final selectedCampusIdProvider = StateProvider<String?>((ref) => null);
-
-/// Whether the app is still fetching the initial bulk dataset on launch.
-final initialLoadProvider = StateProvider<bool>((ref) => false);
-
-/// Holds any error surfaced during the initial bulk load (null = no error).
-final initialLoadErrorProvider = StateProvider<String?>((ref) => null);
 
 /// Currently active bottom-navigation tab (0 Home, 1 Map, 2 Search).
 final shellTabProvider = StateProvider<int>((ref) => 0);

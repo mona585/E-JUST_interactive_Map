@@ -65,7 +65,8 @@ class SearchIndex {
 
 /// Builds the search index whenever the cached dataset changes.
 final searchIndexProvider = Provider<SearchIndex>((ref) {
-  final cache = ref.watch(cacheServiceProvider);
+  ref.watch(cacheVersionProvider);
+  final cache = ref.read(cacheServiceProvider);
   final index = SearchIndex();
   index.rebuild(cache.spaces, {
     for (final s in cache.spaces) s.buid: cache.poisOf(s.buid),

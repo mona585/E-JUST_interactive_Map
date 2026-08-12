@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/theme.dart';
 import '../models/poi.dart';
 import '../models/space.dart';
 import '../providers/providers.dart';
 import '../utils/description_parser.dart';
 import '../utils/map_focus.dart';
 import 'detail_navigation.dart';
-/// Building detail screen: hero placeholder, parsed building info, room
-/// search, floors directory, accessibility/facilities and a Navigate button.
+
 class BuildingDetailScreen extends ConsumerStatefulWidget {
   const BuildingDetailScreen({super.key, required this.space});
 
@@ -44,111 +44,121 @@ class _BuildingDetailScreenState extends ConsumerState<BuildingDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Building'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text('Building Directory',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {},
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.notifications_none, color: AppTheme.textSecondary, size: 22),
+              onPressed: () {},
+            ),
           ),
         ],
       ),
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
-          _Hero(space: space),
+          // Hero image
+          _Hero(space: space, parser: parser),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(space.name,
-                    style: Theme.of(context).textTheme.headlineSmall),
-                if (parser.summary.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    parser.summary,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                // Navigate to building (starts outdoor route).
-                FilledButton.icon(
-                  onPressed: () => navigateToBuildingOnMap(context, ref, space),
-                  icon: const Icon(Icons.directions),
-                  label: const Text('Navigate to Building'),
-                ),
-                const SizedBox(height: 24),
-                Text('Rooms in this building',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
+                // Room search
                 TextField(
                   onChanged: (v) => setState(() => _roomQuery = v),
                   decoration: InputDecoration(
-                    hintText: 'Search rooms inside ${space.name}…',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _roomQuery.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () =>
-                                setState(() => _roomQuery = ''),
-                          ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
+                    hintText: 'Search rooms inside this building...',
+                    prefixIcon: const Icon(Icons.search, size: 22, color: AppTheme.textTertiary),
+                    suffixIcon: _roomQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: () => setState(() => _roomQuery = ''),
+                          )
+                        : null,
                   ),
                 ),
-                if (roomResults.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  for (final poi in roomResults.take(8))
-                    _RoomResultTile(poi: poi, space: space),
-                ],
                 const SizedBox(height: 24),
-                Text('Floors Directory',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
+                // Room results
+                if (roomResults.isNotEmpty) ...[
+                  for (final poi in roomResults.take(5))
+                    _RoomResultTile(poi: poi, space: space),
+                  const SizedBox(height: 16),
+                ] else if (_roomQuery.trim().isNotEmpty) ...[
+                  Text('No rooms match "${_roomQuery.trim()}".',
+                      style: const TextStyle(color: AppTheme.textTertiary, fontSize: 14)),
+                  const SizedBox(height: 16),
+                ],
+                // Floors Directory
+                const Text('Floors Directory',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                const SizedBox(height: 12),
                 if (floors.isEmpty)
-                  Text(
-                    'No floor data available.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  )
+                  const Text('No floor data available.',
+                      style: TextStyle(color: AppTheme.textTertiary, fontSize: 14))
                 else
                   for (final floor in floors)
-                    Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.layers),
-                        title: Text(floor.floorName ??
-                            'Floor ${floor.floorNumber}'),
-                        subtitle: floor.description == null
-                            ? null
-                            : Text(floor.description!,
-                                maxLines: 2, overflow: TextOverflow.ellipsis),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => showBuildingOnMap(
-                          context,
-                          ref,
-                          space,
-                          floor: floor,
-                        ),
-                      ),
-                    ),
+                    _FloorTile(floor: floor, space: space),
+                const SizedBox(height: 24),
+                // Accessibility & Facilities
                 if (parser.hasAccessibilityInfo) ...[
-                  const SizedBox(height: 24),
-                  Text('Accessibility & Facilities',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
+                  const Text('Accessibility & Facilities',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                  const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
                       for (final tag in parser.facilityTags)
-                        Chip(avatar: const Icon(Icons.check, size: 18), label: Text(tag)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppTheme.cardBorder),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.check, size: 16, color: AppTheme.primary),
+                              const SizedBox(width: 6),
+                              Text(tag, style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary)),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                 ],
+                const SizedBox(height: 28),
+                // Navigate button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => navigateToBuildingOnMap(context, ref, space),
+                    icon: const Icon(Icons.navigation, size: 20),
+                    label: Text('Navigate to ${space.name}',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -158,43 +168,70 @@ class _BuildingDetailScreenState extends ConsumerState<BuildingDetailScreen> {
   }
 }
 
-/// Gradient "hero" placeholder — no real building photo exists in the data.
 class _Hero extends StatelessWidget {
-  const _Hero({required this.space});
+  const _Hero({required this.space, required this.parser});
 
   final Space space;
+  final DescriptionParser parser;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: 160,
+      height: 200,
       width: double.infinity,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [scheme.primary, scheme.tertiary],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF37474F), Color(0xFF263238)],
         ),
       ),
       child: Stack(
         children: [
+          // Decorative pattern
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.05),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
           Center(
             child: Icon(Icons.apartment,
-                size: 72, color: scheme.onPrimary.withValues(alpha: 0.5)),
+                size: 80, color: Colors.white.withValues(alpha: 0.15)),
           ),
           Positioned(
-            left: 16,
-            right: 16,
-            bottom: 12,
-            child: Text(
-              space.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(color: scheme.onPrimary),
+            left: 20,
+            right: 20,
+            bottom: 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(space.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800)),
+                if (parser.summary.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(parser.summary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 13)),
+                  ),
+              ],
             ),
           ),
         ],
@@ -203,7 +240,61 @@ class _Hero extends StatelessWidget {
   }
 }
 
-/// A single room-search hit inside the building.
+class _FloorTile extends ConsumerWidget {
+  const _FloorTile({required this.floor, required this.space});
+
+  final dynamic floor;
+  final Space space;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.cardBorder),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => showBuildingOnMap(context, ref, space, floor: floor),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  floor.floorName ?? 'Floor ${floor.floorNumber}',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  floor.description ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14, color: AppTheme.textSecondary),
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppTheme.textTertiary, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _RoomResultTile extends ConsumerWidget {
   const _RoomResultTile({required this.poi, required this.space});
 
@@ -212,15 +303,35 @@ class _RoomResultTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      child: ListTile(
-        dense: true,
-        leading: const Icon(Icons.room),
-        title: Text(poi.name),
-        subtitle: Text('Floor ${poi.floorNumber}'
-            '${poi.floorName != null && poi.floorName != poi.floorNumber ? ' · ${poi.floorName}' : ''}'),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.cardBorder),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          leading: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.room, color: AppTheme.primary, size: 18),
+        ),
+        title: Text(poi.name,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+        subtitle: Text('Floor ${poi.floorNumber}',
+            style: const TextStyle(fontSize: 12, color: AppTheme.textTertiary)),
+        trailing: Icon(Icons.arrow_outward, size: 16, color: AppTheme.primary.withValues(alpha: 0.6)),
         onTap: () => openPoi(context, ref, poi, space: space),
       ),
+    ),
     );
   }
 }

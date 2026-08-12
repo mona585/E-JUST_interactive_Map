@@ -6,16 +6,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../config/constants.dart';
+import '../config/theme.dart';
 import '../models/floor.dart';
 import '../models/poi.dart';
 import '../models/space.dart';
+import '../providers/bulk_load_provider.dart';
 import '../providers/map_view_provider.dart';
+import '../providers/position_provider.dart';
 import '../providers/providers.dart';
 import '../providers/route_provider.dart';
 import '../providers/search_provider.dart';
 import '../services/tile_service.dart';
 import '../utils/category_deriver.dart';
-import '../widgets/filter_chips.dart';
 import '../widgets/local_floorplan_tile_provider.dart';
 import 'building_detail_screen.dart';
 import 'detail_navigation.dart';
@@ -32,6 +34,75 @@ class MapScreen extends ConsumerStatefulWidget {
 class _MapScreenState extends ConsumerState<MapScreen> {
   final MapController _mapController = MapController();
   double _zoom = 16;
+  bool _fittedToCampus = false;
+  bool _centeredOnUser = false;
+  String? _lastSelectedBuid;
+  String? _lastAutoSelectedBuid;
+
+  /// Fits the camera to the campus bounding box once data has loaded.
+  void _fitToCampus(List<Space> spaces) {
+    if (spaces.isEmpty || _fittedToCampus) return;
+    _fittedToCampus = true;
+    final bounds = LatLngBounds.fromPoints([
+      for (final s in spaces) LatLng(s.coordinatesLat, s.coordinatesLon),
+    ]);
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: bounds,
+        padding: const EdgeInsets.all(56),
+        maxZoom: 18,
+      ),
+    );
+  }
+
+  /// Moves the camera to the user's position. Called once on the first GPS
+  /// fix (when nothing is selected) and again via the locate-me button.
+  void _moveToUser(LatLng position) {
+    _mapController.move(position, _zoom < 15 ? 17 : _zoom);
+  }
+
+  /// Pans to a building that was just selected from outside the map (search,
+  /// nearest-location card, etc.).
+  void _focusBuilding(Space space) {
+    _mapController.move(
+      LatLng(space.coordinatesLat, space.coordinatesLon),
+      _zoom < 16 ? 16 : _zoom,
+    );
+  }
+
+  /// Returns the nearest building within [maxDistanceMeters], or null.
+  static Space? _nearestBuildingWithin(
+    LatLng userPosition,
+    List<Space> spaces,
+    double maxDistanceMeters,
+  ) {
+    final distance = const Distance();
+    Space? nearest;
+    double nearestDist = double.infinity;
+    for (final space in spaces) {
+      final d = distance.as(
+        LengthUnit.Meter,
+        userPosition,
+        LatLng(space.coordinatesLat, space.coordinatesLon),
+      );
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = space;
+      }
+    }
+    if (nearest != null && nearestDist <= maxDistanceMeters) return nearest;
+    return null;
+  }
+
+  /// Global center until GPS fix arrives.
+  LatLng _initialMapCenter(List<Space> spaces) {
+    return const LatLng(30.0, 31.0);
+  }
+
+  /// Global zoom until data/GPS arrives.
+  double _initialMapZoom(List<Space> spaces) {
+    return 3;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,10 +110,62 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final mapState = ref.watch(mapViewStateProvider);
     final index = ref.watch(searchIndexProvider);
     final route = ref.watch(routeStateProvider);
+    final position = ref.watch(positionStateProvider);
+    final bulkLoad = ref.watch(bulkLoadProvider);
 
     final spaces = cache.spaces;
     final selectedFloor = mapState.selectedFloor;
     final poiCategory = mapState.poiCategory;
+
+    if (bulkLoad.hasValue &&
+        !bulkLoad.isLoading &&
+        spaces.isNotEmpty &&
+        !_fittedToCampus &&
+        position.gps == null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _fitToCampus(spaces),
+      );
+    }
+
+    // On the first GPS fix, pan to the user so the map opens at their
+    // location instead of a fixed point.
+    final userFix = position.gps;
+    if (userFix != null &&
+        !_centeredOnUser &&
+        mapState.selectedSpace == null &&
+        !route.isActive) {
+      _centeredOnUser = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _moveToUser(userFix);
+      });
+    }
+
+    // Auto-detect building proximity: when GPS is within 50m of a known
+    // building and no building is currently selected, auto-select it.
+    if (userFix != null &&
+        spaces.isNotEmpty &&
+        mapState.selectedSpace == null &&
+        !route.isActive) {
+      final nearest = _nearestBuildingWithin(userFix, spaces, 50);
+      if (nearest != null && nearest.buid != _lastAutoSelectedBuid) {
+        _lastAutoSelectedBuid = nearest.buid;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref.read(mapViewStateProvider.notifier).selectSpace(nearest);
+          }
+        });
+      }
+    }
+
+    // Pan to a building that was just selected from outside the map.
+    final selectedSpace = mapState.selectedSpace;
+    if (selectedSpace != null &&
+        selectedSpace.buid != _lastSelectedBuid) {
+      _lastSelectedBuid = selectedSpace.buid;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusBuilding(selectedSpace);
+      });
+    }
 
     // Indoor/outdoor switching (task 3.7): POIs and floorplan only make
     // sense when a building+floor is selected AND the user is zoomed in to
@@ -66,17 +189,39 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(mapState.selectedSpace?.name ?? 'University Map'),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppTheme.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.add_location_alt, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Text(mapState.selectedSpace?.name ?? 'University Map',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+          ],
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {},
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.notifications_none, color: AppTheme.textSecondary, size: 22),
+              onPressed: () {},
+            ),
           ),
         ],
       ),
       body: Column(
         children: [
-          FilterChips(
+          _MapFilterChips(
             categories: categories,
             selected: poiCategory,
             onSelected: (c) =>
@@ -86,52 +231,73 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             const LinearProgressIndicator(minHeight: 2)
           else if (route.error != null)
             _RouteNotice(text: 'Route unavailable: ${route.error}'),
+          if (position.error != null && mapState.selectedSpace == null)
+            _RouteNotice(text: position.error!),
           Expanded(
-            child: FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: const LatLng(30.8564, 29.5945),
-                initialZoom: 16,
-                minZoom: 14,
-                maxZoom: 22,
-                onPositionChanged: (camera, hasGesture) {
-                  final newZoom = camera.zoom;
-                  if ((newZoom - _zoom).abs() > 0.01) {
-                    setState(() => _zoom = newZoom);
-                  }
-                },
-              ),
+            child: Stack(
               children: [
-                TileLayer(
-                  urlTemplate: AppConstants.outdoorTilesUrl,
-                  userAgentPackageName: 'eg.edu.ejust.anyplace_campusfind',
-                ),
-                if (indoorMode)
-                  _FloorplanOverlay(
-                    floor: selectedFloor,
-                    tileService: ref.read(tileServiceProvider),
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: _initialMapCenter(spaces),
+                    initialZoom: _initialMapZoom(spaces),
+                    minZoom: 3,
+                    maxZoom: 22,
+                    onPositionChanged: (camera, hasGesture) {
+                      final newZoom = camera.zoom;
+                      if ((newZoom - _zoom).abs() > 0.01) {
+                        setState(() => _zoom = newZoom);
+                      }
+                    },
                   ),
-                if (pois.isNotEmpty)
-                  MarkerLayer(
-                    markers: [
-                      for (final poi in pois)
-                        Marker(
-                          point: LatLng(poi.coordinatesLat, poi.coordinatesLon),
-                          width: 40,
-                          height: 40,
-                          child: _PoiMarker(poi: poi),
-                        ),
-                    ],
-                  ),
-                _BuildingMarkers(
-                  spaces: spaces,
-                  selectedBuid: mapState.selectedSpace?.buid,
-                  zoom: _zoom,
+                  children: [
+                    TileLayer(
+                      urlTemplate: AppConstants.outdoorTilesUrl,
+                      userAgentPackageName: 'eg.edu.ejust.anyplace_campusfind',
+                    ),
+                    if (indoorMode)
+                      _FloorplanOverlay(
+                        floor: selectedFloor,
+                        tileService: ref.read(tileServiceProvider),
+                      ),
+                    if (pois.isNotEmpty)
+                      MarkerLayer(
+                        markers: [
+                          for (final poi in pois)
+                            Marker(
+                              point: LatLng(
+                                  poi.coordinatesLat, poi.coordinatesLon),
+                              width: 40,
+                              height: 40,
+                              child: _PoiMarker(poi: poi),
+                            ),
+                        ],
+                      ),
+                    _BuildingMarkers(
+                      spaces: spaces,
+                      selectedBuid: mapState.selectedSpace?.buid,
+                      zoom: _zoom,
+                    ),
+                    if (route.isActive)
+                      _RouteOverlay(
+                        route: route,
+                        currentFloorNumber: selectedFloor?.floorNumber,
+                      ),
+                    if (position.position != null)
+                      _UserPositionMarker(position: position.position!),
+                  ],
                 ),
-                if (route.isActive)
-                  _RouteOverlay(
-                    route: route,
-                    currentFloorNumber: selectedFloor?.floorNumber,
+                if (position.position != null &&
+                    mapState.selectedSpace == null &&
+                    !route.isActive)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: _NearestLocationCard(
+                      userPosition: position.position!,
+                      spaces: spaces,
+                    ),
                   ),
               ],
             ),
@@ -145,8 +311,22 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               floors: cache.floorsOf(mapState.selectedSpace!.buid),
               selectedFloor: selectedFloor,
             ),
-      floatingActionButton: mapState.selectedSpace != null || route.isActive
-          ? FloatingActionButton.small(
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (position.gps != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: FloatingActionButton.small(
+                onPressed: () => _moveToUser(position.gps!),
+                tooltip: 'Center on my location',
+                heroTag: 'locate-me',
+                child: const Icon(Icons.my_location),
+              ),
+            ),
+          if (mapState.selectedSpace != null || route.isActive)
+            FloatingActionButton.small(
               onPressed: () {
                 if (route.isActive) {
                   ref.read(routeStateProvider.notifier).clearRoute();
@@ -157,9 +337,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                 }
               },
               tooltip: route.isActive ? 'Clear route' : 'Clear selection',
+              heroTag: 'clear-action',
               child: Icon(route.isActive ? Icons.close : Icons.close),
-            )
-          : null,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -331,8 +513,8 @@ class _RouteOverlay extends StatelessWidget {
   final RouteState route;
   final String? currentFloorNumber;
 
-  static const Color _outdoorColor = Colors.blue;
-  static const Color _indoorColor = Colors.red;
+  static const Color _outdoorColor = Color(0xFF1976D2);
+  static const Color _indoorColor = Color(0xFFD32F2F);
 
   @override
   Widget build(BuildContext context) {
@@ -392,7 +574,7 @@ class _FloorplanOverlayState extends ConsumerState<_FloorplanOverlay> {
 
   Future<Object?> _ensureTiles() async {
     try {
-      await widget.tileService.downloadAndExtract(widget.floor);
+      await widget.tileService.ensureTiles(widget.floor);
       return null;
     } catch (e) {
       return e;
@@ -454,6 +636,7 @@ class _BuildingBottomSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final hasFloors = floors.isNotEmpty;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -481,29 +664,259 @@ class _BuildingBottomSheet extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Text('Floors', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 4),
-            SizedBox(
-              height: 40,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final floor in floors)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(floor.floorName ??
-                            'Floor ${floor.floorNumber}'),
-                        selected: selectedFloor?.fuid == floor.fuid,
-                        onSelected: (_) => ref
-                            .read(mapViewStateProvider.notifier)
-                            .selectFloor(floor),
+            if (hasFloors) ...[
+              Text('Floors', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: 40,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final floor in floors)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(floor.floorName ??
+                              'Floor ${floor.floorNumber}'),
+                          selected: selectedFloor?.fuid == floor.fuid,
+                          onSelected: (_) => ref
+                              .read(mapViewStateProvider.notifier)
+                              .selectFloor(floor),
+                        ),
                       ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: scheme.outline),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'No floor data for this building. Showing GPS position.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.outline,
+                          ),
                     ),
+                  ),
                 ],
               ),
-            ),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UserPositionMarker extends StatelessWidget {
+  const _UserPositionMarker({required this.position});
+
+  final LatLng position;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return MarkerLayer(
+      markers: [
+        Marker(
+          point: position,
+          width: 44,
+          height: 44,
+          child: Container(
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+              border: Border.all(color: scheme.primary, width: 2),
+            ),
+            alignment: Alignment.center,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NearestLocationCard extends ConsumerWidget {
+  const _NearestLocationCard({
+    required this.userPosition,
+    required this.spaces,
+  });
+
+  final LatLng userPosition;
+  final List<Space> spaces;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    Space? nearest;
+    double nearestDistance = double.infinity;
+    for (final space in spaces) {
+      final distance = const Distance().as(
+        LengthUnit.Meter,
+        userPosition,
+        LatLng(space.coordinatesLat, space.coordinatesLon),
+      );
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = space;
+      }
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.cardBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Nearest Location',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+            const SizedBox(height: 4),
+            Text(
+              nearest != null
+                  ? 'You are currently near ${nearest.name}'
+                  : 'Your position',
+              style: const TextStyle(fontSize: 14, color: AppTheme.textTertiary),
+            ),
+            if (nearest != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.cardBorder),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.apartment, color: AppTheme.primary, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(nearest.name,
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppTheme.textPrimary)),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Building · ${nearestDistance.toStringAsFixed(0)}m',
+                            style: const TextStyle(fontSize: 13, color: AppTheme.textTertiary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text('${nearestDistance.toStringAsFixed(0)}m',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppTheme.primary)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapFilterChips extends StatelessWidget {
+  const _MapFilterChips({
+    required this.categories,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<EntityCategory> categories;
+  final EntityCategory? selected;
+  final ValueChanged<EntityCategory?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        children: [
+          _MapChip(
+            label: 'All',
+            selected: selected == null,
+            onTap: () => onSelected(null),
+          ),
+          for (final c in categories)
+            _MapChip(
+              label: c.label,
+              selected: selected == c,
+              onTap: () => onSelected(selected == c ? null : c),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MapChip extends StatelessWidget {
+  const _MapChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.primary : AppTheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? AppTheme.primary : AppTheme.cardBorder,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : AppTheme.textPrimary,
+            ),
+          ),
         ),
       ),
     );

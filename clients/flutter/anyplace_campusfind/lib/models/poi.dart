@@ -1,3 +1,5 @@
+import '../utils/parsing.dart';
+
 /// POI (point of interest) as returned by `MapPoiController`.
 class Poi {
   const Poi({
@@ -37,8 +39,8 @@ class Poi {
       puid: json['puid'] as String? ?? '',
       buid: json['buid'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      coordinatesLat: _parseDouble(json['coordinates_lat']),
-      coordinatesLon: _parseDouble(json['coordinates_lon']),
+      coordinatesLat: parseDouble(json['coordinates_lat']),
+      coordinatesLon: parseDouble(json['coordinates_lon']),
       floorNumber: json['floor_number'] as String? ?? '',
       description: json['description'] as String?,
       floorName: json['floor_name'] as String?,
@@ -49,11 +51,6 @@ class Poi {
       isBuildingEntrance: json['is_building_entrance'] as String?,
       isPublished: json['is_published'] as String?,
     );
-  }
-
-  static double _parseDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
   bool get isEntrance => isBuildingEntrance == 'true';

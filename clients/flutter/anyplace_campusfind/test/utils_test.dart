@@ -38,7 +38,7 @@ void main() {
   });
 
   group('CategoryDeriver', () {
-    Poi poi(String name, [String? description]) => Poi(
+    Poi poi(String name, [String? description, String? poisType]) => Poi(
           puid: 'p',
           buid: 'b',
           name: name,
@@ -46,6 +46,7 @@ void main() {
           coordinatesLon: 0,
           floorNumber: '0',
           description: description,
+          poisType: poisType,
         );
 
     test('derives categories from names and descriptions', () {
@@ -63,6 +64,37 @@ void main() {
       );
     });
 
+    test('derives categories from architect pois_type field', () {
+      expect(CategoryDeriver.derivePoi(poi('408', null, 'Room')),
+          EntityCategory.room);
+      expect(CategoryDeriver.derivePoi(poi('308', null, 'Office')),
+          EntityCategory.office);
+      expect(CategoryDeriver.derivePoi(poi('Lift 1', null, 'Elevator')),
+          EntityCategory.elevator);
+      expect(CategoryDeriver.derivePoi(poi('Stairwell A', null, 'Stair')),
+          EntityCategory.stairs);
+      expect(CategoryDeriver.derivePoi(poi('WC 1', null, 'Toilets')),
+          EntityCategory.toilets);
+      expect(CategoryDeriver.derivePoi(poi('Main Door', null, 'Entrance')),
+          EntityCategory.entrance);
+      expect(CategoryDeriver.derivePoi(poi('LIB Central', null, 'Library')),
+          EntityCategory.library);
+      expect(CategoryDeriver.derivePoi(poi('Chem Lab', null, 'LAB')),
+          EntityCategory.lab);
+      expect(CategoryDeriver.derivePoi(poi('Kitchen', null, 'Kitchen')),
+          EntityCategory.cafeteria);
+      expect(CategoryDeriver.derivePoi(poi('Kiosk', null, 'Mini Market')),
+          EntityCategory.cafeteria);
+      // Professor titles beat the generic Office type.
+      expect(
+        CategoryDeriver.derivePoi(poi('Dr. Ahmed', null, 'Office')),
+        EntityCategory.professor,
+      );
+      // Unknown architect types fall back to keyword/Other.
+      expect(CategoryDeriver.derivePoi(poi('414', null, 'None')),
+          EntityCategory.other);
+    });
+
     test('discovers distinct categories in canonical order', () {
       final categories = CategoryDeriver.discoverCategories([
         poi('Prof. Ahmed'),
@@ -72,9 +104,24 @@ void main() {
       ]);
       expect(categories, [
         EntityCategory.professor,
-        EntityCategory.cafeteria,
         EntityCategory.library,
+        EntityCategory.cafeteria,
         EntityCategory.other,
+      ]);
+    });
+
+    test('discovers architect types in canonical enum order', () {
+      final categories = CategoryDeriver.discoverCategories([
+        poi('408', null, 'Room'),
+        poi('Lift 1', null, 'Elevator'),
+        poi('Wedding Hall', null, 'Cafeteria'),
+        poi('Main Door', null, 'Entrance'),
+      ]);
+      expect(categories, [
+        EntityCategory.room,
+        EntityCategory.elevator,
+        EntityCategory.entrance,
+        EntityCategory.cafeteria,
       ]);
     });
   });

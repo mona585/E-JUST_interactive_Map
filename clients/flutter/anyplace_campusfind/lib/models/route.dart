@@ -1,3 +1,5 @@
+import '../utils/parsing.dart';
+
 /// A single point along a navigation route, as returned by
 /// `NavigationController`. Field names mirror `NavResultPoint.toJson()`.
 class RoutePoint {
@@ -19,18 +21,13 @@ class RoutePoint {
 
   factory RoutePoint.fromJson(Map<String, dynamic> json) {
     return RoutePoint(
-      lat: _parseDouble(json['lat']),
-      lon: _parseDouble(json['lon']),
+      lat: parseDouble(json['lat']),
+      lon: parseDouble(json['lon']),
       puid: json['puid'] as String? ?? '',
       buid: json['buid'] as String? ?? '',
       floorNumber: json['floor_number'] as String? ?? '',
       poisType: json['pois_type'] as String?,
     );
-  }
-
-  static double _parseDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
   Map<String, dynamic> toJson() => {

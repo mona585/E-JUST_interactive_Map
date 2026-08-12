@@ -33,6 +33,16 @@ class TileService {
     return null;
   }
 
+  /// Returns the extracted tiles directory for a floor, downloading and
+  /// extracting it on first use. Previously downloaded floors are served
+  /// straight from disk (Phase 7.4 tile caching) so the floorplan still
+  /// renders offline (Phase 7.2).
+  Future<Directory> ensureTiles(Floor floor) async {
+    final existing = await tileDirFor(floor);
+    if (existing != null) return existing;
+    return downloadAndExtract(floor);
+  }
+
   /// Downloads the tiles zip for a floor and extracts it to the cache,
   /// returning the extracted `static_tiles` directory.
   Future<Directory> downloadAndExtract(Floor floor) async {

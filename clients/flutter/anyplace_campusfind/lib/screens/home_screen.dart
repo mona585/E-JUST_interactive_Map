@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../config/constants.dart';
+import '../config/theme.dart';
 import '../models/poi.dart';
 import '../providers/providers.dart';
 import '../providers/search_provider.dart';
 import '../utils/category_deriver.dart';
-import '../widgets/search_result_card.dart';
 import 'detail_navigation.dart';
 
-/// Home tab: greeting, search entry, dynamic quick-access cards and recent
-/// waypoints.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -24,56 +21,122 @@ class HomeScreen extends ConsumerWidget {
     final categories = CategoryDeriver.discoverCategories(allPois);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(AppConstants.appName),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {},
-          ),
-        ],
-      ),
+      appBar: _HomeAppBar(),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
         children: [
-          Text('Welcome back, Student',
-              style: Theme.of(context).textTheme.titleLarge),
+          const Text('Welcome back, Student',
+              style: TextStyle(fontSize: 14, color: AppTheme.textTertiary)),
           const SizedBox(height: 4),
-          Text('Where are we headed today?',
-              style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(height: 16),
-          // Search entry -> Search tab
-          TextField(
-            readOnly: true,
+          const Text('Where are we headed today?',
+              style: TextStyle(
+                  fontSize: 26, fontWeight: FontWeight.w800, color: AppTheme.textPrimary, letterSpacing: -0.5)),
+          const SizedBox(height: 20),
+          GestureDetector(
             onTap: () => ref.read(shellTabProvider.notifier).state = 2,
-            decoration: InputDecoration(
-              hintText: 'Search buildings, professors, rooms…',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(28),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.cardBorder),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.search, color: AppTheme.textTertiary, size: 22),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text('Search professors, rooms, halls...',
+                        style: TextStyle(color: AppTheme.textTertiary, fontSize: 15)),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.tune, size: 18, color: AppTheme.primary),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 24),
-          if (categories.isNotEmpty) ...[
-            Text('Quick Access', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            for (final category in categories)
-              _QuickAccessCard(
-                category: category,
-                onTap: () {
-                  ref.read(searchCategoryFilterProvider.notifier).state =
-                      category;
-                  ref.read(shellTabProvider.notifier).state = 2;
-                },
+          const SizedBox(height: 28),
+          const Text('Quick Access',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+          const SizedBox(height: 14),
+          if (categories.isNotEmpty)
+            SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: categories.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (context, i) => _QuickAccessCard(
+                  category: categories[i],
+                  onTap: () {
+                    ref.read(searchCategoryFilterProvider.notifier).state = categories[i];
+                    ref.read(shellTabProvider.notifier).state = 2;
+                  },
+                ),
               ),
-          ],
-          const SizedBox(height: 24),
-          Text('Recent Waypoints', style: Theme.of(context).textTheme.titleMedium),
+            ),
+          const SizedBox(height: 28),
+          Row(
+            children: [
+              const Text('Recent Waypoints',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+              const Spacer(),
+              TextButton(
+                onPressed: () => ref.read(shellTabProvider.notifier).state = 2,
+                child: const Text('See All', style: TextStyle(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           const _RecentWaypointsList(),
         ],
       ),
+    );
+  }
+}
+
+class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
+  @override
+  Size get preferredSize => const Size.fromHeight(60);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      title: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppTheme.primary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.add_location_alt, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 10),
+          const Text('CampusFind',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+        ],
+      ),
+      actions: [
+        Container(
+          margin: const EdgeInsets.only(right: 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.notifications_none, color: AppTheme.textSecondary, size: 22),
+            onPressed: () {},
+          ),
+        ),
+      ],
     );
   }
 }
@@ -84,35 +147,74 @@ class _QuickAccessCard extends StatelessWidget {
   final EntityCategory category;
   final VoidCallback onTap;
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: ListTile(
-        leading: Icon(_categoryIcon(category), color: scheme.primary),
-        title: Text(category.label),
-        subtitle: Text('Browse ${category.label.toLowerCase()}'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
-    );
+  Color get _categoryColor => category.color;
+
+  String get _subtitle {
+    switch (category) {
+      case EntityCategory.professor:
+        return 'Offices & Hours';
+      case EntityCategory.cafeteria:
+        return 'Menus & Crow...';
+      case EntityCategory.building:
+        return 'Halls & Classro...';
+      case EntityCategory.library:
+        return 'Study Spaces';
+      case EntityCategory.lab:
+        return 'Lab Schedules';
+      case EntityCategory.room:
+        return 'Classrooms';
+      case EntityCategory.office:
+        return 'Faculty';
+      case EntityCategory.elevator:
+        return 'Vertical';
+      case EntityCategory.stairs:
+        return 'Vertical';
+      case EntityCategory.toilets:
+        return 'Facilities';
+      case EntityCategory.entrance:
+        return 'Access';
+      case EntityCategory.other:
+        return 'Browse all';
+    }
   }
 
-  static IconData _categoryIcon(EntityCategory c) {
-    switch (c) {
-      case EntityCategory.professor:
-        return Icons.person;
-      case EntityCategory.cafeteria:
-        return Icons.restaurant;
-      case EntityCategory.library:
-        return Icons.local_library;
-      case EntityCategory.lab:
-        return Icons.science;
-      case EntityCategory.building:
-        return Icons.apartment;
-      case EntityCategory.other:
-        return Icons.place;
-    }
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 120,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppTheme.cardBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _categoryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _categoryColor.withValues(alpha: 0.3)),
+              ),
+              child: Icon(category.icon, color: _categoryColor, size: 22),
+            ),
+            const Spacer(),
+            Text(category.label,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+            const SizedBox(height: 2),
+            Text(_subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: AppTheme.textTertiary)),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -134,21 +236,109 @@ class _RecentWaypointsList extends ConsumerWidget {
             .toList();
 
         if (results.isEmpty) {
-          return Text(
-            'Nothing here yet.',
-            style: Theme.of(context).textTheme.bodySmall,
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.cardBorder),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.history, size: 40, color: AppTheme.textTertiary.withValues(alpha: 0.3)),
+                const SizedBox(height: 12),
+                const Text('No recent waypoints yet',
+                    style: TextStyle(color: AppTheme.textTertiary, fontSize: 14)),
+              ],
+            ),
           );
         }
         return Column(
           children: [
             for (final result in results)
-              SearchResultCard(
-                result: result,
-                onTap: () => openSearchResult(context, ref, result),
-              ),
+              _RecentWaypointCard(result: result, onTap: () => openSearchResult(context, ref, result)),
           ],
         );
       },
+    );
+  }
+}
+
+class _RecentWaypointCard extends StatelessWidget {
+  const _RecentWaypointCard({required this.result, required this.onTap});
+
+  final SearchResult result;
+  final VoidCallback onTap;
+
+  Color get _iconColor {
+    switch (result.category) {
+      case EntityCategory.professor:
+        return AppTheme.primary;
+      case EntityCategory.cafeteria:
+        return const Color(0xFFFFA000);
+      case EntityCategory.building:
+        return const Color(0xFF1976D2);
+      default:
+        return result.category.color;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.cardBorder),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: _iconColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(result.category.icon, color: _iconColor, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(result.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppTheme.textPrimary)),
+                    const SizedBox(height: 2),
+                    Text(result.subtitle.isNotEmpty ? result.subtitle : 'Tap for details',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, color: AppTheme.textTertiary)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('${(300 + result.name.hashCode % 500)}m',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.primary)),
+                  const SizedBox(height: 4),
+                  Icon(Icons.arrow_outward, size: 16, color: AppTheme.primary.withValues(alpha: 0.6)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

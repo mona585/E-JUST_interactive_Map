@@ -22,10 +22,25 @@ class AppConstants {
   /// The backend has no public "list campuses" endpoint, so campuses are
   /// enumerated here. Override at build time:
   ///   flutter run --dart-define=CAMPUS_IDS=cuid_a,cuid_b
+  /// When empty, [CampusLoader] falls back to deriving a single default
+  /// campus from all published buildings (`space/public`) so a stock build
+  /// is usable out of the box (see [defaultCampusName]).
   static const String _campusIdsEnv =
       String.fromEnvironment('CAMPUS_IDS');
 
   static final List<String> configuredCampusIds = _parseCampusIds(_campusIdsEnv);
+
+  /// Name of the auto-derived default campus shown when no [CAMPUS_IDS]
+  /// were provided at build time. Override with `--dart-define=CAMPUS_NAME=...`.
+  static const String defaultCampusName = String.fromEnvironment(
+    'CAMPUS_NAME',
+    defaultValue: 'E-JUST Campus',
+  );
+
+  /// Synthetic cuid used to persist the auto-derived default campus locally.
+  /// It is only used to remember the first-launch selection, never sent to the
+  /// backend as a real campus id.
+  static const String defaultCampusCuid = 'ejust_campus';
 
   static List<String> _parseCampusIds(String raw) {
     if (raw.isEmpty) return const [];

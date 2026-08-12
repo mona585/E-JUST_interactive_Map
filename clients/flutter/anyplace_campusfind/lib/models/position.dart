@@ -1,3 +1,5 @@
+import '../utils/parsing.dart';
+
 /// Result of `POST /api/position/estimate` — estimated user coordinates.
 class PositionEstimate {
   const PositionEstimate({required this.lat, required this.long});
@@ -7,14 +9,9 @@ class PositionEstimate {
 
   factory PositionEstimate.fromJson(Map<String, dynamic> json) {
     return PositionEstimate(
-      lat: _parseDouble(json['lat']),
-      long: _parseDouble(json['long']),
+      lat: parseDouble(json['lat']),
+      long: parseDouble(json['long']),
     );
-  }
-
-  static double _parseDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
   /// True when the backend returned no usable fix (`"0 0"`).

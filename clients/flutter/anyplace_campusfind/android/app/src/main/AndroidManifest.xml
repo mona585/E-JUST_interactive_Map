@@ -36,6 +36,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Use the Skia renderer instead of Impeller. On low-end Android
+             devices with weak OpenGLES/MediaTek drivers (e.g. the CPH2185 used
+             during development) Impeller performs runtime shader compilation
+             that can stall the first frame long enough for an ANR. Skia is
+             precompiled and gives predictable startup on these devices. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

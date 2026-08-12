@@ -26,6 +26,10 @@ class OutdoorRoutingService {
 
   final http.Client _client;
 
+  void close() {
+    _client.close();
+  }
+
   /// OSRM demo base URL. No API key required.
   static const String baseUrl = 'https://router.project-osrm.org';
 

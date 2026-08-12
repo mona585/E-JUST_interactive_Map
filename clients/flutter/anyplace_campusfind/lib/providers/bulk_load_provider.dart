@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/constants.dart';
 import '../models/campus.dart';
 import '../models/space.dart';
 import '../services/api_service.dart';
@@ -14,44 +15,115 @@ class BulkLoadResult {
     required this.campuses,
     required this.spaces,
     this.error,
+    this.fromOffline = false,
   });
 
   final List<Campus> campuses;
   final List<Space> spaces;
   final Object? error;
+
+  /// True when the dataset was restored from the local offline snapshot
+  /// because the live fetch failed.
+  final bool fromOffline;
 }
 
 /// Fetches the full read dataset on launch:
-///   campuses (campus/get is per-cuid, so we use space/public for buildings)
-///   spaces/buildings
+///   campuses + spaces/buildings
 ///   floors + POIs per building
 ///
-/// Because `campus/get` requires a known `cuid` (there is no public
-/// "list campuses" endpoint), the bulk load seeds the cache with all
-/// published buildings from `/api/mapping/space/public`. Campus objects are
-/// only fetchable once a `cuid` is known (campus selection flow).
+/// When `CAMPUS_IDS` are configured at build time the dataset is scoped to
+/// those campuses via `/api/mapping/campus/get` (each response carries its own
+/// `spaces` list). This is required for public Anyplace servers whose
+/// `/api/mapping/space/public` returns buildings from every campus globally
+/// (e.g. a UCY deployment with thousands of buildings) — bulk-loading floors
+/// and POIs for all of them would be impractical.
+///
+/// Without configured cuids the loader falls back to all published buildings
+/// from `/api/mapping/space/public` so a zero-config build stays usable.
 class BulkLoader {
   BulkLoader(this._api, this._cache);
 
   final ApiService _api;
   final CacheService _cache;
 
+  /// Number of buildings fetched concurrently. Bounded so a campus with many
+  /// buildings does not overwhelm the backend or exhaust sockets.
+  static const int _concurrency = 6;
+
+  /// Returns the campuses (empty when none configured) and the buildings that
+  /// belong to them. When [AppConstants.configuredCampusIds] is non-empty the
+  /// buildings come from `campus/get` responses; otherwise from `space/public`.
+  Future<(List<Campus>, List<Space>)> _loadScopedDataset() async {
+    final cuids = AppConstants.configuredCampusIds;
+    if (cuids.isEmpty) {
+      final spaces = await _api.fetchPublicSpaces();
+      return (const <Campus>[], spaces);
+    }
+
+    final campuses = <Campus>[];
+    final byBuid = <String, Space>{};
+    for (final cuid in cuids) {
+      try {
+        final campus = await _api.fetchCampus(cuid);
+        campuses.add(campus);
+        for (final space in campus.spaces) {
+          byBuid[space.buid] = space;
+        }
+      } on ApiException {
+        // One bad cuid must not block data from the others.
+        continue;
+      }
+    }
+    return (campuses, byBuid.values.toList());
+  }
+
+  /// Fetches floors + POIs for every building with [._concurrency] parallel
+  /// workers and stores them in the cache.
+  Future<void> _loadFloorsAndPois(List<Space> spaces) async {
+    final queue = List<Space>.of(spaces);
+    await Future.wait(
+      List.generate(_concurrency, (_) async {
+        while (queue.isNotEmpty) {
+          final space = queue.removeLast();
+          try {
+            final floors = await _api.fetchFloors(space.buid);
+            final pois = await _api.fetchPois(space.buid);
+            _cache.setFloors(space.buid, floors);
+            _cache.setPois(space.buid, pois);
+          } catch (_) {
+            // A single failed building must not abort the whole load.
+          }
+        }
+      }),
+    );
+  }
+
   Future<BulkLoadResult> load() async {
     try {
-      final spaces = await _api.fetchPublicSpaces();
+      final (campuses, spaces) = await _loadScopedDataset();
+      _cache.setCampuses(campuses);
       _cache.setSpaces(spaces);
 
-      for (final space in spaces) {
-        final floorsFuture = _api.fetchFloors(space.buid);
-        final poisFuture = _api.fetchPois(space.buid);
-        final floors = await floorsFuture;
-        final pois = await poisFuture;
-        _cache.setFloors(space.buid, floors);
-        _cache.setPois(space.buid, pois);
-      }
+      // Fetch floors + POIs for every building with bounded concurrency so we
+      // do not hammer the backend with one request per building.
+      await _loadFloorsAndPois(spaces);
 
-      return BulkLoadResult(campuses: _cache.campuses, spaces: spaces);
+      // Keep a copy for offline launches (Phase 7.2).
+      await _cache.saveOfflineSnapshot();
+
+      return BulkLoadResult(campuses: campuses, spaces: spaces);
     } catch (e) {
+      // Network failure: fall back to the last cached snapshot so the app can
+      // still show previously fetched data (Phase 7.2).
+      final restored = await _cache.loadOfflineSnapshot();
+      if (restored) {
+        return BulkLoadResult(
+          campuses: _cache.campuses,
+          spaces: _cache.spaces,
+          error: null,
+          fromOffline: true,
+        );
+      }
       return BulkLoadResult(
         campuses: const [],
         spaces: _cache.spaces,
@@ -70,8 +142,5 @@ final bulkLoaderProvider = Provider<BulkLoader>((ref) {
 
 final bulkLoadProvider = FutureProvider<BulkLoadResult>((ref) async {
   final loader = ref.watch(bulkLoaderProvider);
-  final result = await loader.load();
-  ref.read(initialLoadErrorProvider.notifier).state =
-      result.error?.toString();
-  return result;
+  return loader.load();
 });

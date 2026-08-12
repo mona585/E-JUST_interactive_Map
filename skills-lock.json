@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "skills": {
+    "grill-me": {
+      "source": "jiyeol-lee/dotfiles",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": ".opencode/skills/grill-me/SKILL.md",
+      "computedHash": "918e08c5ffe35a5787fd002ff04ad4df00333e18f13c99ac5010fce4056d1223"
+    }
+  }
+}

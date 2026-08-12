@@ -213,7 +213,11 @@ class _OutdoorResult {
 final userLocationProvider = StateProvider<LatLng?>((ref) => null);
 
 final outdoorRoutingServiceProvider =
-    Provider<OutdoorRoutingService>((ref) => OutdoorRoutingService());
+    Provider<OutdoorRoutingService>((ref) {
+  final service = OutdoorRoutingService();
+  ref.onDispose(service.close);
+  return service;
+});
 
 final routeStateProvider = StateNotifierProvider<RouteNotifier, RouteState>(
   (ref) => RouteNotifier(

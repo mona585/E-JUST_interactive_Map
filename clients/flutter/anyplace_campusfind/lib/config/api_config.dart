@@ -1,16 +1,14 @@
 /// Central API configuration for the Anyplace backend.
 ///
 /// The server URL can be overridden at build time:
-///   flutter run --dart-define=SERVER_URL=http://host:port
-/// The default matches the illustrative host used across the repo
-/// (`anyplace.ejust.edu.eg`), which is not the confirmed official
-/// hostname — derive the real value from environment/config when deployed.
+///   flutter run --dart-define=SERVER_URL=https://anyplace.cs.ucy.ac.cy
+/// The default is the original Anyplace public server URL.
 class ApiConfig {
   ApiConfig._();
 
   static const String _serverUrl = String.fromEnvironment(
     'SERVER_URL',
-    defaultValue: 'http://anyplace.ejust.edu.eg:443',
+    defaultValue: 'https://anyplace.cs.ucy.ac.cy',
   );
 
   static String get serverUrl => _serverUrl;

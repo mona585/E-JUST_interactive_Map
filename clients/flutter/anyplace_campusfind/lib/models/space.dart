@@ -1,3 +1,5 @@
+import '../utils/parsing.dart';
+
 /// Building (Space) entity as returned by the Anyplace backend.
 ///
 /// Field names mirror `datasources/SCHEMA.scala` and the cleaned responses of
@@ -31,8 +33,8 @@ class Space {
     return Space(
       buid: json['buid'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      coordinatesLat: _parseDouble(json['coordinates_lat']),
-      coordinatesLon: _parseDouble(json['coordinates_lon']),
+      coordinatesLat: parseDouble(json['coordinates_lat']),
+      coordinatesLon: parseDouble(json['coordinates_lon']),
       spaceType: json['space_type'] as String? ?? 'building',
       description: json['description'] as String?,
       url: json['url'] as String?,
@@ -40,11 +42,6 @@ class Space {
       bucode: json['bucode'] as String?,
       isPublished: json['is_published'] as String?,
     );
-  }
-
-  static double _parseDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
   bool get isBuilding => spaceType == 'building';
