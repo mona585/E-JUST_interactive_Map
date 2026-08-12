@@ -45,7 +45,7 @@ AnyplaceAPI.Mapping = {};
 AnyplaceAPI.Navigation = {};
 AnyplaceAPI.Other = {};
 
-AnyplaceAPI.Other.GOOGLE_URL_SHORTNER_URL = "https://www.googleapis.com/urlshortener/v1/url?key=AIzaSyDLSYNnIC93KfPnMYRL-7xI7yXjOhgulk8";
+AnyplaceAPI.Other.GOOGLE_URL_SHORTNER_URL = "https://www.googleapis.com/urlshortener/v1/url?key=__GOOGLE_URL_SHORTENER_API_KEY__";
 
 AnyplaceAPI.Mapping.BUILDING_ONE = "/mapping/building/get";
 AnyplaceAPI.Mapping.BUILDING_ONE_URL = AnyplaceAPI.FULL_SERVER + AnyplaceAPI.Mapping.BUILDING_ONE;

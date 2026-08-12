@@ -145,7 +145,7 @@ API.Mapping.REGISTER_LOCAL_URL = API.url + "/user/register";
 API.Navigation.POIS_ROUTE = "/navigation/route";
 API.Navigation.POIS_ROUTE = API.url + API.Navigation.POIS_ROUTE;
 
-API.Other.GOOGLE_URL_SHORTNER_URL = "https://www.googleapis.com/urlshortener/v1/url?key=AIzaSyDLSYNnIC93KfPnMYRL-7xI7yXjOhgulk8";
+API.Other.GOOGLE_URL_SHORTNER_URL = "https://www.googleapis.com/urlshortener/v1/url?key=__GOOGLE_URL_SHORTENER_API_KEY__";
 
 if (app == undefined) { LOG.F("api.js must be loaded after app.js in GruntFile)") }
 
@@ -762,7 +762,7 @@ app.factory('AnyplaceAPIService', ['$http', '$q', 'formDataObject', function ($h
 
     apiService.loginGoogle = function (json_req) {
         LOG.D4("loginGoogle")
-        LOG.D4(json_req)
+        LOG.D4("Google sign-in request received")
         return $http({
             method: "POST",
             url: API.Mapping.LOGIN_GOOGLE_URL,

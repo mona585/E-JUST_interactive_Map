@@ -6,6 +6,15 @@ RUNNING_PID
 
 # Private Server Configuration (contains generated secret keys and DB credentials)
 server/conf/app.private.conf
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+clients/.env
+clients/.env.*
+!clients/.env.example
 
 # Built/Deployed Web Applications & Assets
 public/

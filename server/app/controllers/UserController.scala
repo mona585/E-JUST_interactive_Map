@@ -34,7 +34,7 @@ class UserController @Inject()(cc: ControllerComponents,
         val anyReq: OAuth2Request = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
-        LOG.D4("register: " + json)
+        LOG.D4("register request received")
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fUsername, SCHEMA.fPassword, SCHEMA.fName, SCHEMA.fEmail)
         if (checkRequirements != null) return checkRequirements
         val name = (json \ SCHEMA.fName).as[String]
@@ -71,7 +71,7 @@ class UserController @Inject()(cc: ControllerComponents,
         val json = anyReq.getJsonBody()
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fUsername, SCHEMA.fPassword)
         if (checkRequirements != null) return checkRequirements
-        LOG.D4("loginLocal: " + json)
+        LOG.D4("local login request received")
         val username = (json \ SCHEMA.fUsername).as[String]
         val password = (json \ SCHEMA.fPassword).as[String]
         val storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPassword(password))
@@ -99,7 +99,7 @@ class UserController @Inject()(cc: ControllerComponents,
         val json = anyReq.getJsonBody()
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fAccessToken)
         if (checkRequirements != null) return checkRequirements
-        LOG.D4("refresh: " + json)
+        LOG.D4("local session refresh request received")
         val accessToken = (json \ SCHEMA.fAccessToken).as[String]
 
         val storedUser = pds.db.getUserFromAccessToken(accessToken)

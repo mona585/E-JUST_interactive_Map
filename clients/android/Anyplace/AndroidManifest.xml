@@ -161,11 +161,11 @@
 
         <meta-data
             android:name="com.google.android.maps.v2.API_KEY"
-            android:value="AIzaSyBL2iuPSg6iKeC7_pZ8Wm23VQ9Qz1tqV3E" />
+            android:value="__MAPS_API_KEY__" />
 
         <meta-data
             android:name="google.directions.API_KEY"
-            android:value="AIzaSyBXlnSmi-i3ZJiP599zRuqlAaJI1gPKtXc" />
+            android:value="__DIRECTIONS_API_KEY__" />
     </application>
 
 </manifest>

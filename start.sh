@@ -47,11 +47,13 @@ fi
 rm -f "$SERVER_DIR/target/universal/stage/RUNNING_PID"
 rm -f "$ROOT_DIR/RUNNING_PID"
 
-# Extract application secret from configuration file
+# Use an explicit environment value when supplied; otherwise read the private
+# configuration. A missing or placeholder secret must stop startup.
 CONF_PATH="$SERVER_DIR/conf/app.private.conf"
-APP_SECRET=$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || echo "AnyplaceSecretKey2026")
-if [ -z "$APP_SECRET" ]; then
-    APP_SECRET="AnyplaceSecretKey2026"
+APP_SECRET="${APPLICATION_SECRET:-$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || true)}"
+if [ -z "$APP_SECRET" ] || [[ "$APP_SECRET" == CHANGE_ME_* ]] || [[ "$APP_SECRET" == "APPLICATION_SECRET_KEY" ]] || [[ "$APP_SECRET" == "YOUR_APPLICATION_SECRET" ]]; then
+    echo "[x] APPLICATION_SECRET is missing. Set it in server/conf/app.private.conf or the environment."
+    exit 1
 fi
 
 echo "[*] Launching Anyplace Backend on port 9000..."

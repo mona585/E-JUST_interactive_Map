@@ -166,27 +166,47 @@ APP_SECRET=$(generate_random_hex 32)
 SALT=$(generate_random_hex 16)
 PEPPER=$(generate_random_hex 16)
 
+get_conf_val() {
+    grep -E "^[[:space:]]*$1[[:space:]]*=" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | xargs || true
+}
+
+upsert_conf_val() {
+    local key="$1"
+    local value="$2"
+    if grep -q -E "^[[:space:]]*$key[[:space:]]*=" "$CONF_FILE"; then
+        sed -i "s|^[[:space:]]*$key[[:space:]]*=.*|$key=\"$value\"|" "$CONF_FILE"
+    else
+        echo "$key=\"$value\"" >> "$CONF_FILE"
+    fi
+}
+
+needs_generated_secret() {
+    local value="$1"
+    [ -z "$value" ] || [[ "$value" == CHANGE_ME_* ]] || [[ "$value" == "APPLICATION_SECRET_KEY" ]] || [[ "$value" == "YOUR_APPLICATION_SECRET" ]] || [[ "$value" == "SALT" ]] || [[ "$value" == "PEPPER" ]]
+}
+
 if [ ! -f "$CONF_FILE" ]; then
     echo -e "  [+] Creating private configuration with auto-generated secrets: $CONF_FILE"
     cp "$CONF_EXAMPLE" "$CONF_FILE"
 fi
 
-# Automatically update parameters and replace placeholder secrets with generated secure keys
-sed -i "s|application.secret=.*|application.secret=\"$APP_SECRET\"|g" "$CONF_FILE"
-if grep -q "play.http.secret.key" "$CONF_FILE"; then
-    sed -i "s|play.http.secret.key=.*|play.http.secret.key=\"$APP_SECRET\"|g" "$CONF_FILE"
-else
-    echo "play.http.secret.key=\"$APP_SECRET\"" >> "$CONF_FILE"
+# Generate secrets only when the private configuration is empty or still uses a
+# documented placeholder. Existing values must remain stable because they protect
+# sessions and password hashes.
+if needs_generated_secret "$(get_conf_val "application.secret")"; then
+    upsert_conf_val "application.secret" "$APP_SECRET"
+fi
+if needs_generated_secret "$(get_conf_val "play.http.secret.key")"; then
+    upsert_conf_val "play.http.secret.key" "$(get_conf_val "application.secret")"
+fi
+if needs_generated_secret "$(get_conf_val "password.salt")"; then
+    upsert_conf_val "password.salt" "$SALT"
+fi
+if needs_generated_secret "$(get_conf_val "password.pepper")"; then
+    upsert_conf_val "password.pepper" "$PEPPER"
 fi
 
-# Ensure password salt and pepper exist without mutating existing hashes
-if ! grep -q "password.salt" "$CONF_FILE"; then
-    echo 'password.salt="AnyplaceSalt123"' >> "$CONF_FILE"
-fi
-
-if ! grep -q "password.pepper" "$CONF_FILE"; then
-    echo 'password.pepper="AnyplacePepper123"' >> "$CONF_FILE"
-fi
+APP_SECRET=$(get_conf_val "application.secret")
 
 sed -i "s|server.address=.*|server.address=\"https://map.beout.ai\"|g" "$CONF_FILE"
 sed -i "s|server.port=.*|server.port=\"9000\"|g" "$CONF_FILE"
@@ -348,11 +368,13 @@ fi
 rm -f "$SERVER_DIR/target/universal/stage/RUNNING_PID"
 rm -f "$ROOT_DIR/RUNNING_PID"
 
-# Extract application secret from configuration file
+# Use an explicit environment value when supplied; otherwise read the private
+# configuration. A missing or placeholder secret must stop startup.
 CONF_PATH="$SERVER_DIR/conf/app.private.conf"
-APP_SECRET=$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || echo "AnyplaceSecretKey2026")
-if [ -z "$APP_SECRET" ]; then
-    APP_SECRET="AnyplaceSecretKey2026"
+APP_SECRET="${APPLICATION_SECRET:-$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || true)}"
+if [ -z "$APP_SECRET" ] || [[ "$APP_SECRET" == CHANGE_ME_* ]] || [[ "$APP_SECRET" == "APPLICATION_SECRET_KEY" ]] || [[ "$APP_SECRET" == "YOUR_APPLICATION_SECRET" ]]; then
+    echo "[x] APPLICATION_SECRET is missing. Set it in server/conf/app.private.conf or the environment."
+    exit 1
 fi
 
 echo "[*] Launching Anyplace Backend on port 9000..."
@@ -442,7 +464,8 @@ Type=simple
 User=$USER
 WorkingDirectory=$ROOT_DIR
 Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
-ExecStart=$SERVER_DIR/target/universal/stage/bin/anyplace -Dplay.http.secret.key=$APP_SECRET -Dapplication.secret=$APP_SECRET -Dhttp.port=9000
+EnvironmentFile=/etc/anyplace/anyplace.env
+ExecStart=$SERVER_DIR/target/universal/stage/bin/anyplace -Dplay.http.secret.key=\${APPLICATION_SECRET} -Dapplication.secret=\${APPLICATION_SECRET} -Dhttp.port=9000
 Restart=always
 RestartSec=5
 StandardOutput=append:$ROOT_DIR/anyplace.log
@@ -457,6 +480,20 @@ echo -e "  [✓] Systemd service template generated: anyplace.service"
 
 # 6.5 Auto-enable systemd service and cron @reboot fallback for automatic start on reboot
 if [ -d "/etc/systemd/system" ] && command -v systemctl &> /dev/null; then
+    SYSTEMD_ENV_DIR="/etc/anyplace"
+    SYSTEMD_ENV_FILE="$SYSTEMD_ENV_DIR/anyplace.env"
+    if [ "$EUID" -eq 0 ]; then
+        install -d -m 700 "$SYSTEMD_ENV_DIR"
+        umask 077
+        printf 'APPLICATION_SECRET=%s\n' "$APP_SECRET" > "$SYSTEMD_ENV_FILE"
+        chmod 600 "$SYSTEMD_ENV_FILE"
+    elif command -v sudo &> /dev/null; then
+        sudo install -d -m 700 "$SYSTEMD_ENV_DIR"
+        printf 'APPLICATION_SECRET=%s\n' "$APP_SECRET" | sudo tee "$SYSTEMD_ENV_FILE" > /dev/null
+        sudo chmod 600 "$SYSTEMD_ENV_FILE"
+    else
+        echo -e "  ${YELLOW}[!] Cannot create $SYSTEMD_ENV_FILE without root or sudo; systemd service was not enabled.${NC}"
+    fi
     cp "$ROOT_DIR/anyplace.service" /etc/systemd/system/anyplace.service 2>/dev/null || true
     systemctl daemon-reload 2>/dev/null || true
     systemctl enable anyplace.service 2>/dev/null || true
@@ -477,17 +514,11 @@ get_conf_val() {
 
 DISP_SERVER_ADDR=$(get_conf_val "server.address" "http://localhost")
 DISP_SERVER_PORT=$(get_conf_val "server.port" "9000")
-DISP_APP_SECRET=$(get_conf_val "application.secret" "Not set")
-DISP_PLAY_SECRET=$(get_conf_val "play.http.secret.key" "$DISP_APP_SECRET")
-DISP_SALT=$(get_conf_val "password.salt" "Not set")
-DISP_PEPPER=$(get_conf_val "password.pepper" "Not set")
 DISP_MONGO_HOST=$(get_conf_val "mongodb.hostname" "127.0.0.1")
 DISP_MONGO_PORT=$(get_conf_val "mongodb.port" "27017")
 DISP_MONGO_DB=$(get_conf_val "mongodb.database" "anyplace")
 DISP_MONGO_USER=$(get_conf_val "mongodb.app.username" "")
-DISP_MONGO_PASS=$(get_conf_val "mongodb.app.password" "")
 [ -z "$DISP_MONGO_USER" ] && DISP_MONGO_USER="<none (unauthenticated)>"
-[ -z "$DISP_MONGO_PASS" ] && DISP_MONGO_PASS="<none (unauthenticated)>"
 
 DISP_FLOORPLANS=$(get_conf_val "floorPlansRootDir" "floorplans")
 DISP_RADIOMAPS_RAW=$(get_conf_val "radioMapRawDir" "radiomaps_raw")
@@ -501,16 +532,16 @@ echo -e " Configuration File   : ${YELLOW}$CONF_FILE${NC}"
 echo -e " ------------------------------------------------------------------------"
 echo -e " Server Address       : ${GREEN}$DISP_SERVER_ADDR${NC}"
 echo -e " Server Port          : ${GREEN}$DISP_SERVER_PORT${NC}"
-echo -e " Application Secret   : ${GREEN}$DISP_APP_SECRET${NC}"
-echo -e " Play Secret Key      : ${GREEN}$DISP_PLAY_SECRET${NC}"
-echo -e " Password Salt        : ${GREEN}$DISP_SALT${NC}"
-echo -e " Password Pepper      : ${GREEN}$DISP_PEPPER${NC}"
+echo -e " Application Secret   : ${GREEN}<configured; value hidden>${NC}"
+echo -e " Play Secret Key      : ${GREEN}<configured; value hidden>${NC}"
+echo -e " Password Salt        : ${GREEN}<configured; value hidden>${NC}"
+echo -e " Password Pepper      : ${GREEN}<configured; value hidden>${NC}"
 echo -e " ------------------------------------------------------------------------"
 echo -e " MongoDB Hostname     : ${GREEN}$DISP_MONGO_HOST${NC}"
 echo -e " MongoDB Port         : ${GREEN}$DISP_MONGO_PORT${NC}"
 echo -e " MongoDB Database     : ${GREEN}$DISP_MONGO_DB${NC}"
 echo -e " MongoDB Username     : ${GREEN}$DISP_MONGO_USER${NC}"
-echo -e " MongoDB Password     : ${GREEN}$DISP_MONGO_PASS${NC}"
+echo -e " MongoDB Password     : ${GREEN}<configured; value hidden>${NC}"
 echo -e " ------------------------------------------------------------------------"
 echo -e " Floorplans Directory : ${GREEN}$SERVER_DIR/$DISP_FLOORPLANS${NC}"
 echo -e " Radiomaps Raw Dir    : ${GREEN}$SERVER_DIR/$DISP_RADIOMAPS_RAW${NC}"

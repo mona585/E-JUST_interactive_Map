@@ -155,7 +155,7 @@ app.controller('ControlBarController',
         if (cookieAccessToken === "") { return; }
 
         jsonReq.access_token = cookieAccessToken;
-        LOG.D2("Refreshing local login. token:" + cookieAccessToken);
+        LOG.D2("Refreshing local login.");
 
         var promise = AnyplaceAPIService.refreshLocalAccount(jsonReq);
         promise.then(
