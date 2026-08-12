@@ -52,12 +52,23 @@ class BulkLoader {
 
   /// Returns the campuses (empty when none configured) and the buildings that
   /// belong to them. When [AppConstants.configuredCampusIds] is non-empty the
-  /// buildings come from `campus/get` responses; otherwise from `space/public`.
+  /// buildings come from `campus/get` responses; otherwise from `space/public`
+  /// unless a runtime campus id has been selected (see [CacheService]).
   Future<(List<Campus>, List<Space>)> _loadScopedDataset() async {
     final cuids = AppConstants.configuredCampusIds;
     if (cuids.isEmpty) {
-      final spaces = await _api.fetchPublicSpaces();
-      return (const <Campus>[], spaces);
+      // Fall back to runtime-selected campus id if available.
+      final selectedId = await _cache.getSelectedCampusId();
+      if (selectedId != null && selectedId.isNotEmpty) {
+        try {
+          final campus = await _api.fetchCampus(selectedId);
+          return (const <Campus>[], campus.spaces);
+        } on ApiException {
+          // Failed to fetch selected campus; fall through to empty result.
+        }
+      }
+      // No runtime campus id either — show empty state (no more silent global fallthrough).
+      return (const <Campus>[], const <Space>[]);
     }
 
     final campuses = <Campus>[];

@@ -9,10 +9,22 @@ class AppConstants {
   static const String prefRecentWaypoints = 'recent_waypoints';
   static const String prefHasCompletedOnboarding = 'onboarding_done';
 
-  /// Outdoor tile source. Defaults to a Carto Positron fallback until the
-  /// self-hosted tile server (Phase 0.6) is ready. See project plan.
-  static const String outdoorTilesUrl =
-      'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+  /// Google Maps API Key. Set via `--dart-define=MAPS_API_KEY=YOUR_KEY` or read from
+  /// `.env.example` (`MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY`).
+  static const String mapsApiKey = String.fromEnvironment(
+    'MAPS_API_KEY',
+    defaultValue: 'YOUR_GOOGLE_MAPS_API_KEY',
+  );
+
+  /// Outdoor tile source. Defaults to Google Maps; fallback to Carto Positron if key is
+  /// not configured. See project plan.
+  static String get outdoorTilesUrl {
+    if (mapsApiKey != null && mapsApiKey.isNotEmpty &&
+        mapsApiKey != 'YOUR_GOOGLE_MAPS_API_KEY') {
+      return 'https://maps.googleapis.com/maps/api/staticmap?';
+    }
+    return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+  }
 
   /// Zoom level at which indoor POIs/floorplan are shown.
   static const double indoorZoomThreshold = 19;
