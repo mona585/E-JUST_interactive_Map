@@ -16,4 +16,22 @@ class AppConstants {
 
   /// Zoom level at which indoor POIs/floorplan are shown.
   static const double indoorZoomThreshold = 19;
+
+  /// Campus cuids offered on first launch.
+  ///
+  /// The backend has no public "list campuses" endpoint, so campuses are
+  /// enumerated here. Override at build time:
+  ///   flutter run --dart-define=CAMPUS_IDS=cuid_a,cuid_b
+  static const String _campusIdsEnv =
+      String.fromEnvironment('CAMPUS_IDS');
+
+  static final List<String> configuredCampusIds = _parseCampusIds(_campusIdsEnv);
+
+  static List<String> _parseCampusIds(String raw) {
+    if (raw.isEmpty) return const [];
+    return raw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+  }
+
+  /// Maximum markers shown before clustering kicks in.
+  static const int clusterThreshold = 12;
 }

@@ -29,3 +29,6 @@ final initialLoadProvider = StateProvider<bool>((ref) => false);
 
 /// Holds any error surfaced during the initial bulk load (null = no error).
 final initialLoadErrorProvider = StateProvider<String?>((ref) => null);
+
+/// Currently active bottom-navigation tab (0 Home, 1 Map, 2 Search).
+final shellTabProvider = StateProvider<int>((ref) => 0);

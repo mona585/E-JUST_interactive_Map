@@ -632,9 +632,31 @@ Phase 0 (Bug Fixes)     Phase 1 (Foundation)
 |---|---|---|
 | 0 | ⏸ Not started | Parallel-ready; fixes in `clients/android/` + `server/` + infra |
 | 1 | ✅ DONE (2026-08-12) | Foundation in `clients/flutter/anyplace_campusfind` |
-| **2** | ✅ DONE (2026-08-12) | Data layer in `lib/models`, `lib/services`, `lib/utils`, `lib/providers` |
-| 3 | ⏸ Not started | Blocked on Phase 2 approval |
-| 4–7 | ⏸ Not started | — |
+| 2 | ✅ DONE (2026-08-12) | Data layer in `lib/models`, `lib/services`, `lib/utils`, `lib/providers` |
+| **3** | ✅ DONE (2026-08-12) | Core screens (campus selection, Home, Map, Search) |
+| 4 | ⏸ Not started | Blocked on Phase 3 approval |
+| 5–7 | ⏸ Not started | — |
+
+**Phase 3 completion record:**
+- `CampusSelectionScreen` — first-launch picker; campuses fetched per-cuid via
+  `CAMPUS_IDS` dart-define (no public list-campuses endpoint exists); stored via
+  CacheService; restored on launch in `main.dart`
+- `MainShell` — 3-tab bottom nav (Home/Map/Search) via IndexedStack +
+  `shellTabProvider`; `RootRouter` switches selection flow vs shell
+- `HomeScreen` — greeting, search entry, dynamic quick-access cards derived
+  from discovered categories, recent waypoints
+- `SearchScreen` — live client-side search across buildings + POIs with
+  dynamic `FilterChips` and category badges (`SearchResultCard`)
+- `SearchIndex`/`SearchIndexProvider` — flat cross-entity index, dedupe by puid
+- `MapScreen` — flutter_map with outdoor tiles (Carto fallback), building
+  markers, POI markers, filter chips, `_FloorplanOverlay` using
+  `LocalFloorplanTileProvider` (local tiles at `z{x}z...` naming), floor
+  switcher bottom sheet, selection clear button
+- Task 3.6 marker clustering — grid-bucket clustering below zoom 16
+- Task 3.7 indoor/outdoor switching — POIs + floorplan only when a
+  building+floor is selected AND zoom >= `indoorZoomThreshold` (19)
+- Verified: `flutter analyze` clean, 27 tests passing, `flutter build apk
+  --debug` success
 
 **Phase 2 completion record:**
 - Models mirror backend fields exactly (verified against `server/app/models/*.scala` + `datasources/SCHEMA.scala`):

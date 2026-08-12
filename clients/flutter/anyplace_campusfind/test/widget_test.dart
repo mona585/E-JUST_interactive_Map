@@ -1,14 +1,22 @@
-// Basic smoke test for the CampusFind app shell.
+// Smoke tests for the app shell (no campus selected -> campus selection).
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:anyplace_campusfind/main.dart';
 
 void main() {
-  testWidgets('App renders the map preview shell', (WidgetTester tester) async {
-    await tester.pumpWidget(const ProviderScope(child: CampusFindApp()));
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    expect(find.text('CampusFind Map'), findsOneWidget);
+  testWidgets('App renders the campus selection screen on first launch',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(const ProviderScope(child: CampusFindApp()));
+    await tester.pumpAndSettle();
+
+    // No configured campuses -> the empty-state hint is shown.
+    expect(find.text('Welcome to CampusFind'), findsOneWidget);
+    expect(find.text('No campuses configured'), findsOneWidget);
   });
 }
