@@ -48,11 +48,8 @@ pkg_install() {
     fi
 }
 
-# Ensure compatible Java (Java 11 or 17) is prioritized over newer unsupported JVMs
-if [ -d "/usr/lib/jvm/java-11-openjdk-amd64" ]; then
-    export JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
-    export PATH="$JAVA_HOME/bin:$PATH"
-elif [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
+# Ubuntu 22.04 recovery target: use the pinned OpenJDK 17 runtime.
+if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
     export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
     export PATH="$JAVA_HOME/bin:$PATH"
 fi
@@ -108,34 +105,16 @@ if ! command -v nc &> /dev/null; then
     pkg_install "netcat-openbsd" || true
 fi
 
-# Check MongoDB or Docker & Auto-Install/Start if missing
+# Check for the pre-provisioned local MongoDB service. This legacy helper must
+# not create Docker containers that publish MongoDB on all host interfaces.
 HAS_MONGO=false
 if command -v mongod &> /dev/null || (command -v nc &> /dev/null && nc -z 127.0.0.1 27017 &> /dev/null); then
     HAS_MONGO=true
     echo -e "  [✓] Local MongoDB service detected on port 27017."
-elif command -v docker &> /dev/null; then
-    HAS_MONGO=true
-    echo -e "  [✓] Docker detected. Starting MongoDB container on port 27017..."
-    docker run -d --name anyplace-mongodb -p 27017:27017 -v anyplace_mongo_data:/data/db mongo:latest 2>/dev/null || docker start anyplace-mongodb 2>/dev/null || true
 else
-    echo -e "  [!] Neither local MongoDB nor Docker was detected on port 27017."
-    echo -e "      Attempting automatic installation of MongoDB service..."
-    pkg_install "mongodb" || pkg_install "mongodb-server" || pkg_install "docker.io" || true
-    
-    if command -v systemctl &> /dev/null; then
-        systemctl enable --now mongodb 2>/dev/null || systemctl enable --now docker 2>/dev/null || true
-    elif command -v service &> /dev/null; then
-        service mongodb start 2>/dev/null || service docker start 2>/dev/null || true
-    fi
-
-    if command -v docker &> /dev/null; then
-        docker run -d --name anyplace-mongodb -p 27017:27017 -v anyplace_mongo_data:/data/db mongo:latest 2>/dev/null || docker start anyplace-mongodb 2>/dev/null || true
-    fi
-
-    if command -v mongod &> /dev/null || (command -v nc &> /dev/null && nc -z 127.0.0.1 27017 &> /dev/null); then
-        HAS_MONGO=true
-        echo -e "  [✓] MongoDB service successfully configured and running."
-    fi
+    echo -e "  ${RED}[✗] MongoDB is not reachable on 127.0.0.1:27017.${NC}"
+    echo -e "      Provision the authenticated, loopback-only service using docs/recovery/PHASE_2_STAGING_RUNBOOK.md."
+    exit 1
 fi
 
 # ------------------------------------------------------------------------------
@@ -211,8 +190,6 @@ APP_SECRET=$(get_conf_val "application.secret")
 sed -i "s|server.address=.*|server.address=\"https://map.beout.ai\"|g" "$CONF_FILE"
 sed -i "s|server.port=.*|server.port=\"9000\"|g" "$CONF_FILE"
 sed -i "s|mongodb.hostname=.*|mongodb.hostname=\"127.0.0.1\"|g" "$CONF_FILE"
-sed -i "s|mongodb.app.username=.*|mongodb.app.username=\"\"|g" "$CONF_FILE"
-sed -i "s|mongodb.app.password=.*|mongodb.app.password=\"\"|g" "$CONF_FILE"
 sed -i "s|mongodb.port=.*|mongodb.port=27017|g" "$CONF_FILE"
 sed -i "s|mongodb.database=.*|mongodb.database=\"anyplace\"|g" "$CONF_FILE"
 
@@ -329,11 +306,8 @@ if [ -e "/var/run/docker.sock" ]; then
     export DOCKER_HOST="unix:///var/run/docker.sock"
 fi
 
-# Prioritize Java 11/17 for Anyplace Play framework compatibility
-if [ -d "/usr/lib/jvm/java-11-openjdk-amd64" ]; then
-    export JAVA_HOME="/usr/lib/jvm/java-11-openjdk-amd64"
-    export PATH="$JAVA_HOME/bin:$PATH"
-elif [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
+# Ubuntu 22.04 recovery target: use the pinned OpenJDK 17 runtime.
+if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
     export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
     export PATH="$JAVA_HOME/bin:$PATH"
 fi
@@ -343,16 +317,10 @@ export JDK_JAVA_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens
 
 echo "=== Starting Anyplace Local Environment ==="
 
-# Check MongoDB
-if nc -z 127.0.0.1 27017 &> /dev/null; then
-    echo "[✓] MongoDB is running on port 27017."
-elif command -v docker &> /dev/null; then
-    echo "[!] MongoDB not detected. Starting MongoDB Docker container..."
-    docker start anyplace-mongodb 2>/dev/null || docker run -d --name anyplace-mongodb -p 27017:27017 -v anyplace_mongo_data:/data/db mongo:latest 2>/dev/null
-    sleep 3
-    echo "[✓] MongoDB container started."
-else
-    echo "[!] WARNING: MongoDB is not running on port 27017. Backend may fail to connect."
+# MongoDB must already be provisioned as an authenticated loopback-only service.
+if ! command -v nc &> /dev/null || ! nc -z 127.0.0.1 27017 &> /dev/null; then
+    echo "[x] MongoDB is not reachable on 127.0.0.1:27017. Provision it before startup."
+    exit 1
 fi
 
 # Check if Anyplace is already running on port 9000
@@ -461,15 +429,15 @@ After=network.target mongodb.service docker.service
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=$ROOT_DIR
+User=anyplace
+Group=anyplace
+WorkingDirectory=/opt/anyplace
 Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
 EnvironmentFile=/etc/anyplace/anyplace.env
-ExecStart=$SERVER_DIR/target/universal/stage/bin/anyplace -Dplay.http.secret.key=\${APPLICATION_SECRET} -Dapplication.secret=\${APPLICATION_SECRET} -Dhttp.port=9000
-Restart=always
+ExecStart=/opt/anyplace/server/target/universal/stage/bin/anyplace -Dplay.http.secret.key=\${APPLICATION_SECRET} -Dapplication.secret=\${APPLICATION_SECRET} -Dhttp.port=9000
+Restart=on-failure
 RestartSec=5
-StandardOutput=append:$ROOT_DIR/anyplace.log
-StandardError=append:$ROOT_DIR/anyplace.log
 
 [Install]
 WantedBy=multi-user.target

@@ -1,19 +1,23 @@
 [Unit]
 Description=Anyplace Indoor Navigation Service
-After=network.target mongodb.service docker.service
+After=network-online.target mongod.service
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=mesba7
-WorkingDirectory=/home/mesba7/Documents/Github/E-JUST_interactive_Map
+User=anyplace
+Group=anyplace
+WorkingDirectory=/opt/anyplace
 Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
+Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
 # Create /etc/anyplace/anyplace.env with mode 0600 before starting this unit.
+# It must provide APPLICATION_SECRET and the MONGODB_* variables in
+# server/.env.example. Keep public-domain configuration out of this unit until
+# Phase 8.
 EnvironmentFile=/etc/anyplace/anyplace.env
-ExecStart=/home/mesba7/Documents/Github/E-JUST_interactive_Map/server/target/universal/stage/bin/anyplace -Dplay.http.secret.key=${APPLICATION_SECRET} -Dapplication.secret=${APPLICATION_SECRET} -Dhttp.port=9000
-Restart=always
+ExecStart=/opt/anyplace/server/target/universal/stage/bin/anyplace -Dplay.http.secret.key=${APPLICATION_SECRET} -Dapplication.secret=${APPLICATION_SECRET} -Dhttp.port=9000
+Restart=on-failure
 RestartSec=5
-StandardOutput=append:/home/mesba7/Documents/Github/E-JUST_interactive_Map/anyplace.log
-StandardError=append:/home/mesba7/Documents/Github/E-JUST_interactive_Map/anyplace.log
 
 [Install]
 WantedBy=multi-user.target

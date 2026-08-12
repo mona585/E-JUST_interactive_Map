@@ -29,7 +29,12 @@
 
 ## ⚡ Quick Standalone Local Installation
 
-To host the entire Anyplace system locally on your server in one command:
+> Recovery note: `install.sh` is a legacy convenience helper, not the approved
+> production provisioning path. Do not run it on an E-JUST production VM. First
+> follow [`docs/recovery/UBUNTU_22.04_TOOLCHAIN.md`](docs/recovery/UBUNTU_22.04_TOOLCHAIN.md),
+> then use the Phase 2 deployment procedure.
+
+For disposable Linux investigation environments only:
 
 ```bash
 chmod +x install.sh
@@ -89,12 +94,11 @@ The **E-JUST Interactive Map & Anyplace Navigation System** provides GPS-less in
 * **Disk:** 50 GB NVMe / SSD Storage
 
 ### Software Environment
-* **OS:** Ubuntu Linux 20.04 LTS / 22.04 LTS
-* **Java:** OpenJDK 17 (`openjdk-17-jdk`)
-* **Scala & SBT:** Scala 2.13.x & SBT 1.5+
-* **Database:** MongoDB Community Server 4.4 / 5.0 / 6.0
-* **Web Server:** Nginx & Certbot (Let's Encrypt)
-* **Android Build Tools:** Android SDK Platform 31, Build-Tools `30.0.3`
+
+The supported recovery target is Ubuntu Server 22.04 LTS only. The exact
+backend, web, tiler, and Android build-tool contract is maintained in
+[`docs/recovery/UBUNTU_22.04_TOOLCHAIN.md`](docs/recovery/UBUNTU_22.04_TOOLCHAIN.md).
+Do not use this Windows workstation as a production host.
 
 ---
 
