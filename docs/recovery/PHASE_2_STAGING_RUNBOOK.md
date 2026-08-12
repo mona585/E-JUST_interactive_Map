@@ -11,7 +11,6 @@ mirror. Before enabling authentication, create a limited application account
 interactively on the local VM:
 
 ```javascript
-// Start with: mongosh --host 127.0.0.1
 use admin
 db.createUser({
   user: "anyplace_app",

@@ -30,21 +30,16 @@
 <div id="swagger-ui"></div>
 <script src="./js/swagger-ui-bundle.js" charset="UTF-8"></script>
 <script src="./js/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
-<script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"></script>
 <!--<a href="https://dmsl.cs.ucy.ac.cy">DMSL Copyright 2021</a><br>-->
 <script>
-    var BASE_URL = "https://ap.cs.ucy.ac.cy:44"
+    // The documentation must describe the server that served this page. This
+    // keeps staging and production fully parameterised without a legacy host.
+    var BASE_URL = window.location.origin;
 
     window.onload = function () {
-        $.getJSON(BASE_URL+"/api/version", function (result) {
-            version = JSON.parse(JSON.stringify(result));
-            console.log("VERSION");
-            console.log(version);
-        });
-
         // Begin Swagger UI call region
         var ui = SwaggerUIBundle({
-            url: BASE_URL+"/assets/swagger.json", // iheartradio swagger
+            url: BASE_URL + "/assets/swagger.json",
             dom_id: '#swagger-ui',
             docExpansion: 'list',
             filter: 'true',

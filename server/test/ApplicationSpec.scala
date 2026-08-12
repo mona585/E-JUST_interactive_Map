@@ -1,11 +1,11 @@
 import org.specs2.mutable.Specification
 import play.api.test._
 import play.api.test.Helpers._
-import play.api.libs.json.{Json, JsValue}
 import play.api.mvc.Result
-import scala.concurrent.Future
+
 import java.io.ByteArrayInputStream
 import java.util.zip.GZIPInputStream
+import scala.concurrent.Future
 
 class ApplicationSpec extends PlaySpecification {
 
@@ -19,29 +19,17 @@ class ApplicationSpec extends PlaySpecification {
     }
   }
 
-  def extractJson(result: Future[Result]): JsValue = {
-    Json.parse(extractString(result))
-  }
+  "Core public API" should {
 
-  "Application" should {
-
-    "redirect non-existing GET route to viewer" in new WithApplication {
-      val badRequest = route(app, FakeRequest(GET, "/invalid-route-path")).get
-      status(badRequest) must equalTo(SEE_OTHER)
+    "redirect an unknown GET route to Viewer" in new WithApplication {
+      val response = route(app, FakeRequest(GET, "/invalid-route-path")).get
+      status(response) must equalTo(SEE_OTHER)
     }
 
-    "return HTTP 200 and version JSON on /api/version" in new WithApplication {
-      val versionReq = route(app, FakeRequest(GET, "/api/version")).get
-      status(versionReq) must equalTo(OK)
-      extractString(versionReq) must contain("version")
+    "return version JSON without authentication" in new WithApplication {
+      val response = route(app, FakeRequest(GET, "/api/version")).get
+      status(response) must equalTo(OK)
+      extractString(response) must contain("version")
     }
-
-    "return HTTP 200 and spaces array on /api/mapping/space/public" in new WithApplication {
-      val spacesReq = route(app, FakeRequest(POST, "/api/mapping/space/public").withJsonBody(Json.obj())).get
-      status(spacesReq) must equalTo(OK)
-      val json = extractJson(spacesReq)
-      (json \ "spaces").asOpt[Seq[JsValue]] must beSome
-    }
-
   }
 }

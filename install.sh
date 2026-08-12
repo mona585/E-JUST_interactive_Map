@@ -253,17 +253,9 @@ build_web_app() {
     fi
 }
 
-build_web_app "anyplace_architect"
-build_web_app "anyplace_viewer"
-build_web_app "anyplace_viewer_campus"
-
-# Copy shared assets to all public/shared targets
-if [ -d "$CLIENT_WEB_DIR/shared" ]; then
-    mkdir -p "$SERVER_DIR/public/shared" "$SERVER_DIR/target/universal/stage/public/shared" "$ROOT_DIR/public/shared"
-    cp -r "$CLIENT_WEB_DIR/shared/"* "$SERVER_DIR/public/shared/" 2>/dev/null || true
-    cp -r "$CLIENT_WEB_DIR/shared/"* "$SERVER_DIR/target/universal/stage/public/shared/" 2>/dev/null || true
-    cp -r "$CLIENT_WEB_DIR/shared/"* "$ROOT_DIR/public/shared/" 2>/dev/null || true
-fi
+# The recovery build is deliberately fail-closed: only generated browser assets
+# are staged under server/public, and a missing dependency/build stops here.
+bash "$ROOT_DIR/scripts/build-web-assets.sh"
 
 # ------------------------------------------------------------------------------
 # 5. Compile Anyplace Play Backend

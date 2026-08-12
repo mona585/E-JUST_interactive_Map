@@ -153,3 +153,109 @@ has produced a running private endpoint.
 No Phase 3 recovery work has started. Approve Phase 3 after the Phase 2
 staging runbook has been executed, or explicitly approve source-only test
 baseline work while the VM validation remains pending.
+
+## Phase 3 — Backend test and core API baseline
+
+**Status: PARTIAL — the test baseline is repaired in source; execution on the
+supported Ubuntu/JDK 17 staging environment remains required.**
+
+### Audit result and repair
+
+The prior Phase 3 claim is **NOT VERIFIED**: its cited commits are absent and
+the current suite did not match the claimed three focused tests. It included a
+browser test for Play's obsolete starter-page text, a database test that allowed
+the first public registrant to become an administrator (contrary to D-05), and
+Mongo-mutating security tests that ran without an explicit controlled database
+selection.
+
+`ApplicationSpec` now covers only stable public behavior: unknown GET routes
+redirect to Viewer and `/api/version` returns version JSON without
+authentication. Test-only configuration supplies non-production settings while
+keeping analytics disabled. The obsolete browser and public-first-admin specs
+were removed. Mongo-backed security tests are retained but run only when
+`RUN_MONGO_INTEGRATION_TESTS=true` and protected `MONGODB_TEST_*` variables
+select a disposable staging database. The Phase 3 runbook documents both modes.
+
+### Validation evidence
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File
+  scripts/Test-BackendTestBaseline.ps1` — passed.
+- Phase 0/2 containment and startup-contract checks — passed.
+- `git diff --check` — passed.
+- `server/./sbt test` — **not run to completion**. After dependencies were
+  retrieved, SBT 1.5.8 failed before compilation on this Windows host's Java
+  24 runtime with an SBT launcher `ClassCastException`. Phase 1 pins Ubuntu
+  22.04 with JDK 17; that is the authoritative environment for this command.
+- TestSprite — **not initialized**. Its bootstrap was blocked because it may
+  tunnel a local API and expose private repository context to a third party.
+  Explicit repository-owner approval is required before using it against the
+  controlled staging backend.
+
+## Phase gate
+
+At that point, no Phase 4 recovery work had started. Source-only Phase 4 work
+was subsequently approved while the Phase 3 runtime validation remained
+pending; its result is recorded below.
+
+### TestSprite follow-up (2026-08-12)
+
+The repository owner explicitly approved TestSprite use. It was configured with
+`TESTSPRITE_PRODUCT_SPEC.md`, a code summary, and a generated backend plan at
+`testsprite_tests/testsprite_backend_test_plan.json`. To respect the request to
+test only prior phases, the eligible HTTP cases are `TC001` (`/api/version`) and
+`TC002` (unknown GET route redirects to Viewer); the remaining generated cases
+require MongoDB-backed account/mapping/navigation fixtures and are not treated
+as prior-phase evidence.
+
+Execution is **blocked**: `http://localhost:9000/api/version` is unreachable on
+the current Windows investigation host. TestSprite requires a running local or
+staging backend for execution; it cannot emulate Play, MongoDB, systemd, or the
+Ubuntu host. Run `TC001` and `TC002` only after the controlled Ubuntu staging
+backend is running, using TestSprite's generated execution step. This was the
+pre-Phase-4 status; the separate Phase 4 source-only result follows.
+
+## Phase 4 — Web assets and developer API
+
+**Status: PARTIAL — the source-side web delivery contract is repaired; browser
+and HTTP verification require the Ubuntu staging environment.**
+
+### Audit result and repair
+
+The prior Phase 4 claim is **NOT VERIFIED**: its cited commits are absent and
+no usable build/runtime evidence accompanies this checkout. The source had two
+material defects. The developer Swagger page was hard-coded to the legacy UCY
+host, so it could document the wrong system. The legacy installer also masked
+every npm, Bower, Grunt, and asset-copy failure, then copied entire source and
+dependency trees into multiple output locations.
+
+`clients/web/developers/index.html` now loads the generated Swagger document
+from the origin that served the page (`/assets/swagger.json`) without external
+jQuery or a legacy hostname. `scripts/build-web-assets.sh` is the canonical
+Linux builder for Architect, Viewer, and Campus Viewer: it uses `npm ci`, Bower,
+the project-pinned Grunt deploy task, verifies the minified CSS/JS outputs, and
+stages only `build/` and `bower_components/` beneath `server/public/`. The
+installer invokes that fail-closed helper before `sbt stage`.
+
+`PHASE_4_WEB_RUNBOOK.md` records the controlled staging build and verification
+commands. It deliberately does not set a production hostname; same-origin
+behaviour preserves the parameterised-domain decision (D-07), with broader
+legacy-domain removal reserved for Phase 8.
+
+### Validation evidence
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File
+  scripts/Test-WebAssetContract.ps1` — passed.
+- Git Bash `bash -n scripts/build-web-assets.sh` and `bash -n install.sh` —
+  passed. This confirms shell syntax only; the authoritative build remains the
+  Ubuntu 22.04 execution.
+- `npm ci`, Bower, `grunt deploy`, Play staging, browser navigation, Swagger
+  loading, and the four HTTP probes in the Phase 4 runbook — **not run**. No
+  Ubuntu staging host or service is available, and the Windows workstation is
+  investigation-only.
+
+## Phase gate
+
+No Phase 5 recovery work has started. Approve Phase 5 only after the Phase 4
+runbook has generated and served the browser assets, or explicitly approve a
+source-only empty-data/hydration-contract audit while the runtime validation
+remains pending.

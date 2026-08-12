@@ -19,6 +19,13 @@ import java.util.zip.GZIPInputStream
  */
 class SecurityRegressionSpec extends PlaySpecification {
 
+  if (!sys.env.get("RUN_MONGO_INTEGRATION_TESTS").contains("true")) {
+    "Mongo-backed security regression tests" should {
+      "run only against the controlled authenticated test database" in skipped(
+        "Set RUN_MONGO_INTEGRATION_TESTS=true after completing the Phase 2 staging runbook.")
+    }
+  } else {
+
   def extractString(result: Future[Result]): String = {
     val bytes = contentAsBytes(result).toArray
     if (bytes.length >= 2 && (bytes(0) & 0xFF) == 0x1f && (bytes(1) & 0xFF) == 0x8b) {
@@ -175,5 +182,6 @@ class SecurityRegressionSpec extends PlaySpecification {
       status(req) must beOneOf(UNAUTHORIZED, BAD_REQUEST, FORBIDDEN)
     }
 
+  }
   }
 }
