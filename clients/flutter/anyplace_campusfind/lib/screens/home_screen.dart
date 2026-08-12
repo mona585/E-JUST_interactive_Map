@@ -7,6 +7,7 @@ import '../providers/providers.dart';
 import '../providers/search_provider.dart';
 import '../utils/category_deriver.dart';
 import '../widgets/search_result_card.dart';
+import 'detail_navigation.dart';
 
 /// Home tab: greeting, search entry, dynamic quick-access cards and recent
 /// waypoints.
@@ -143,7 +144,7 @@ class _RecentWaypointsList extends ConsumerWidget {
             for (final result in results)
               SearchResultCard(
                 result: result,
-                onTap: () {},
+                onTap: () => openSearchResult(context, ref, result),
               ),
           ],
         );

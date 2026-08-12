@@ -634,8 +634,29 @@ Phase 0 (Bug Fixes)     Phase 1 (Foundation)
 | 1 | ✅ DONE (2026-08-12) | Foundation in `clients/flutter/anyplace_campusfind` |
 | 2 | ✅ DONE (2026-08-12) | Data layer in `lib/models`, `lib/services`, `lib/utils`, `lib/providers` |
 | **3** | ✅ DONE (2026-08-12) | Core screens (campus selection, Home, Map, Search) |
-| 4 | ⏸ Not started | Blocked on Phase 3 approval |
+| **4** | ✅ DONE (2026-08-12) | Detail screens (Building Detail, Professor Profile) |
 | 5–7 | ⏸ Not started | — |
+
+**Phase 4 completion record:**
+- `lib/screens/building_detail_screen.dart` — `BuildingDetailScreen(space)`: gradient
+  hero placeholder (no building photos in data), parsed building info via
+  `DescriptionParser` (summary), room search field (task 4.4) that filters
+  cached POIs of the building live, floors directory (task 4.3) with per-floor
+  tap → `showBuildingOnMap` (selects building+floor on the Map tab),
+  accessibility/facility chips, and a "Navigate to Building" button
+- `lib/screens/professor_profile_screen.dart` — `ProfessorProfileScreen(poi,
+  [space])`: avatar placeholder, parsed name/title/department, office location,
+  building + floor, weekly office hours (parsed), "Get Directions" button
+- `lib/utils/map_focus.dart` — `showBuildingOnMap(context, ref, space, {floor})`:
+  selects the building/floor in `mapViewStateProvider`, switches to the Map tab
+  and pops back to the shell (route drawing itself lands in Phase 5)
+- `lib/screens/detail_navigation.dart` — `openSearchResult` / `openPoi`: route a
+  tap to the correct screen (professor → Professor Profile; building → Building
+  Detail; other POIs → their building's detail; fallback snackbar)
+- Wired tap-through everywhere: Search results, Home recent waypoints, Map POI
+  markers, and a "Details" button on the map's building bottom sheet
+- Verified: `flutter analyze` 0 issues, 32 tests passing (5 new widget tests in
+  `test/detail_screens_test.dart`), `flutter build apk --debug` success
 
 **Phase 3 completion record:**
 - `CampusSelectionScreen` — first-launch picker; campuses fetched per-cuid via

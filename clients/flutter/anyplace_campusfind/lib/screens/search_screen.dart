@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/search_provider.dart';
 import '../widgets/filter_chips.dart';
 import '../widgets/search_result_card.dart';
+import 'detail_navigation.dart';
 
 /// Search tab: live client-side search across buildings and POIs with
 /// dynamic category filter chips.
@@ -65,13 +66,7 @@ class SearchScreen extends ConsumerWidget {
                       final result = results[i];
                       return SearchResultCard(
                         result: result,
-                        onTap: () {
-                          // Detail navigation lands in Phase 4; for now
-                          // surface a snackbar with the entity.
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(result.name)),
-                          );
-                        },
+                        onTap: () => openSearchResult(context, ref, result),
                       );
                     },
                   ),

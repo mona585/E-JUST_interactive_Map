@@ -16,6 +16,8 @@ import '../services/tile_service.dart';
 import '../utils/category_deriver.dart';
 import '../widgets/filter_chips.dart';
 import '../widgets/local_floorplan_tile_provider.dart';
+import 'building_detail_screen.dart';
+import 'detail_navigation.dart';
 
 /// Map tab: flutter_map with outdoor base tiles, building + POI markers,
 /// dynamic category filter chips, tiled floorplan overlay and floor switcher.
@@ -145,21 +147,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 }
 
-class _PoiMarker extends StatelessWidget {
+class _PoiMarker extends ConsumerWidget {
   const _PoiMarker({required this.poi});
 
   final Poi poi;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final isEntrance = poi.isEntrance;
     return GestureDetector(
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(poi.name)),
-        );
-      },
+      onTap: () => openPoi(context, ref, poi),
       child: Icon(
         isEntrance ? Icons.door_front_door : Icons.place,
         color: isEntrance ? scheme.tertiary : scheme.primary,
@@ -391,6 +389,15 @@ class _BuildingBottomSheet extends ConsumerWidget {
                 Expanded(
                   child: Text(space.name,
                       style: Theme.of(context).textTheme.titleMedium),
+                ),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => BuildingDetailScreen(space: space),
+                    ),
+                  ),
+                  icon: const Icon(Icons.info_outline, size: 18),
+                  label: const Text('Details'),
                 ),
               ],
             ),
