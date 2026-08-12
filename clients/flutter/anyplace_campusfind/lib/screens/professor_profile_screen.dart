@@ -35,10 +35,6 @@ class ProfessorProfileScreen extends ConsumerWidget {
     final office = parser.officeLocation;
     final officeHours = parser.officeHours;
 
-    final floor = cache.floorsOf(poi.buid).where((f) {
-      return f.floorNumber == poi.floorNumber;
-    }).firstOrNull;
-
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -137,11 +133,11 @@ class ProfessorProfileScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
-          // Get directions (route drawing is Phase 5; this focuses the map).
+          // Get directions: focus building + start combined route.
           FilledButton.icon(
             onPressed: () {
               if (building != null) {
-                showBuildingOnMap(context, ref, building, floor: floor);
+                navigateToPoiOnMap(context, ref, poi);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Building data unavailable')),

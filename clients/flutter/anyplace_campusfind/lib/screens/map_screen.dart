@@ -11,6 +11,7 @@ import '../models/poi.dart';
 import '../models/space.dart';
 import '../providers/map_view_provider.dart';
 import '../providers/providers.dart';
+import '../providers/route_provider.dart';
 import '../providers/search_provider.dart';
 import '../services/tile_service.dart';
 import '../utils/category_deriver.dart';
@@ -37,6 +38,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final cache = ref.watch(cacheServiceProvider);
     final mapState = ref.watch(mapViewStateProvider);
     final index = ref.watch(searchIndexProvider);
+    final route = ref.watch(routeStateProvider);
 
     final spaces = cache.spaces;
     final selectedFloor = mapState.selectedFloor;
@@ -80,6 +82,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             onSelected: (c) =>
                 ref.read(mapViewStateProvider.notifier).setCategory(c),
           ),
+          if (route.isLoading)
+            const LinearProgressIndicator(minHeight: 2)
+          else if (route.error != null)
+            _RouteNotice(text: 'Route unavailable: ${route.error}'),
           Expanded(
             child: FlutterMap(
               mapController: _mapController,
@@ -122,6 +128,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   selectedBuid: mapState.selectedSpace?.buid,
                   zoom: _zoom,
                 ),
+                if (route.isActive)
+                  _RouteOverlay(
+                    route: route,
+                    currentFloorNumber: selectedFloor?.floorNumber,
+                  ),
               ],
             ),
           ),
@@ -134,13 +145,19 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               floors: cache.floorsOf(mapState.selectedSpace!.buid),
               selectedFloor: selectedFloor,
             ),
-      floatingActionButton: mapState.selectedSpace != null
+      floatingActionButton: mapState.selectedSpace != null || route.isActive
           ? FloatingActionButton.small(
-              onPressed: () => ref
-                  .read(mapViewStateProvider.notifier)
-                  .clearSelection(),
-              tooltip: 'Clear selection',
-              child: const Icon(Icons.close),
+              onPressed: () {
+                if (route.isActive) {
+                  ref.read(routeStateProvider.notifier).clearRoute();
+                } else {
+                  ref
+                      .read(mapViewStateProvider.notifier)
+                      .clearSelection();
+                }
+              },
+              tooltip: route.isActive ? 'Clear route' : 'Clear selection',
+              child: Icon(route.isActive ? Icons.close : Icons.close),
             )
           : null,
     );
@@ -279,6 +296,68 @@ class _ClusterBubble extends StatelessWidget {
         style: TextStyle(color: scheme.onPrimary, fontWeight: FontWeight.bold),
       ),
     );
+  }
+}
+
+/// Inline status banner shown above the map for route errors.
+class _RouteNotice extends StatelessWidget {
+  const _RouteNotice({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      color: scheme.errorContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Text(
+        text,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: scheme.onErrorContainer, fontSize: 12),
+      ),
+    );
+  }
+}
+
+/// Draws the active route: blue outdoor polyline + red indoor polyline for
+/// the currently selected floor (task 5.4). Switching floors via the bottom
+/// sheet moves the red polyline to that floor's segment (task 5.5).
+class _RouteOverlay extends StatelessWidget {
+  const _RouteOverlay({required this.route, required this.currentFloorNumber});
+
+  final RouteState route;
+  final String? currentFloorNumber;
+
+  static const Color _outdoorColor = Colors.blue;
+  static const Color _indoorColor = Colors.red;
+
+  @override
+  Widget build(BuildContext context) {
+    final polylines = <Polyline>[];
+
+    if (route.hasOutdoor) {
+      polylines.add(Polyline(
+        points: route.outdoorPoints,
+        strokeWidth: 5,
+        color: _outdoorColor,
+      ));
+    }
+
+    final indoor = currentFloorNumber == null
+        ? null
+        : route.indoorPointsByFloor[currentFloorNumber];
+    if (indoor != null && indoor.length >= 2) {
+      polylines.add(Polyline(
+        points: indoor.map((p) => LatLng(p.lat, p.lon)).toList(),
+        strokeWidth: 4,
+        color: _indoorColor,
+      ));
+    }
+
+    return PolylineLayer(polylines: polylines);
   }
 }
 

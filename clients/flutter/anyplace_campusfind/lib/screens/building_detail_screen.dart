@@ -7,7 +7,6 @@ import '../providers/providers.dart';
 import '../utils/description_parser.dart';
 import '../utils/map_focus.dart';
 import 'detail_navigation.dart';
-
 /// Building detail screen: hero placeholder, parsed building info, room
 /// search, floors directory, accessibility/facilities and a Navigate button.
 class BuildingDetailScreen extends ConsumerStatefulWidget {
@@ -75,10 +74,9 @@ class _BuildingDetailScreenState extends ConsumerState<BuildingDetailScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                // Navigate to building (route drawing is Phase 5).
+                // Navigate to building (starts outdoor route).
                 FilledButton.icon(
-                  onPressed: () =>
-                      showBuildingOnMap(context, ref, space),
+                  onPressed: () => navigateToBuildingOnMap(context, ref, space),
                   icon: const Icon(Icons.directions),
                   label: const Text('Navigate to Building'),
                 ),

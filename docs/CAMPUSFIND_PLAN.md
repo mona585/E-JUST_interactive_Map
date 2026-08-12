@@ -635,7 +635,36 @@ Phase 0 (Bug Fixes)     Phase 1 (Foundation)
 | 2 | ✅ DONE (2026-08-12) | Data layer in `lib/models`, `lib/services`, `lib/utils`, `lib/providers` |
 | **3** | ✅ DONE (2026-08-12) | Core screens (campus selection, Home, Map, Search) |
 | **4** | ✅ DONE (2026-08-12) | Detail screens (Building Detail, Professor Profile) |
-| 5–7 | ⏸ Not started | — |
+| **5** | ✅ DONE (2026-08-12) | Navigation (indoor + outdoor, combined route display) |
+| 6–7 | ⏸ Not started | — |
+
+**Phase 5 completion record:**
+- `lib/services/outdoor_routing_service.dart` — `OutdoorRoutingService` for the
+  public OSRM demo (`router.project-osrm.org/route/v1/driving/...`), GeoJSON
+  parsing into `OutdoorRoute` (`lib/models/outdoor_route.dart`); throws
+  `OutdoorRoutingException` on non-`Ok` status, HTTP errors or empty routes
+- `lib/providers/route_provider.dart` — `RouteNotifier`/`RouteState` +
+  `routeStateProvider`, `userLocationProvider` (GPS slot for Phase 6),
+  `outdoorRoutingServiceProvider`. Combined route logic (task 5.3):
+  - indoor leg via `/api/navigation/route` from nearest `is_building_entrance`
+    POI → destination, grouped by floor (`indoorPointsByFloor`)
+  - no-entrance fallback (5.7): `/api/navigation/route/coordinates` from the
+    building center on the destination floor
+  - outdoor leg via OSRM `from` (GPS) → entrance/building center, straight-line
+    fallback (5.7) when OSRM fails
+  - `navigateToPoi` (combined) and `navigateToBuilding` (outdoor-only); error
+    state surfaces as `RouteState.error`
+- `lib/utils/map_focus.dart` — `navigateToPoiOnMap` / `navigateToBuildingOnMap`
+  focus the building on the Map tab and kick off the route
+- Map screen (5.4): `_RouteOverlay` draws the blue outdoor polyline always and
+  the red indoor polyline for the currently selected floor; `_RouteNotice`
+  banner for errors + loading bar; FAB now clears the route (5.6); switching
+  floors in the bottom sheet moves the red polyline to that floor (5.5)
+- Building Detail "Navigate to Building" and Professor "Get Directions" buttons
+  now start real routes
+- Verified: `flutter analyze` 0 issues, 41 tests passing (9 new in
+  `test/route_test.dart` covering OSRM parsing + combined/fallback/error/clear
+  logic), `flutter build apk --debug` success
 
 **Phase 4 completion record:**
 - `lib/screens/building_detail_screen.dart` — `BuildingDetailScreen(space)`: gradient
