@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-  <string name="default_pref_server_host">map.beout.ai</string>
+  <string name="default_server_ip_address">ap.cs.ucy.ac.cy</string>
+  <string name="default_server_port">443</string>
+  <string name="ap_default_server_url">https://ap.cs.ucy.ac.cy</string>
+  <string name="anyplace_url">ap.cs.ucy.ac.cy</string>
   <string name="preferences_file">LoggerPreferences</string>
+
 
   <string name="description_body">Anyplace Logger for RSS logging. You can select locations in a building that have been registered and upload RSS log files.</string>
   <string name="github">https://github.com/dmsl/anyplace/tree/develop-clients</string>

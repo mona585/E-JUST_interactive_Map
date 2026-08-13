@@ -1,5 +1,0 @@
-string pois_from
-string pois_to
----
-bool success
-string response
