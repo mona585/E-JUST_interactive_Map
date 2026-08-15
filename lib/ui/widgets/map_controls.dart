@@ -1,0 +1,110 @@
+import 'package:flutter/material.dart';
+
+import '../../core/theme/app_theme.dart';
+
+/// Floating map controls (zoom, search, recenter, reload).
+class MapControls extends StatelessWidget {
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onRecenter;
+  final VoidCallback onSearch;
+  final VoidCallback onReload;
+  final bool isLoading;
+  final bool isTrackingLocation;
+  final bool isLocating;
+
+  const MapControls({
+    super.key,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onRecenter,
+    required this.onSearch,
+    required this.onReload,
+    this.isLoading = false,
+    this.isTrackingLocation = false,
+    this.isLocating = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildControlButton(
+          icon: Icons.search,
+          tooltip: 'Browse / Search Buildings',
+          onPressed: onSearch,
+          highlight: true,
+        ),
+        const SizedBox(height: 10),
+        _buildControlButton(
+          icon: isLocating
+              ? Icons.gps_fixed
+              : (isTrackingLocation ? Icons.my_location : Icons.location_searching),
+          tooltip: 'My Location / Recenter View',
+          onPressed: onRecenter,
+          iconColor: isTrackingLocation ? const Color(0xFF60A5FA) : Colors.white,
+        ),
+        const SizedBox(height: 10),
+        _buildControlButton(
+          icon: Icons.add,
+          tooltip: 'Zoom In',
+          onPressed: onZoomIn,
+        ),
+        const SizedBox(height: 6),
+        _buildControlButton(
+          icon: Icons.remove,
+          tooltip: 'Zoom Out',
+          onPressed: onZoomOut,
+        ),
+        const SizedBox(height: 10),
+        _buildControlButton(
+          icon: isLoading ? Icons.hourglass_top : Icons.refresh,
+          tooltip: 'Reload Buildings from Server',
+          onPressed: isLoading ? null : onReload,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildControlButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool highlight = false,
+    Color iconColor = Colors.white,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: highlight ? AppTheme.primaryLight : const Color(0xE61E293B),
+        borderRadius: BorderRadius.circular(14),
+        elevation: 4,
+        shadowColor: Colors.black45,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: highlight
+                    ? Colors.white38
+                    : const Color(0x33FFFFFF),
+                width: 1,
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: iconColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
