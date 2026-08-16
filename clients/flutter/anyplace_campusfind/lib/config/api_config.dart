@@ -1,14 +1,17 @@
 /// Central API configuration for the Anyplace backend.
 ///
 /// The server URL can be overridden at build time:
-///   flutter run --dart-define=SERVER_URL=http://anyplace.ejust.edu.eg:443
-/// The default is the E-JUST deployment server URL.
+///   flutter run --dart-define=SERVER_URL=https://hostname:port
+/// The default is the public UCY Anyplace deployment (the `:44` port is
+/// required — the default HTTPS port of that server does not serve the API).
 class ApiConfig {
   ApiConfig._();
 
+  static const String _defaultServerUrl = 'https://ap.cs.ucy.ac.cy:44';
+
   static const String _serverUrl = String.fromEnvironment(
     'SERVER_URL',
-    defaultValue: 'http://anyplace.ejust.edu.eg:443',
+    defaultValue: _defaultServerUrl,
   );
 
   static String get serverUrl => _serverUrl;
@@ -17,23 +20,23 @@ class ApiConfig {
   static const Duration requestTimeout = Duration(seconds: 20);
 
   // ---- Endpoints (public, no auth) ----
-  static String get campusGet => '$_serverUrl/api/mapping/campus/get';
-  static String get spacePublic => '$_serverUrl/api/mapping/space/public';
-  static String get floorAll => '$_serverUrl/api/mapping/floor/all';
-  static String get poisSpaceAll => '$_serverUrl/api/mapping/pois/space/all';
-  static String get poisSearch => '$_serverUrl/api/mapping/pois/search';
-  static String get navigationRoute => '$_serverUrl/api/navigation/route';
+  static String get campusGet => '$serverUrl/api/mapping/campus/get';
+  static String get spacePublic => '$serverUrl/api/mapping/space/public';
+  static String get floorAll => '$serverUrl/api/mapping/floor/all';
+  static String get poisSpaceAll => '$serverUrl/api/mapping/pois/space/all';
+  static String get poisSearch => '$serverUrl/api/mapping/pois/search';
+  static String get navigationRoute => '$serverUrl/api/navigation/route';
   static String get navigationRouteCoordinates =>
-      '$_serverUrl/api/navigation/route/coordinates';
-  static String get positionEstimate => '$_serverUrl/api/position/estimate';
+      '$serverUrl/api/navigation/route/coordinates';
+  static String get positionEstimate => '$serverUrl/api/position/estimate';
   static String get positionPredictFloor =>
-      '$_serverUrl/api/position/predictFloorAlgo1';
+      '$serverUrl/api/position/predictFloorAlgo1';
 
   /// Endpoint that returns a zip archive of floorplan tiles for a building/floor.
   static String floorTilesZip(String buid, String floorNumber) =>
-      '$_serverUrl/api/floortiles/zip/$buid/$floorNumber';
+      '$serverUrl/api/floortiles/zip/$buid/$floorNumber';
 
   /// Base URL under which individual floorplan tile PNGs are served.
   static String floorTilesBase(String buid, String floorNumber) =>
-      '$_serverUrl/api/floortiles/$buid/$floorNumber/';
+      '$serverUrl/api/floortiles/$buid/$floorNumber/';
 }

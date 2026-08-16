@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/api_config.dart';
 import '../config/theme.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -55,11 +56,16 @@ class ProfileScreen extends StatelessWidget {
             child: Text('Student', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
           ),
           const Center(
-            child: Text('student@ejust.edu.eg', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+            child: Text('student@example.edu', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
           ),
           const SizedBox(height: 32),
           _SettingsTile(icon: Icons.person_outline, title: 'Edit Profile'),
           _SettingsTile(icon: Icons.location_on_outlined, title: 'Default Campus'),
+          _SettingsTile(
+            icon: Icons.dns_outlined,
+            title: 'Server URL',
+            subtitle: ApiConfig.serverUrl,
+          ),
           _SettingsTile(icon: Icons.notifications_outlined, title: 'Notifications'),
           _SettingsTile(icon: Icons.dark_mode_outlined, title: 'Appearance'),
           _SettingsTile(icon: Icons.info_outline, title: 'About'),
@@ -70,10 +76,15 @@ class ProfileScreen extends StatelessWidget {
 }
 
 class _SettingsTile extends StatelessWidget {
-  const _SettingsTile({required this.icon, required this.title});
+  const _SettingsTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+  });
 
   final IconData icon;
   final String title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +98,12 @@ class _SettingsTile extends StatelessWidget {
       child: ListTile(
         leading: Icon(icon, color: AppTheme.textSecondary),
         title: Text(title, style: const TextStyle(fontSize: 15)),
-        trailing: const Icon(Icons.chevron_right, color: AppTheme.textTertiary, size: 20),
+        subtitle: subtitle == null
+            ? null
+            : Text(subtitle!, style: const TextStyle(fontSize: 12)),
+        trailing: subtitle == null
+            ? const Icon(Icons.chevron_right, color: AppTheme.textTertiary, size: 20)
+            : null,
         onTap: () {},
       ),
     );

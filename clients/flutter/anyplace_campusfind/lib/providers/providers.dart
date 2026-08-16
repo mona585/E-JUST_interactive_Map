@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/constants.dart';
 import '../services/api_service.dart';
 import '../services/cache_service.dart';
 import '../services/tile_service.dart';
@@ -34,9 +35,12 @@ final tileServiceProvider = Provider<TileService>((ref) {
   return TileService(ref.watch(apiServiceProvider));
 });
 
-/// Keeps the currently selected campus id (null until the user picks one on
-/// first launch). Persistence is handled by [CacheService].
-final selectedCampusIdProvider = StateProvider<String?>((ref) => null);
+/// The single primary (UCY) campus is always selected. CampusFind is
+/// single-campus by design — this never requires (and never awaits) a user
+/// decision.
+final selectedCampusIdProvider = StateProvider<String?>((ref) {
+  return AppConstants.primaryCampusCuid;
+});
 
 /// Currently active bottom-navigation tab (0 Home, 1 Map, 2 Search).
 final shellTabProvider = StateProvider<int>((ref) => 0);

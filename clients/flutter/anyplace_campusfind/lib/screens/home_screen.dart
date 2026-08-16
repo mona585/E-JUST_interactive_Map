@@ -173,6 +173,8 @@ class _QuickAccessCard extends StatelessWidget {
         return 'Facilities';
       case EntityCategory.entrance:
         return 'Access';
+      case EntityCategory.floor:
+        return 'Levels';
       case EntityCategory.other:
         return 'Browse all';
     }

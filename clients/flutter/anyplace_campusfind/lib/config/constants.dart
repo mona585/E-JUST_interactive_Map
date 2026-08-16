@@ -29,30 +29,42 @@ class AppConstants {
   /// Zoom level at which indoor POIs/floorplan are shown.
   static const double indoorZoomThreshold = 19;
 
-  /// Campus cuids offered on first launch.
+  /// Zoom level when focusing on a specific building or GPS location.
+  static const double focusedZoom = 17;
+
+  /// Default floor number probed when a building has no floor list (the
+  /// public backend returns no floors for most UCY buildings).
+  static const String probeFloorNumber = '0';
+
+  /// CampusFind ships with exactly ONE primary campus: the University of
+  /// Cyprus (UCY) campus on the public Anyplace backend (`ap.cs.ucy.ac.cy`).
   ///
-  /// The backend has no public "list campuses" endpoint, so campuses are
-  /// enumerated here. Override at build time:
-  ///   flutter run --dart-define=CAMPUS_IDS=cuid_a,cuid_b
-  /// When empty, [CampusLoader] falls back to deriving a single default
-  /// campus from all published buildings (`space/public`) so a stock build
-  /// is usable out of the box (see [defaultCampusName]).
+  /// CampusFind is single-campus by design — there is no campus picker and no
+  /// runtime selection. The campus CUID (`ucy`) matches the official Anyplace
+  /// campus entry (see https://anyplace.cs.ucy.ac.cy/viewer/?cuid=ucy).
+  ///
+  /// WARNING: the live backend has no public "list campuses" endpoint and
+  /// rejects `campus/get` at the load balancer, so building data is loaded
+  /// from the `space/public` endpoint (all published buildings), exactly like
+  /// the pre-merge working CampusFind version.
+  static const String primaryCampusCuid = 'ucy';
+
+  /// Display name of the single primary campus.
+  static const String primaryCampusName = 'University of Cyprus';
+
+  /// CAMPUS_IDS is no longer required (or consumed) — CampusFind is single-
+  /// campus. Kept as an empty default so any stray `--dart-define=CAMPUS_IDS`
+  /// never accidentally enables multi-campus behavior.
   static const String _campusIdsEnv =
       String.fromEnvironment('CAMPUS_IDS');
 
   static final List<String> configuredCampusIds = _parseCampusIds(_campusIdsEnv);
 
-  /// Name of the auto-derived default campus shown when no [CAMPUS_IDS]
-  /// were provided at build time. Override with `--dart-define=CAMPUS_NAME=...`.
-  static const String defaultCampusName = String.fromEnvironment(
-    'CAMPUS_NAME',
-    defaultValue: 'E-JUST Campus',
-  );
+  /// Name used for the primary campus dataset. Always the UCY campus.
+  static const String defaultCampusName = primaryCampusName;
 
-  /// Synthetic cuid used to persist the auto-derived default campus locally.
-  /// It is only used to remember the first-launch selection, never sent to the
-  /// backend as a real campus id.
-  static const String defaultCampusCuid = 'ejust_campus';
+  /// cuid used to persist the single primary campus selection locally.
+  static const String defaultCampusCuid = primaryCampusCuid;
 
   static List<String> _parseCampusIds(String raw) {
     if (raw.isEmpty) return const [];

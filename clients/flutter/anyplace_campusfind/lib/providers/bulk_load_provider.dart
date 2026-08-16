@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/constants.dart';
@@ -57,18 +58,29 @@ class BulkLoader {
   Future<(List<Campus>, List<Space>)> _loadScopedDataset() async {
     final cuids = AppConstants.configuredCampusIds;
     if (cuids.isEmpty) {
-      // Fall back to runtime-selected campus id if available.
+      // Fall back to runtime-selected campus id if available. When the
+      // selected id is the synthetic auto-derived default campus (or missing),
+      // there is no real campus/get record on the backend — use the public
+      // spaces endpoint instead.
       final selectedId = await _cache.getSelectedCampusId();
-      if (selectedId != null && selectedId.isNotEmpty) {
+      if (selectedId != null &&
+          selectedId.isNotEmpty &&
+          selectedId != AppConstants.defaultCampusCuid) {
         try {
           final campus = await _api.fetchCampus(selectedId);
           return (const <Campus>[], campus.spaces);
         } on ApiException {
-          // Failed to fetch selected campus; fall through to empty result.
+          // Failed to fetch selected campus; fall through to public spaces.
         }
       }
-      // No runtime campus id either — show empty state (no more silent global fallthrough).
-      return (const <Campus>[], const <Space>[]);
+      // No real runtime campus id — fall back to all published buildings (zero-config).
+      try {
+        final spaces = await _api.fetchPublicSpaces();
+        return (const <Campus>[], spaces);
+      } on ApiException {
+        // Network failure — leave empty; the selector shows the error/empty state with Retry.
+        return (const <Campus>[], const <Space>[]);
+      }
     }
 
     final campuses = <Campus>[];
@@ -114,6 +126,7 @@ class BulkLoader {
       final (campuses, spaces) = await _loadScopedDataset();
       _cache.setCampuses(campuses);
       _cache.setSpaces(spaces);
+      debugPrint('[bulk] spaces fetched: ${spaces.length}');
 
       // Fetch floors + POIs for every building with bounded concurrency so we
       // do not hammer the backend with one request per building.
@@ -122,8 +135,10 @@ class BulkLoader {
       // Keep a copy for offline launches (Phase 7.2).
       await _cache.saveOfflineSnapshot();
 
+      debugPrint('[bulk] spaces=${spaces.length} floors/pois done');
       return BulkLoadResult(campuses: campuses, spaces: spaces);
     } catch (e) {
+      debugPrint('[bulk] load failed: $e');
       // Network failure: fall back to the last cached snapshot so the app can
       // still show previously fetched data (Phase 7.2).
       final restored = await _cache.loadOfflineSnapshot();

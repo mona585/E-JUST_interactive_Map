@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../config/api_config.dart';
 import '../models/campus.dart';
@@ -35,9 +35,8 @@ class ApiException implements Exception {
 ///    [Dio] negotiates `Accept-Encoding: gzip` and decompresses transparently)
 ///  * timeouts and typed error mapping
 class ApiService {
-  ApiService({Dio? dio, String? baseUrl})
+  ApiService({Dio? dio})
       : _dio = dio ?? Dio(BaseOptions(
-          baseUrl: baseUrl ?? ApiConfig.serverUrl,
           connectTimeout: ApiConfig.requestTimeout,
           receiveTimeout: ApiConfig.requestTimeout,
         ));
@@ -145,8 +144,10 @@ class ApiService {
   /// POST /api/floortiles/zip/:buid/:floor — raw zip bytes of floorplan tiles.
   Future<Uint8List> fetchFloorTilesZip(String buid, String floorNumber) async {
     try {
+      final url = ApiConfig.floorTilesZip(buid, floorNumber);
+      _logRequest('POST', url);
       final response = await _dio.post<List<int>>(
-        ApiConfig.floorTilesZip(buid, floorNumber),
+        url,
         data: '{}',
         options: Options(
           headers: {
@@ -170,14 +171,25 @@ class ApiService {
     throw ApiException('Unexpected payload shape from $url');
   }
 
+  /// Prints the outgoing request so the active backend is observable in logs.
+  static void _logRequest(String method, String url) {
+    debugPrint('[Anyplace API] $method $url');
+  }
+
   /// Performs a POST request, sending [body] as JSON (or empty body when null),
-  /// and returns the decoded JSON response.
+  /// and returns the decoded JSON response (or raw bytes when [expectBytes]).
+  ///
+  /// Response bodies are always requested as bytes and decoded here instead of
+  /// relying on Dio's `ResponseType.json`, because the public Anyplace server
+  /// serves its JSON as `Content-Type: application/octet-stream` (gzip-encoded)
+  /// which makes Dio's content-type check skip JSON decoding entirely.
   Future<dynamic> postJson(
     String url, {
     Map<String, dynamic>? body,
     bool expectBytes = false,
   }) async {
     try {
+      _logRequest('POST', url);
       final response = await _dio.post(
         url,
         data: body == null ? null : jsonEncode(body),
@@ -186,12 +198,10 @@ class ApiService {
             HttpHeaders.contentTypeHeader: 'application/json',
             HttpHeaders.acceptHeader: 'application/json',
           },
-          responseType: expectBytes
-              ? ResponseType.bytes
-              : ResponseType.json,
+          responseType: ResponseType.bytes,
         ),
       );
-      return _decodeResponse(response);
+      return _decodeResponse(response, expectBytes: expectBytes);
     } on DioException catch (e) {
       throw _mapError(e);
     }
@@ -200,6 +210,7 @@ class ApiService {
   /// Performs a GET request and returns raw bytes (used for tile zips).
   Future<Uint8List> getBytes(String url) async {
     try {
+      _logRequest('GET', url);
       final response = await _dio.get<Uint8List>(
         url,
         options: Options(responseType: ResponseType.bytes),
@@ -210,17 +221,34 @@ class ApiService {
     }
   }
 
-  dynamic _decodeResponse(Response<dynamic> response) {
+  dynamic _decodeResponse(Response<dynamic> response,
+      {bool expectBytes = false}) {
     if (response.statusCode != null &&
         response.statusCode! >= 200 &&
         response.statusCode! < 300) {
-      return response.data;
+      if (expectBytes) return response.data;
+      return _decodeJsonPayload(response.data);
     }
     throw ApiException(
       'Request failed with status ${response.statusCode}',
       statusCode: response.statusCode,
       body: response.data?.toString(),
     );
+  }
+
+  /// Decodes a JSON response body regardless of its transport form
+  /// (decompressed bytes, Uint8List, or an already decoded string).
+  dynamic _decodeJsonPayload(dynamic data) {
+    if (data is Uint8List) {
+      return jsonDecode(utf8.decode(data));
+    }
+    if (data is List<int>) {
+      return jsonDecode(utf8.decode(Uint8List.fromList(data)));
+    }
+    if (data is String) {
+      return jsonDecode(data);
+    }
+    return data;
   }
 
   ApiException _mapError(DioException e) {

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -26,11 +27,10 @@ class TileService {
   /// not yet downloaded.
   Future<Directory?> tileDirFor(Floor floor) async {
     final base = await _tilesRoot();
-    final dir = Directory(
-      p.join(base.path, '${floor.buid}_${floor.floorNumber}', 'static_tiles'),
+    final floorDir = Directory(
+      p.join(base.path, '${floor.buid}_${floor.floorNumber}'),
     );
-    if (await dir.exists()) return dir;
-    return null;
+    return _resolveTilesDir(floorDir);
   }
 
   /// Returns the extracted tiles directory for a floor, downloading and
@@ -44,9 +44,13 @@ class TileService {
   }
 
   /// Downloads the tiles zip for a floor and extracts it to the cache,
-  /// returning the extracted `static_tiles` directory.
+  /// returning the extracted tiles directory.
   Future<Directory> downloadAndExtract(Floor floor) async {
+    debugPrint(
+      '[tiles] downloading zip ${floor.buid} floor ${floor.floorNumber}',
+    );
     final bytes = await _api.fetchFloorTilesZip(floor.buid, floor.floorNumber);
+    debugPrint('[tiles] zip bytes: ${bytes.length}');
     final root = await _tilesRoot();
     final floorDir = Directory(
       p.join(root.path, '${floor.buid}_${floor.floorNumber}'),
@@ -64,14 +68,41 @@ class TileService {
       await dest.writeAsBytes(file.content as List<int>, flush: true);
     }
 
-    final tilesDir = Directory(p.join(floorDir.path, 'static_tiles'));
-    if (!await tilesDir.exists()) {
+    final tilesDir = await _resolveTilesDir(floorDir);
+    if (tilesDir == null) {
       throw ApiException(
         'Tile archive for ${floor.buid}/${floor.floorNumber} '
-        'has no static_tiles directory',
+        'has no floorplan tiles',
       );
     }
     return tilesDir;
+  }
+
+  /// The tiles directory inside [floorDir], regardless of archive layout.
+  ///
+  /// Two layouts exist in the wild:
+  ///  * classic: `static_tiles/<zoom>/z<zoom>x<x>y<y>.png` (older deployments,
+  ///    used by the unit tests);
+  ///  * flat:    `<zoom>/z<zoom>x<x>y<y>.png` at the archive root (the public
+  ///    UCY Anyplace server), with `bounds.txt` and no `static_tiles` bucket.
+  /// Both are served by [LocalFloorplanTileProvider]; only the root directory
+  /// that contains the tile files differs.
+  Future<Directory?> _resolveTilesDir(Directory floorDir) async {
+    if (!await floorDir.exists()) return null;
+
+    final staticTiles = Directory(p.join(floorDir.path, 'static_tiles'));
+    if (await staticTiles.exists()) return staticTiles;
+
+    // Flat layout: the floor directory itself contains `<zoom>/…png` files.
+    try {
+      await for (final entity
+          in floorDir.list(recursive: true, followLinks: false)) {
+        if (entity is File && entity.path.endsWith('.png')) return floorDir;
+      }
+    } catch (_) {
+      // Unreadable directory — treat as not downloaded.
+    }
+    return null;
   }
 
   Future<Directory> _tilesRoot() async {

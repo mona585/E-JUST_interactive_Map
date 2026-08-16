@@ -1,15 +1,17 @@
 # anyplace_campusfind
 
-E-JUST campus navigation companion app (Flutter, Android-first). Built on the
-[Anyplace](https://github.com/dmsl/anyplace) indoor-navigation platform: browse
-campus buildings, search rooms/professors, view floorplans, get indoor +
-outdoor directions, and use GPS/Wi-Fi positioning.
+Public [Anyplace](https://github.com/dmsl/anyplace) campus navigation app
+(Flutter, Android-first). Built on the Anyplace indoor-navigation platform:
+browse campus buildings, search rooms/professors, view floorplans, get indoor +
+outdoor directions, and use GPS/Wi-Fi positioning. Data is loaded dynamically
+from the public Anyplace backend (`https://ap.cs.ucy.ac.cy:44`) with no build-time
+campus configuration required.
 
 ## Features
 
-- **Campus selection** on first launch (campuses configured at build time)
+- **Campus selection** on first launch (auto-derived from published buildings)
 - **Home** — quick access by category and recent waypoints
-- **Map** — `flutter_map` with building/POI markers, marker clustering, tiled
+- **Map** — Google Maps with building/POI markers, marker clustering, tiled
   floorplan overlay with floor switcher, GPS blue-dot and nearest-location card
 - **Search** — live cross-entity search (buildings + POIs) with category filters
 - **Building detail / Professor profile** — parsed metadata, floor directory,
@@ -39,14 +41,13 @@ The app reads three `--dart-define` values; all default to sensible dev values.
 
 | Define | Default | Purpose |
 | --- | --- | --- |
-| `SERVER_URL` | `http://anyplace.ejust.edu.eg:443` | Backend base URL |
-| `CAMPUS_IDS` | *(empty)* | Comma-separated campus cuids offered on first launch. When empty, the app auto-derives a single default campus from all published buildings (`space/public`), so a zero-config build shows the E-JUST campus on first launch. |
-| `CAMPUS_NAME` | `E-JUST Campus` | Name of the auto-derived default campus |
+| `SERVER_URL` | `https://ap.cs.ucy.ac.cy:44` | Backend base URL (public UCY Anyplace; port 44 required) |
+| `CAMPUS_IDS` | *(empty)* | Comma-separated campus cuids offered on first launch. When empty, the app auto-derives a single default campus from all published buildings (`space/public`), so a zero-config build shows a default campus on first launch. |
+| `CAMPUS_NAME` | `Anyplace Campus` | Name of the auto-derived default campus |
 
 ```bash
 flutter run \
-  --dart-define=SERVER_URL=http://10.0.2.2:9000 \
-  --dart-define=CAMPUS_IDS=cuid_ejust
+  --dart-define=MAPS_API_KEY=YOUR_KEY
 ```
 
 > `10.0.2.2` is the emulator alias for the host machine's `localhost`. The

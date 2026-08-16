@@ -79,7 +79,7 @@ void main() {
     });
 
     test('fetchCampus sets cuid from the request', () async {
-      stubPost('/api/mapping/campus/get', {'name': 'E-JUST'});
+      stubPost('/api/mapping/campus/get', {'name': 'UCY Campus'});
       final campus = await api.fetchCampus('c1');
       expect(campus.cuid, 'c1');
     });

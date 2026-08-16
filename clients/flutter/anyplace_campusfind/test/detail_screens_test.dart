@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:anyplace_campusfind/models/floor.dart';
 import 'package:anyplace_campusfind/models/poi.dart';
 import 'package:anyplace_campusfind/models/space.dart';
+import 'package:anyplace_campusfind/providers/map_view_provider.dart';
 import 'package:anyplace_campusfind/providers/providers.dart';
 import 'package:anyplace_campusfind/providers/search_provider.dart';
 import 'package:anyplace_campusfind/screens/building_detail_screen.dart';
@@ -120,7 +121,7 @@ void main() {
     expect(find.textContaining('Floor'), findsWidgets);
   });
 
-  testWidgets('openSearchResult pushes professor profile for professor POIs',
+  testWidgets('openSearchResult focuses the map for professor POIs',
       (tester) async {
     WidgetRef? capturedRef;
     await tester.pumpWidget(wrap(Consumer(
@@ -134,16 +135,23 @@ void main() {
     openSearchResult(
       context,
       capturedRef!,
-      SearchResult(category: EntityCategory.professor, poi: professor),
+      SearchResult(
+        category: EntityCategory.professor,
+        space: building,
+        poi: professor,
+      ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(ProfessorProfileScreen), findsOneWidget);
-    expect(find.byType(BuildingDetailScreen), findsNothing);
+    expect(capturedRef!.read(shellTabProvider), 1);
+    final request = capturedRef!.read(mapFocusRequestProvider);
+    expect(request, isNotNull);
+    expect(request!.buid, 'building_1');
+    expect(request.poi?.puid, 'poi_prof');
+    expect(request.floorNumber, '0');
   });
 
-  testWidgets('openSearchResult pushes building detail for buildings',
-      (tester) async {
+  testWidgets('openSearchResult focuses the map for buildings', (tester) async {
     WidgetRef? capturedRef;
     await tester.pumpWidget(wrap(Consumer(
       builder: (context, ref, child) {
@@ -160,6 +168,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(BuildingDetailScreen), findsOneWidget);
+    expect(capturedRef!.read(shellTabProvider), 1);
+    final request = capturedRef!.read(mapFocusRequestProvider);
+    expect(request, isNotNull);
+    expect(request!.buid, 'building_1');
+    expect(request.poi, isNull);
+    expect(request.floorNumber, isNull);
   });
 }

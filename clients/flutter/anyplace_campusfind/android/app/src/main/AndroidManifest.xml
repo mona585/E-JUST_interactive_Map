@@ -44,6 +44,13 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
+        <!-- Google Maps requires this key in the application element or the
+             Maps SDK throws "API key not found" and the app crashes on launch.
+             The value is injected at build time from clients/.env (MAPS_API_KEY)
+             via the googleMapsApiKey manifest placeholder; it is never committed. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${googleMapsApiKey}" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

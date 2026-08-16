@@ -59,7 +59,7 @@ class SearchResultCard extends StatelessWidget {
                             color: Colors.white)),
                   ),
                   const SizedBox(width: 10),
-                  Text('${(300 + result.name.hashCode % 500)}m',
+                  Text(result.code.isNotEmpty ? result.code : result.category.badge,
                       style: const TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
@@ -81,7 +81,9 @@ class SearchResultCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '${result.space?.name ?? "Building"} · ${result.poi?.floorName ?? "Floor ${result.poi?.floorNumber ?? "?"}"}',
+                      result.isFloor
+                          ? '${result.space?.name ?? "Building"} · Floor ${result.floor?.floorNumber ?? "?"}'
+                          : '${result.space?.name ?? "Building"} · ${result.poi?.floorName ?? "Floor ${result.poi?.floorNumber ?? "?"}"}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(

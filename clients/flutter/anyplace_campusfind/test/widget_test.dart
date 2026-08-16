@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
+import 'package:anyplace_campusfind/providers/map_view_provider.dart';
 import 'package:anyplace_campusfind/providers/position_provider.dart';
 import 'package:anyplace_campusfind/screens/main_shell.dart';
 import 'package:anyplace_campusfind/services/positioning_service.dart';
@@ -28,6 +29,9 @@ void main() {
               wifiScanBuilder: () async => const [],
               permissionRequest: () async => false,
             ),
+          ),
+          mapSurfaceBuilderProvider.overrideWithValue(
+            () => const ColoredBox(color: Color(0xFFE0E0E0)),
           ),
         ],
         child: const MaterialApp(home: MainShell()),

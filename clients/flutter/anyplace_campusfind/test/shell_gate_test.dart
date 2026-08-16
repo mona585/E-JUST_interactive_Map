@@ -10,11 +10,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:anyplace_campusfind/models/space.dart';
 import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
+import 'package:anyplace_campusfind/providers/map_view_provider.dart';
 import 'package:anyplace_campusfind/providers/providers.dart';
 import 'package:anyplace_campusfind/providers/position_provider.dart';
 import 'package:anyplace_campusfind/screens/main_shell.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
 import 'package:anyplace_campusfind/services/positioning_service.dart';
+
+/// Replaces the real Google Maps surface with a plain box in widget tests so
+/// the platform plugin is never instantiated.
+final Override _mapSurfaceOverride = mapSurfaceBuilderProvider.overrideWithValue(
+  () => const ColoredBox(color: Color(0xFFE0E0E0)),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -78,6 +85,7 @@ void main() {
       loaderOverride(() => completer.future),
       cacheServiceProvider.overrideWithValue(cache),
       positioningOverride(),
+      _mapSurfaceOverride,
     ]);
     addTearDown(container.dispose);
 
@@ -99,6 +107,7 @@ void main() {
           BulkLoadResult(campuses: const [], spaces: [building], fromOffline: true)),
       cacheServiceProvider.overrideWithValue(cache),
       positioningOverride(),
+      _mapSurfaceOverride,
     ]);
     addTearDown(container.dispose);
 
@@ -116,6 +125,7 @@ void main() {
           BulkLoadResult(campuses: const [], spaces: [building])),
       cacheServiceProvider.overrideWithValue(cache),
       positioningGrantedOverride(),
+      _mapSurfaceOverride,
     ]);
     addTearDown(container.dispose);
 

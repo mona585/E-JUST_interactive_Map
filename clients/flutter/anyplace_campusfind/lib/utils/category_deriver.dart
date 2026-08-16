@@ -25,6 +25,7 @@ enum EntityCategory {
   cafeteria('Cafeterias', Icons.restaurant, Color(0xFFFFA000), 'CAFE'),
   lab('Labs', Icons.science, Color(0xFFEF6C00), 'LAB'),
   building('Buildings', Icons.apartment, Color(0xFF1976D2), 'BLDG'),
+  floor('Floors', Icons.layers, Color(0xFF6A1B9A), 'FLR'),
   other('Other', Icons.place, Color(0xFF757575), 'OTHER');
 
   const EntityCategory(this.label, this.icon, this.color, this.badge);
