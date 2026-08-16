@@ -9,6 +9,12 @@ data class ScanRecord(val bssid: String, val rssi: Int)
 
 data class LocDistance(val distance: Double, val lat: Double, val lon: Double)
 
+data class LocalizationResult(
+    val latLng: LatLng?,
+    val matchedAps: Int,
+    val totalAps: Int
+)
+
 /**
  * K-Nearest Neighbor (KNN / WKNN) localization algorithm matching Anyplace reference implementation.
  */
@@ -24,8 +30,20 @@ object KnnLocalizer {
         k: Int = DEFAULT_K,
         isWeighted: Boolean = true
     ): LatLng? {
+        return localize(scanResults, radioMap, k, isWeighted).latLng
+    }
+
+    /**
+     * Performs localization and returns detailed metrics (matched APs, total APs, LatLng).
+     */
+    fun localize(
+        scanResults: List<ScanRecord>,
+        radioMap: RadioMap,
+        k: Int = DEFAULT_K,
+        isWeighted: Boolean = true
+    ): LocalizationResult {
         if (scanResults.isEmpty() || radioMap.fingerprintCount == 0) {
-            return null
+            return LocalizationResult(null, 0, scanResults.size)
         }
 
         val macList = radioMap.macAddressList
@@ -51,7 +69,7 @@ object KnnLocalizer {
 
         // If no APs matched the radio map, localization cannot be performed
         if (matchedAps == 0) {
-            return null
+            return LocalizationResult(null, 0, scanResults.size)
         }
 
         val distances = ArrayList<LocDistance>()
@@ -73,20 +91,22 @@ object KnnLocalizer {
         }
 
         if (distances.isEmpty()) {
-            return null
+            return LocalizationResult(null, matchedAps, scanResults.size)
         }
 
         // Sort by distance ascending (closest first)
         distances.sortBy { it.distance }
 
         val actualK = minOf(k, distances.size)
-        if (actualK <= 0) return null
+        if (actualK <= 0) return LocalizationResult(null, matchedAps, scanResults.size)
 
-        return if (isWeighted) {
+        val estimatedCoords = if (isWeighted) {
             calculateWeightedK(distances, actualK)
         } else {
             calculateUnweightedK(distances, actualK)
         }
+
+        return LocalizationResult(estimatedCoords, matchedAps, scanResults.size)
     }
 
     private fun calculateUnweightedK(distances: List<LocDistance>, k: Int): LatLng {

@@ -5,34 +5,35 @@ import '../data/datasources/anyplace_api_client.dart';
 import '../data/datasources/native_positioning_service.dart';
 import '../data/models/floor_model.dart';
 import '../data/models/floorplan_model.dart';
+import '../data/models/navigation_route_model.dart';
+import '../data/models/poi_model.dart';
 import '../data/models/space_model.dart';
 import '../data/repositories/floorplan_repository.dart';
+import '../data/repositories/navigation_repository.dart';
+import '../data/repositories/poi_repository.dart';
 import '../data/repositories/radiomap_repository.dart';
 import '../data/repositories/space_repository.dart';
+import 'location_provider.dart';
 
 /// Status of RadioMap acquisition and native engine readiness for the selected floor.
-enum RadioMapStatus {
-  idle,
-  loading,
-  ready,
-  unsupported,
-  error,
-}
+enum RadioMapStatus { idle, loading, ready, unsupported, error }
 
 /// Status of Floorplan tiles acquisition and rendering readiness.
-enum FloorplanStatus {
-  idle,
-  loading,
-  ready,
-  unsupported,
-  error,
-}
+enum FloorplanStatus { idle, loading, ready, unsupported, error }
 
-/// Provider managing state for Anyplace buildings, floors, RadioMaps, and indoor Floorplans.
+/// Status of indoor Points of Interest (POIs) acquisition for the selected floor.
+enum PoiStatus { idle, loading, ready, error }
+
+/// Status of an Anyplace navigation route request.
+enum NavigationRouteStatus { idle, loading, ready, unsupported, error }
+
+/// Provider managing state for Anyplace buildings, floors, RadioMaps, indoor Floorplans, and POIs.
 class SpaceProvider extends ChangeNotifier {
   final SpaceRepository _repository;
   final RadioMapRepository _radioMapRepository;
   final FloorplanRepository _floorplanRepository;
+  final PoiRepository _poiRepository;
+  final NavigationRepository _navigationRepository;
   final NativePositioningService _nativePositioningService;
 
   List<SpaceModel> _spaces = const [];
@@ -60,6 +61,21 @@ class SpaceProvider extends ChangeNotifier {
   String? _floorplanErrorMessage;
   int _floorplanRequestId = 0;
 
+  // POI State
+  PoiStatus _poiStatus = PoiStatus.idle;
+  List<PoiModel> _pois = const [];
+  PoiModel? _selectedPoi;
+  String? _poiErrorMessage;
+  int _poiRequestId = 0;
+
+  // Navigation Route State
+  NavigationRouteStatus _navigationRouteStatus = NavigationRouteStatus.idle;
+  NavigationRouteModel? _activeNavigationRoute;
+  String? _navigationRouteErrorMessage;
+  String? _navigationDestinationPuid;
+  int _navigationRouteRequestId = 0;
+  LocationProvider? _locationProvider;
+
   // Default coordinate if no space selected (Cyprus / UCY area)
   static const LatLng defaultCenter = LatLng(35.1444, 33.4105);
 
@@ -67,14 +83,32 @@ class SpaceProvider extends ChangeNotifier {
     SpaceRepository? repository,
     RadioMapRepository? radioMapRepository,
     FloorplanRepository? floorplanRepository,
+    PoiRepository? poiRepository,
+    NavigationRepository? navigationRepository,
     NativePositioningService? nativePositioningService,
-  })  : _repository = repository ?? AnyplaceSpaceRepository(),
-        _radioMapRepository =
-            radioMapRepository ?? AnyplaceRadioMapRepository(),
-        _floorplanRepository =
-            floorplanRepository ?? AnyplaceFloorplanRepository(),
-        _nativePositioningService =
-            nativePositioningService ?? MethodChannelNativePositioningService();
+    this._locationProvider,
+  }) : _repository = repository ?? AnyplaceSpaceRepository(),
+       _radioMapRepository = radioMapRepository ?? AnyplaceRadioMapRepository(),
+       _floorplanRepository =
+           floorplanRepository ?? AnyplaceFloorplanRepository(),
+       _poiRepository = poiRepository ?? AnyplacePoiRepository(),
+       _navigationRepository =
+           navigationRepository ?? AnyplaceNavigationRepository(),
+       _nativePositioningService =
+           nativePositioningService ?? MethodChannelNativePositioningService();
+
+  /// Binds LocationProvider for indoor floor position scoping.
+  void setLocationProvider(LocationProvider? locationProvider) {
+    _locationProvider = locationProvider;
+    _syncLocationProvider();
+  }
+
+  void _syncLocationProvider() {
+    _locationProvider?.setActiveIndoorFloor(
+      _selectedSpace?.buid,
+      _selectedFloor?.floorNumber,
+    );
+  }
 
   List<SpaceModel> get spaces => _spaces;
   SpaceModel? get selectedSpace => _selectedSpace;
@@ -114,6 +148,29 @@ class SpaceProvider extends ChangeNotifier {
   String? get activeFloorplanImagePath => _activeFloorplan?.imagePath;
   bool get isFloorplanCached => _activeFloorplan?.isCached ?? false;
 
+  // POI Getters
+  PoiStatus get poiStatus => _poiStatus;
+  List<PoiModel> get pois => _pois;
+  PoiModel? get selectedPoi => _selectedPoi;
+  bool get hasPois => _pois.isNotEmpty;
+  bool get isLoadingPois => _poiStatus == PoiStatus.loading;
+  String? get poiErrorMessage => _poiErrorMessage;
+  bool get hasSelectedPoi => _selectedPoi != null;
+
+  // Navigation Getters
+  NavigationRouteStatus get navigationRouteStatus => _navigationRouteStatus;
+  NavigationRouteModel? get activeNavigationRoute => _activeNavigationRoute;
+  String? get navigationRouteErrorMessage => _navigationRouteErrorMessage;
+  bool get isLoadingNavigationRoute =>
+      _navigationRouteStatus == NavigationRouteStatus.loading;
+  bool get hasActiveNavigationRoute =>
+      _navigationRouteStatus == NavigationRouteStatus.ready &&
+      _activeNavigationRoute != null &&
+      _activeNavigationRoute!.hasRenderablePath;
+  bool get isNavigationRouteUnsupported =>
+      _navigationRouteStatus == NavigationRouteStatus.unsupported;
+  String? get navigationDestinationPuid => _navigationDestinationPuid;
+
   /// Fetches public spaces from the Anyplace repository.
   Future<void> loadSpaces({bool forceReload = false}) async {
     _isLoading = true;
@@ -121,83 +178,91 @@ class SpaceProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final fetched =
-          await _repository.getPublicSpaces(forceReload: forceReload);
+      final fetched = await _repository.getPublicSpaces(
+        forceReload: forceReload,
+      );
       _spaces = fetched;
       _errorMessage = null;
 
       // If selected space was previously set, refresh its reference from new list
       if (_selectedSpace != null) {
-        final matching = _spaces.where((s) => s.buid == _selectedSpace!.buid);
-        if (matching.isNotEmpty) {
-          _selectedSpace = matching.first;
-        }
+        _selectedSpace = fetched.firstWhere(
+          (s) => s.buid == _selectedSpace!.buid,
+          orElse: () => _selectedSpace!,
+        );
       }
     } on ApiException catch (e) {
       _errorMessage = e.message;
     } catch (e) {
-      _errorMessage = 'An unexpected error occurred: $e';
+      _errorMessage = 'Failed to load campus spaces: $e';
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  /// Sets the currently selected building and automatically initiates loading of its floors.
-  ///
-  /// Any previously selected floor, RadioMap, and Floorplan are immediately reset.
-  void selectSpace(SpaceModel? space) {
-    if (_selectedSpace?.buid == space?.buid && _selectedSpace != null) {
+  /// Selects a space, clears previous floor & POI selections, and automatically loads available floors.
+  void selectSpace(SpaceModel space) {
+    if (_selectedSpace?.buid != space.buid) {
       debugPrint(
-        '[SpaceProvider] selectSpace: already selected ${space?.buid}',
+        '[SpaceProvider] selectSpace: ${space.name} (buid: ${space.buid})',
       );
-      return;
-    }
+      _selectedSpace = space;
+      _selectedFloor = null;
+      _floors = const [];
+      _floorsErrorMessage = null;
+      _selectedPoi = null;
+      _resetRadioMapState();
+      _resetFloorplanState();
+      _resetPoiState();
+      _resetNavigationRouteState();
+      _syncLocationProvider();
+      notifyListeners();
 
-    debugPrint(
-      '[SpaceProvider] selectSpace: ${space?.name} (buid: ${space?.buid})',
-    );
-
-    // Cancel in-flight RadioMap and Floorplan requests
-    _radioMapRequestId++;
-    _floorplanRequestId++;
-    _selectedSpace = space;
-    _selectedFloor = null;
-    _floors = const [];
-    _floorsErrorMessage = null;
-    _isLoadingFloors = space != null;
-    _resetRadioMapState();
-    _resetFloorplanState();
-
-    notifyListeners();
-
-    if (_selectedSpace != null) {
+      // Automatically fetch floors for newly selected space
       loadFloorsForSelectedSpace();
     }
   }
 
-  /// Selects a building by its building ID (`buid`).
-  void selectSpaceByBuid(String buid) {
-    final matching = _spaces.where((s) => s.buid == buid);
-    if (matching.isNotEmpty) {
-      selectSpace(matching.first);
+  /// Clears the currently selected space, floor, RadioMap, floorplan, and POIs.
+  void clearSelection() {
+    if (_selectedSpace != null || _selectedFloor != null) {
+      debugPrint(
+        '[SpaceProvider] clearSelection: resetting space, floor, radiomap, floorplan, and pois',
+      );
+      _selectedSpace = null;
+      _selectedFloor = null;
+      _floors = const [];
+      _floorsErrorMessage = null;
+      _selectedPoi = null;
+      _radioMapRequestId++;
+      _floorplanRequestId++;
+      _poiRequestId++;
+      _resetRadioMapState();
+      _resetFloorplanState();
+      _resetPoiState();
+      _resetNavigationRouteState();
+      _syncLocationProvider();
+      notifyListeners();
     }
   }
 
-  /// Selects a specific floor belonging to the current selected building
-  /// and automatically initiates RadioMap and Floorplan acquisitions for that floor.
+  /// Selects a floor for the currently selected space and triggers RadioMap, Floorplan, and POI downloads.
   void selectFloor(FloorModel floor) {
-    if (_selectedSpace == null || floor.buid != _selectedSpace!.buid) {
+    if (_selectedSpace == null) {
+      debugPrint('[SpaceProvider] Cannot select floor: no space selected');
+      return;
+    }
+
+    if (floor.buid != _selectedSpace!.buid) {
       debugPrint(
-        '[SpaceProvider] selectFloor REJECTED: floor.buid (${floor.buid}) does not match selected space (${_selectedSpace?.buid})',
+        '[SpaceProvider] Mismatched buid: floor buid (${floor.buid}) != selected space buid (${_selectedSpace!.buid})',
       );
       return;
     }
 
     if (_selectedFloor?.floorNumber == floor.floorNumber) {
-      debugPrint(
-        '[SpaceProvider] selectFloor: floor ${floor.floorNumber} already selected',
-      );
+      debugPrint('[SpaceProvider] Floor ${floor.floorNumber} already selected');
       return;
     }
 
@@ -205,22 +270,158 @@ class SpaceProvider extends ChangeNotifier {
       '[SpaceProvider] selectFloor ACCEPTED: Floor ${floor.floorNumber} (${floor.displayName}) for ${_selectedSpace!.buid}',
     );
     _selectedFloor = floor;
+    _selectedPoi = null;
+    _resetNavigationRouteState();
+    _syncLocationProvider();
     notifyListeners();
 
-    // Trigger RadioMap and Floorplan acquisitions for the selected floor
+    // Trigger RadioMap, Floorplan, and POI acquisitions for the selected floor
     loadRadioMapForSelectedFloor();
     loadFloorplanForSelectedFloor();
+    loadPoisForSelectedFloor();
   }
 
-  /// Clears the current floor selection and resets active RadioMap and Floorplan.
+  /// Clears the current floor selection and resets active RadioMap, Floorplan, and POIs.
   void clearFloorSelection() {
     if (_selectedFloor != null) {
       debugPrint('[SpaceProvider] clearFloorSelection');
       _radioMapRequestId++;
       _floorplanRequestId++;
+      _poiRequestId++;
       _selectedFloor = null;
+      _selectedPoi = null;
       _resetRadioMapState();
       _resetFloorplanState();
+      _resetPoiState();
+      _resetNavigationRouteState();
+      _syncLocationProvider();
+      notifyListeners();
+    }
+  }
+
+  /// Selects an indoor POI for viewing details.
+  void selectPoi(PoiModel? poi) {
+    if (_selectedPoi?.puid != poi?.puid &&
+        _navigationDestinationPuid != null &&
+        _navigationDestinationPuid != poi?.puid) {
+      _resetNavigationRouteState();
+    }
+    _selectedPoi = poi;
+    notifyListeners();
+  }
+
+  /// Clears the selected POI.
+  void clearSelectedPoi() {
+    if (_selectedPoi != null) {
+      _selectedPoi = null;
+      _resetNavigationRouteState();
+      notifyListeners();
+    }
+  }
+
+  /// Requests a navigation route from the current effective indoor position to the selected POI.
+  Future<void> requestRouteToSelectedPoi() async {
+    final poi = _selectedPoi;
+    final floor = _selectedFloor;
+    final locationProvider = _locationProvider;
+    final currentLocation = locationProvider?.currentLocation;
+
+    if (poi == null) {
+      _navigationRouteStatus = NavigationRouteStatus.error;
+      _navigationRouteErrorMessage = 'Select a POI first.';
+      notifyListeners();
+      return;
+    }
+
+    if (floor == null) {
+      _navigationRouteStatus = NavigationRouteStatus.error;
+      _navigationRouteErrorMessage =
+          'Select a floor before requesting a route.';
+      notifyListeners();
+      return;
+    }
+
+    if (locationProvider == null || currentLocation == null) {
+      _navigationRouteStatus = NavigationRouteStatus.error;
+      _navigationRouteErrorMessage =
+          'Current location is unavailable. Center on your location first.';
+      notifyListeners();
+      return;
+    }
+
+    if (locationProvider.isIndoorWifiActive &&
+        locationProvider.latestIndoorEstimate?.floor != floor.floorNumber) {
+      _navigationRouteStatus = NavigationRouteStatus.unsupported;
+      _navigationRouteErrorMessage =
+          'Your current indoor estimate does not match the selected floor.';
+      notifyListeners();
+      return;
+    }
+
+    final int requestId = ++_navigationRouteRequestId;
+    _navigationRouteStatus = NavigationRouteStatus.loading;
+    _navigationRouteErrorMessage = null;
+    _navigationDestinationPuid = poi.puid;
+    notifyListeners();
+
+    try {
+      final route = await _navigationRepository.getRouteFromCoordinates(
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        floorNumber: floor.floorNumber,
+        destinationPuid: poi.puid,
+      );
+
+      if (requestId != _navigationRouteRequestId ||
+          _selectedPoi?.puid != poi.puid ||
+          _selectedFloor?.floorNumber != floor.floorNumber) {
+        return;
+      }
+
+      if (!route.hasRenderablePath) {
+        _navigationRouteStatus = NavigationRouteStatus.unsupported;
+        _activeNavigationRoute = null;
+        _navigationRouteErrorMessage =
+            'Anyplace returned an incomplete route for this POI.';
+      } else {
+        _navigationRouteStatus = NavigationRouteStatus.ready;
+        _activeNavigationRoute = route;
+        _navigationRouteErrorMessage = null;
+      }
+    } on ApiException catch (e) {
+      if (requestId != _navigationRouteRequestId) return;
+
+      final message = e.message.toLowerCase();
+      if (message.contains('not supported') ||
+          message.contains('between buildings') ||
+          message.contains('starting poi') ||
+          e.statusCode == 400 ||
+          e.statusCode == 404) {
+        _navigationRouteStatus = NavigationRouteStatus.unsupported;
+      } else {
+        _navigationRouteStatus = NavigationRouteStatus.error;
+      }
+      _activeNavigationRoute = null;
+      _navigationRouteErrorMessage = e.message;
+    } catch (e) {
+      if (requestId != _navigationRouteRequestId) return;
+      _navigationRouteStatus = NavigationRouteStatus.error;
+      _activeNavigationRoute = null;
+      _navigationRouteErrorMessage = 'Error requesting route: $e';
+    } finally {
+      if (requestId == _navigationRouteRequestId) {
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Clears the currently displayed navigation route.
+  void clearNavigationRoute() {
+    if (_navigationRouteStatus != NavigationRouteStatus.idle ||
+        _activeNavigationRoute != null ||
+        _navigationRouteErrorMessage != null) {
+      _navigationRouteRequestId++;
+      _resetNavigationRouteState();
       notifyListeners();
     }
   }
@@ -325,16 +526,14 @@ class SpaceProvider extends ChangeNotifier {
         return;
       }
 
-      // Load into native Kotlin positioning engine
-      final success = await _nativePositioningService.loadRadioMap(
+      // Load radiomap into native Kotlin positioning engine
+      final loadedSuccessfully = await _nativePositioningService.loadRadioMap(
         radiomapContent,
         targetBuid,
         targetFloor,
       );
 
-      if (requestId != _radioMapRequestId) return;
-
-      if (success) {
+      if (loadedSuccessfully) {
         _radioMapStatus = RadioMapStatus.ready;
         _activeRadioMapBuid = targetBuid;
         _activeRadioMapFloor = targetFloor;
@@ -475,22 +674,71 @@ class SpaceProvider extends ChangeNotifier {
     }
   }
 
-  /// Clears both building and floor selections and resets active RadioMap and Floorplan.
-  void clearSelection() {
-    if (_selectedSpace != null || _selectedFloor != null) {
-      debugPrint(
-        '[SpaceProvider] clearSelection: resetting space, floor, radiomap, and floorplan',
-      );
-      _radioMapRequestId++;
-      _floorplanRequestId++;
-      _selectedSpace = null;
-      _selectedFloor = null;
-      _floors = const [];
-      _floorsErrorMessage = null;
-      _isLoadingFloors = false;
-      _resetRadioMapState();
-      _resetFloorplanState();
+  /// Acquires POIs for the currently selected building and floor,
+  /// saves them to local disk cache, and prepares markers for rendering.
+  Future<void> loadPoisForSelectedFloor({bool forceReload = false}) async {
+    final targetBuid = _selectedSpace?.buid;
+    final targetFloor = _selectedFloor?.floorNumber;
+
+    if (targetBuid == null || targetFloor == null) {
+      _resetPoiState();
       notifyListeners();
+      return;
+    }
+
+    final int requestId = ++_poiRequestId;
+
+    _poiStatus = PoiStatus.loading;
+    _poiErrorMessage = null;
+    notifyListeners();
+
+    debugPrint(
+      '[SpaceProvider] loadPois: start requestId=$requestId for buid=$targetBuid, floor=$targetFloor',
+    );
+
+    try {
+      final fetchedPois = await _poiRepository.getPoisByFloor(
+        targetBuid,
+        targetFloor,
+        forceReload: forceReload,
+      );
+
+      // Verify request is still fresh and selections haven't changed
+      if (requestId != _poiRequestId ||
+          _selectedSpace?.buid != targetBuid ||
+          _selectedFloor?.floorNumber != targetFloor) {
+        debugPrint(
+          '[SpaceProvider] Stale POI request $requestId discarded (current: $_poiRequestId)',
+        );
+        return;
+      }
+
+      _pois = fetchedPois;
+      _poiStatus = PoiStatus.ready;
+      _poiErrorMessage = null;
+      debugPrint(
+        '[SpaceProvider] Successfully loaded ${fetchedPois.length} POIs for $targetBuid / Floor $targetFloor',
+      );
+    } on ApiException catch (e) {
+      if (requestId != _poiRequestId) return;
+      _pois = const [];
+      _poiStatus = PoiStatus.error;
+      _poiErrorMessage = e.message;
+      debugPrint(
+        '[SpaceProvider] POI API error for $targetBuid / Floor $targetFloor: ${e.message}',
+      );
+    } catch (e) {
+      if (requestId != _poiRequestId) return;
+      _pois = const [];
+      _poiStatus = PoiStatus.error;
+      _poiErrorMessage = 'Error loading POIs: $e';
+      debugPrint(
+        '[SpaceProvider] Unexpected POI error for $targetBuid / Floor $targetFloor: $e',
+      );
+    } finally {
+      if (requestId == _poiRequestId) {
+        notifyListeners();
+      }
     }
   }
 
@@ -507,6 +755,20 @@ class SpaceProvider extends ChangeNotifier {
     _floorplanStatus = FloorplanStatus.idle;
     _floorplanErrorMessage = null;
     _activeFloorplan = null;
+  }
+
+  void _resetPoiState() {
+    _poiStatus = PoiStatus.idle;
+    _pois = const [];
+    _selectedPoi = null;
+    _poiErrorMessage = null;
+  }
+
+  void _resetNavigationRouteState() {
+    _navigationRouteStatus = NavigationRouteStatus.idle;
+    _activeNavigationRoute = null;
+    _navigationRouteErrorMessage = null;
+    _navigationDestinationPuid = null;
   }
 
   /// Clears the building-level error message.
@@ -537,6 +799,22 @@ class SpaceProvider extends ChangeNotifier {
   void clearFloorplanError() {
     if (_floorplanErrorMessage != null) {
       _floorplanErrorMessage = null;
+      notifyListeners();
+    }
+  }
+
+  /// Clears the POI-level error message.
+  void clearPoiError() {
+    if (_poiErrorMessage != null) {
+      _poiErrorMessage = null;
+      notifyListeners();
+    }
+  }
+
+  /// Clears the navigation route-level error message.
+  void clearNavigationRouteError() {
+    if (_navigationRouteErrorMessage != null) {
+      _navigationRouteErrorMessage = null;
       notifyListeners();
     }
   }

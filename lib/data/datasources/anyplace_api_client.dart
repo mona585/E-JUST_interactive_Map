@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 
 import '../../core/config/api_config.dart';
 import '../models/floor_model.dart';
+import '../models/navigation_route_model.dart';
+import '../models/poi_model.dart';
 import '../models/space_model.dart';
 
 /// Exception thrown when an API request fails.
@@ -27,10 +29,8 @@ class AnyplaceApiClient {
   final http.Client _client;
   final String _baseUrl;
 
-  AnyplaceApiClient({
-    http.Client? client,
-    this._baseUrl = ApiConfig.baseUrl,
-  }) : _client = client ?? http.Client();
+  AnyplaceApiClient({http.Client? client, this._baseUrl = ApiConfig.baseUrl})
+    : _client = client ?? http.Client();
 
   /// Fetches all public spaces from the Anyplace backend.
   /// Calls `POST /api/mapping/space/public` with body `{}`.
@@ -286,7 +286,8 @@ class AnyplaceApiClient {
       if (response.statusCode != 200) {
         try {
           final errJson = _decodeJsonResponse(response);
-          final msg = errJson['message']?.toString() ??
+          final msg =
+              errJson['message']?.toString() ??
               'Failed to retrieve radiomap metadata';
           throw ApiException(
             msg,
@@ -353,10 +354,7 @@ class AnyplaceApiClient {
       final response = await _client
           .post(
             uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': '*/*',
-            },
+            headers: {'Content-Type': 'application/json', 'Accept': '*/*'},
             body: jsonEncode({}),
           )
           .timeout(ApiConfig.requestTimeout);
@@ -438,10 +436,7 @@ class AnyplaceApiClient {
       final response = await _client
           .post(
             uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': '*/*',
-            },
+            headers: {'Content-Type': 'application/json', 'Accept': '*/*'},
             body: jsonEncode({}),
           )
           .timeout(ApiConfig.requestTimeout);
@@ -511,6 +506,217 @@ class AnyplaceApiClient {
         '[AnyplaceApi] FormatException decoding floorplan Base64: ${e.message}',
       );
       throw ApiException('Failed to decode floorplan image: ${e.message}');
+    }
+  }
+
+  /// Fetches all POIs for a specific building and floor.
+  /// Calls `POST /api/mapping/pois/floor/all` with body `{"buid": "<buid>", "floor_number": "<floor>"}`.
+  Future<List<PoiModel>> fetchPoisByFloor(String buid, String floor) async {
+    final cleanBuid = buid.trim();
+    final cleanFloor = floor.trim();
+    if (cleanBuid.isEmpty) {
+      throw const ApiException('Building ID (buid) cannot be empty.');
+    }
+    if (cleanFloor.isEmpty) {
+      throw const ApiException('Floor number cannot be empty.');
+    }
+
+    final uri = Uri.parse('$_baseUrl${ApiConfig.endpointPoisFloorAll}');
+    final requestBody = jsonEncode({
+      'buid': cleanBuid,
+      'floor_number': cleanFloor,
+    });
+    debugPrint('[AnyplaceApi] --> POST POIs by floor: $uri');
+
+    try {
+      final response = await _client
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json', 'Accept': '*/*'},
+            body: requestBody,
+          )
+          .timeout(ApiConfig.requestTimeout);
+
+      debugPrint(
+        '[AnyplaceApi] <-- HTTP ${response.statusCode} for POIs ($cleanBuid, floor $cleanFloor)',
+      );
+
+      if (response.statusCode != 200) {
+        throw ApiException(
+          'Failed to fetch POIs for floor (HTTP ${response.statusCode})',
+          statusCode: response.statusCode,
+          details: response.body,
+        );
+      }
+
+      final jsonMap = _decodeJsonResponse(response);
+
+      if (jsonMap.containsKey('status') && jsonMap['status'] == 'error') {
+        final message = jsonMap['message']?.toString() ?? 'Failed to load POIs';
+        throw ApiException(message, statusCode: response.statusCode);
+      }
+
+      final dynamic poisJson = jsonMap['pois'];
+      if (poisJson is! List) {
+        debugPrint(
+          '[AnyplaceApi] No pois list found in response for $cleanBuid floor $cleanFloor',
+        );
+        return const [];
+      }
+
+      final pois = poisJson
+          .whereType<Map<String, dynamic>>()
+          .map((item) => PoiModel.fromJson(item))
+          .toList();
+
+      debugPrint(
+        '[AnyplaceApi] Successfully parsed ${pois.length} POIs for $cleanBuid floor $cleanFloor',
+      );
+
+      return pois;
+    } on SocketException catch (e) {
+      debugPrint('[AnyplaceApi] SocketException fetching POIs: ${e.message}');
+      throw ApiException('Network connection error: ${e.message}');
+    } on TimeoutException {
+      debugPrint('[AnyplaceApi] Timeout fetching POIs');
+      throw const ApiException('Connection to Anyplace backend timed out.');
+    } on FormatException catch (e) {
+      debugPrint(
+        '[AnyplaceApi] FormatException parsing POIs JSON: ${e.message}',
+      );
+      throw ApiException('Invalid response format from server: ${e.message}');
+    }
+  }
+
+  /// Fetches a route between two POIs using the Anyplace navigation API.
+  Future<NavigationRouteModel> fetchNavigationRoute({
+    required String fromPuid,
+    required String toPuid,
+  }) async {
+    final cleanFromPuid = fromPuid.trim();
+    final cleanToPuid = toPuid.trim();
+
+    if (cleanFromPuid.isEmpty) {
+      throw const ApiException('Source POI ID cannot be empty.');
+    }
+    if (cleanToPuid.isEmpty) {
+      throw const ApiException('Destination POI ID cannot be empty.');
+    }
+
+    final uri = Uri.parse('$_baseUrl${ApiConfig.endpointNavigationRoute}');
+    final requestBody = jsonEncode({
+      'pois_from': cleanFromPuid,
+      'pois_to': cleanToPuid,
+    });
+
+    debugPrint('[AnyplaceApi] --> POST navigation route: $uri');
+
+    try {
+      final response = await _client
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json', 'Accept': '*/*'},
+            body: requestBody,
+          )
+          .timeout(ApiConfig.requestTimeout);
+
+      debugPrint(
+        '[AnyplaceApi] <-- HTTP ${response.statusCode} for route ($cleanFromPuid -> $cleanToPuid)',
+      );
+
+      if (response.statusCode != 200) {
+        throw ApiException(
+          'Failed to fetch route (HTTP ${response.statusCode})',
+          statusCode: response.statusCode,
+          details: response.body,
+        );
+      }
+
+      final jsonMap = _decodeJsonResponse(response);
+
+      if (jsonMap['status']?.toString().toLowerCase() == 'error') {
+        throw ApiException(
+          jsonMap['message']?.toString() ?? 'Failed to calculate route.',
+          statusCode: response.statusCode,
+        );
+      }
+
+      return NavigationRouteModel.fromJson(jsonMap);
+    } on SocketException catch (e) {
+      throw ApiException('Network connection error: ${e.message}');
+    } on TimeoutException {
+      throw const ApiException('Connection to Anyplace backend timed out.');
+    } on FormatException catch (e) {
+      throw ApiException('Invalid response format from server: ${e.message}');
+    }
+  }
+
+  /// Fetches a route from coordinates on a floor to a destination POI.
+  Future<NavigationRouteModel> fetchNavigationRouteFromCoordinates({
+    required double latitude,
+    required double longitude,
+    required String floorNumber,
+    required String destinationPuid,
+  }) async {
+    final cleanFloor = floorNumber.trim();
+    final cleanDestinationPuid = destinationPuid.trim();
+
+    if (cleanFloor.isEmpty) {
+      throw const ApiException('Floor number cannot be empty.');
+    }
+    if (cleanDestinationPuid.isEmpty) {
+      throw const ApiException('Destination POI ID cannot be empty.');
+    }
+
+    final uri = Uri.parse(
+      '$_baseUrl${ApiConfig.endpointNavigationRouteCoordinates}',
+    );
+    final requestBody = jsonEncode({
+      'coordinates_lat': latitude.toString(),
+      'coordinates_lon': longitude.toString(),
+      'floor_number': cleanFloor,
+      'pois_to': cleanDestinationPuid,
+    });
+
+    debugPrint('[AnyplaceApi] --> POST coordinate navigation route: $uri');
+
+    try {
+      final response = await _client
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json', 'Accept': '*/*'},
+            body: requestBody,
+          )
+          .timeout(ApiConfig.requestTimeout);
+
+      debugPrint(
+        '[AnyplaceApi] <-- HTTP ${response.statusCode} for coordinate route (floor=$cleanFloor, destination=$cleanDestinationPuid)',
+      );
+
+      if (response.statusCode != 200) {
+        throw ApiException(
+          'Failed to fetch route (HTTP ${response.statusCode})',
+          statusCode: response.statusCode,
+          details: response.body,
+        );
+      }
+
+      final jsonMap = _decodeJsonResponse(response);
+
+      if (jsonMap['status']?.toString().toLowerCase() == 'error') {
+        throw ApiException(
+          jsonMap['message']?.toString() ?? 'Failed to calculate route.',
+          statusCode: response.statusCode,
+        );
+      }
+
+      return NavigationRouteModel.fromJson(jsonMap);
+    } on SocketException catch (e) {
+      throw ApiException('Network connection error: ${e.message}');
+    } on TimeoutException {
+      throw const ApiException('Connection to Anyplace backend timed out.');
+    } on FormatException catch (e) {
+      throw ApiException('Invalid response format from server: ${e.message}');
     }
   }
 

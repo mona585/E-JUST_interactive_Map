@@ -1,21 +1,56 @@
 package eg.edu.ejust.anyplace_campusfind.positioning
 
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * MethodChannel bridge connecting Flutter Dart positioning service to native Kotlin engine.
+ * Platform bridge connecting Flutter Dart positioning service to native Kotlin engine via
+ * MethodChannel and EventChannel streams.
  */
-class PositioningBridge(messenger: BinaryMessenger) : MethodChannel.MethodCallHandler {
+class PositioningBridge(
+    messenger: BinaryMessenger,
+    private val context: Context
+) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
+
     companion object {
-        const val CHANNEL_NAME = "eg.edu.ejust.anyplace_campusfind/positioning"
+        const val METHOD_CHANNEL_NAME = "eg.edu.ejust.anyplace_campusfind/positioning"
+        const val EVENT_CHANNEL_NAME = "eg.edu.ejust.anyplace_campusfind/position_stream"
     }
 
-    private val channel = MethodChannel(messenger, CHANNEL_NAME)
+    private val methodChannel = MethodChannel(messenger, METHOD_CHANNEL_NAME)
+    private val eventChannel = EventChannel(messenger, EVENT_CHANNEL_NAME)
+    private val wifiScanner = WifiScanner(context)
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var eventSink: EventChannel.EventSink? = null
 
     init {
-        channel.setMethodCallHandler(this)
+        methodChannel.setMethodCallHandler(this)
+        eventChannel.setStreamHandler(this)
+
+        PositioningEngine.setListener(object : PositioningEngine.PositionUpdateListener {
+            override fun onPositionEstimated(estimate: NativePositionEstimate) {
+                val payload = mapOf<String, Any?>(
+                    "latitude" to estimate.latitude,
+                    "longitude" to estimate.longitude,
+                    "buid" to estimate.buid,
+                    "floor" to estimate.floor,
+                    "matchedAps" to estimate.matchedAps,
+                    "totalAps" to estimate.totalAps,
+                    "durationMs" to estimate.durationMs,
+                    "timestamp" to estimate.timestamp,
+                    "status" to estimate.status
+                )
+                mainHandler.post {
+                    eventSink?.success(payload)
+                }
+            }
+        })
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -31,11 +66,17 @@ class PositioningBridge(messenger: BinaryMessenger) : MethodChannel.MethodCallHa
                 }
 
                 val success = PositioningEngine.loadRadioMapText(text, buid, floor)
+                if (success) {
+                    wifiScanner.startScanning()
+                } else {
+                    wifiScanner.stopScanning()
+                }
                 result.success(success)
             }
 
             "clearRadioMap" -> {
                 PositioningEngine.clearRadioMap()
+                wifiScanner.stopScanning()
                 result.success(true)
             }
 
@@ -44,9 +85,32 @@ class PositioningBridge(messenger: BinaryMessenger) : MethodChannel.MethodCallHa
                 result.success(info)
             }
 
+            "startPositioning" -> {
+                wifiScanner.startScanning()
+                result.success(true)
+            }
+
+            "stopPositioning" -> {
+                wifiScanner.stopScanning()
+                result.success(true)
+            }
+
             else -> {
                 result.notImplemented()
             }
         }
+    }
+
+    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+        this.eventSink = events
+    }
+
+    override fun onCancel(arguments: Any?) {
+        this.eventSink = null
+    }
+
+    fun dispose() {
+        wifiScanner.stopScanning()
+        PositioningEngine.setListener(null)
     }
 }
