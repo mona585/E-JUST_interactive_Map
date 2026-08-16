@@ -2257,6 +2257,72 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         }
     }
 
+    private float mSmoothedHeading = -1.0f;
+
+    private float getSmoothedHeading(float rawHeading) {
+        if (mSmoothedHeading < 0) {
+            mSmoothedHeading = rawHeading;
+            return rawHeading;
+        }
+        float delta = (rawHeading - mSmoothedHeading + 540.0f) % 360.0f - 180.0f;
+        float alpha = 0.25f; // Low-pass filter weight for compass rotation
+        mSmoothedHeading = (mSmoothedHeading + alpha * delta + 360.0f) % 360.0f;
+        return mSmoothedHeading;
+    }
+
+    private LatLng getSnappedPosition(LatLng rawPos) {
+        if (rawPos == null) return null;
+        List<PoisNav> puids = userData.getNavPois();
+        if (puids == null || puids.isEmpty()) return rawPos;
+
+        String selectedFloor = userData.getSelectedFloorNumber();
+        List<LatLng> floorPath = new ArrayList<>();
+        for (PoisNav pt : puids) {
+            if (pt.floor_number.equalsIgnoreCase(selectedFloor)) {
+                try {
+                    floorPath.add(new LatLng(Double.parseDouble(pt.lat), Double.parseDouble(pt.lon)));
+                } catch (Exception ignored) {}
+            }
+        }
+        if (floorPath.size() < 2) return rawPos;
+
+        LatLng bestSnapPoint = rawPos;
+        double minDistance = Double.MAX_VALUE;
+
+        for (int i = 0; i < floorPath.size() - 1; i++) {
+            LatLng a = floorPath.get(i);
+            LatLng b = floorPath.get(i + 1);
+            LatLng projection = getClosestPointOnSegment(rawPos, a, b);
+            double dist = GeoPoint.getDistanceBetweenPoints(rawPos.longitude, rawPos.latitude, projection.longitude, projection.latitude, "");
+            if (dist < minDistance) {
+                minDistance = dist;
+                bestSnapPoint = projection;
+            }
+        }
+
+        // Snap to active route segment if within 6.0 meters threshold
+        if (minDistance <= 6.0) {
+            return bestSnapPoint;
+        }
+        return rawPos;
+    }
+
+    private LatLng getClosestPointOnSegment(LatLng p, LatLng a, LatLng b) {
+        double ax = a.longitude, ay = a.latitude;
+        double bx = b.longitude, by = b.latitude;
+        double px = p.longitude, py = p.latitude;
+
+        double dx = bx - ax;
+        double dy = by - ay;
+
+        if (dx == 0 && dy == 0) return a;
+
+        double t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+        t = Math.max(0.0, Math.min(1.0, t));
+
+        return new LatLng(ay + t * dy, ax + t * dx);
+    }
+
     @Override
     public void onNewLocation(final LatLng pos) {
         if (pos != null) {
@@ -2264,9 +2330,17 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
             double finalLat = pos.latitude;
             double finalLng = pos.longitude;
             if (prevPos != null) {
-                double alpha = 0.45; // Low-pass smoothing factor
-                finalLat = alpha * pos.latitude + (1.0 - alpha) * prevPos.dlat;
-                finalLng = alpha * pos.longitude + (1.0 - alpha) * prevPos.dlon;
+                double distMeters = GeoPoint.getDistanceBetweenPoints(prevPos.dlon, prevPos.dlat, pos.longitude, pos.latitude, "");
+                // Outlier Rejection: Clamp sudden unrealistic location jumps (> 5.0m per scan)
+                if (distMeters > 5.0) {
+                    double ratio = 5.0 / distMeters;
+                    finalLat = prevPos.dlat + ratio * (pos.latitude - prevPos.dlat);
+                    finalLng = prevPos.dlon + ratio * (pos.longitude - prevPos.dlon);
+                } else {
+                    double alpha = 0.45; // Low-pass smoothing factor
+                    finalLat = alpha * pos.latitude + (1.0 - alpha) * prevPos.dlat;
+                    finalLng = alpha * pos.longitude + (1.0 - alpha) * prevPos.dlon;
+                }
             }
             userData.setPositionWifi(finalLat, finalLng);
         }
@@ -2391,15 +2465,17 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         }
 
         if (activePos != null) {
+            activePos = getSnappedPosition(activePos);
+            float currentHeading = getSmoothedHeading(sensorsMain.getRAWHeading());
             if (userMarker != null) {
                 userMarker.setPosition(activePos);
-                userMarker.setRotation(sensorsMain.getRAWHeading() - bearing);
+                userMarker.setRotation(currentHeading - bearing);
             } else if (mMap != null) {
                 MarkerOptions marker = new MarkerOptions();
                 marker.position(activePos);
                 marker.title("User").snippet("Estimated Position");
                 marker.icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_icon));
-                marker.rotation(sensorsMain.getRAWHeading() - bearing);
+                marker.rotation(currentHeading - bearing);
                 userMarker = mMap.addMarker(marker);
             }
             updatePathProgress(activePos);
