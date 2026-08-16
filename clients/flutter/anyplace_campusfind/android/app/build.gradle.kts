@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -23,13 +24,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-
-        // Google Maps SDK key, injected at build time from the MAPS_API_KEY
-        // environment variable (set by CI from clients/.env). Falls back to a
-        // placeholder so builds without the key still succeed (Maps will fail
-        // at runtime, never compile time).
-        manifestPlaceholders["googleMapsApiKey"] =
-            System.getenv("MAPS_API_KEY") ?: "YOUR_GOOGLE_MAPS_API_KEY"
     }
 
     buildTypes {

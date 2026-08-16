@@ -22,6 +22,7 @@ class ApiConfig {
   // ---- Endpoints (public, no auth) ----
   static String get campusGet => '$serverUrl/api/mapping/campus/get';
   static String get spacePublic => '$serverUrl/api/mapping/space/public';
+  static String get spaceGet => '$serverUrl/api/mapping/space/get';
   static String get floorAll => '$serverUrl/api/mapping/floor/all';
   static String get poisSpaceAll => '$serverUrl/api/mapping/pois/space/all';
   static String get poisSearch => '$serverUrl/api/mapping/pois/search';
@@ -39,4 +40,17 @@ class ApiConfig {
   /// Base URL under which individual floorplan tile PNGs are served.
   static String floorTilesBase(String buid, String floorNumber) =>
       '$serverUrl/api/floortiles/$buid/$floorNumber/';
+
+  // ---- Map (floorplan image + RadioMap) endpoints ----
+  /// POST /api/radiomap/space — radiomap metadata for a building+floor.
+  static String get radiomapSpace => '$serverUrl/api/radiomap/space';
+
+  /// POST /api/radiomaps_frozen — frozen radiomap download root.
+  static String get radiomapFrozen => '$serverUrl/api/radiomaps_frozen';
+
+  /// POST /api/floorplans64 — Base64 floorplan image download root.
+  static String get floorplans64 => '$serverUrl/api/floorplans64';
+
+  /// Preferred radiomap filename served by the Anyplace backend.
+  static const String defaultRadiomapMeanFilename = 'indoor-radiomap-mean.txt';
 }
