@@ -13,9 +13,11 @@ import '../widgets/building_detail_card.dart';
 import '../widgets/building_marker.dart';
 import '../widgets/building_search_sheet.dart';
 import '../widgets/map_controls.dart';
+import '../widgets/poi_detail_card.dart';
+import '../widgets/poi_marker.dart';
 import '../widgets/user_location_marker.dart';
 
-/// Main Map Screen displaying Anyplace buildings, indoor floorplan images, and device GPS on FlutterMap.
+/// Main Map Screen displaying Anyplace buildings, indoor floorplans, indoor POIs, and device GPS on FlutterMap.
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -32,9 +34,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     super.initState();
     _mapController = MapController();
 
-    // Trigger initial loading of spaces
+    // Trigger initial loading of spaces and bind location provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final spaceProvider = context.read<SpaceProvider>();
+      final locationProvider = context.read<LocationProvider>();
+      spaceProvider.setLocationProvider(locationProvider);
       spaceProvider.loadSpaces();
     });
   }
@@ -194,11 +198,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         return Scaffold(
           body: Stack(
             children: [
-              // 1. FlutterMap Base + Indoor Floorplan Image Overlay + Markers
+              // 1. FlutterMap Base + Indoor Floorplan Image Overlay + POIs + Markers
               FlutterMap(
                 mapController: _mapController,
                 options: MapOptions(
-                  initialCenter: selectedSpace?.latLng ??
+                  initialCenter:
+                      selectedSpace?.latLng ??
                       userLocation?.latLng ??
                       SpaceProvider.defaultCenter,
                   initialZoom: MapConfig.defaultZoom,
@@ -208,7 +213,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     flags: InteractiveFlag.all,
                   ),
                   onTap: (_, _) {
-                    if (selectedSpace != null) {
+                    if (spaceProvider.selectedPoi != null) {
+                      spaceProvider.clearSelectedPoi();
+                    } else if (selectedSpace != null) {
                       spaceProvider.clearSelection();
                     }
                   },
@@ -241,7 +248,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       ],
                     ),
 
-                  // 3. Building Markers Layer
+                  // 3. Active Navigation Route Layer
+                  if (spaceProvider.hasActiveNavigationRoute)
+                    PolylineLayer(
+                      key: ValueKey(
+                        'route_${spaceProvider.navigationDestinationPuid}_${spaceProvider.selectedFloor?.floorNumber}',
+                      ),
+                      polylines: [
+                        Polyline(
+                          points: spaceProvider
+                              .activeNavigationRoute!
+                              .polylinePoints,
+                          strokeWidth: 6,
+                          color: const Color(0xFF38BDF8).withValues(alpha: 0.9),
+                          borderStrokeWidth: 2,
+                          borderColor: const Color(0xCC0F172A),
+                        ),
+                      ],
+                    ),
+
+                  // 4. Building Markers Layer
                   MarkerLayer(
                     markers: spaceProvider.spaces.map((space) {
                       final isSelected = selectedSpace?.buid == space.buid;
@@ -259,7 +285,36 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     }).toList(),
                   ),
 
-                  // 4. User Location Marker Layer (Outdoor GPS or Indoor Wi-Fi KNN position)
+                  // 5. Indoor POI Markers Layer (rendered above floorplan image)
+                  if (spaceProvider.hasPois)
+                    MarkerLayer(
+                      key: ValueKey(
+                        'pois_${spaceProvider.selectedSpace?.buid}_${spaceProvider.selectedFloor?.floorNumber}',
+                      ),
+                      markers: spaceProvider.pois.map((poi) {
+                        final isSelectedPoi =
+                            spaceProvider.selectedPoi?.puid == poi.puid;
+                        return Marker(
+                          point: poi.latLng,
+                          width: isSelectedPoi ? 65.0 : 60.0,
+                          height: isSelectedPoi ? 65.0 : 60.0,
+                          alignment: Alignment.topCenter,
+                          child: PoiMarker(
+                            poi: poi,
+                            isSelected: isSelectedPoi,
+                            onTap: () {
+                              spaceProvider.selectPoi(poi);
+                              _animatedMapMove(
+                                poi.latLng,
+                                _mapController.camera.zoom,
+                              );
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
+
+                  // 6. User Location Marker Layer (ALWAYS top-most!)
                   if (userLocation != null)
                     MarkerLayer(
                       markers: [
@@ -271,6 +326,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           child: UserLocationMarker(
                             key: const Key('user_location_marker'),
                             location: userLocation,
+                            isIndoor: locationProvider.isIndoorWifiActive,
                           ),
                         ),
                       ],
@@ -338,6 +394,45 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                               ),
                             ],
                           ),
+                          if (locationProvider.isIndoorWifiActive) ...[
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFF0D9488,
+                                ).withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFF14B8A6,
+                                  ).withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.wifi,
+                                    size: 12,
+                                    color: Color(0xFF2DD4BF),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Indoor Wi-Fi (${locationProvider.latestIndoorEstimate?.matchedAps ?? 0} APs)',
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF2DD4BF),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           if (spaceProvider.isLoading) ...[
                             const SizedBox(width: 12),
                             const SizedBox(
@@ -378,7 +473,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 ),
               ),
 
-              // 4. Selected Building Detail Card with Floor Selector, Floorplan & RadioMap status
+              // 4. Selected Building Detail Card with Floor Selector, Floorplan, RadioMap & POI status
               if (selectedSpace != null)
                 Positioned(
                   left: 0,
@@ -403,7 +498,32 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   ),
                 ),
 
-              // 5. Error Banner (if any)
+              // 5. Selected POI Detail Card (kept above the building card so route actions remain accessible)
+              if (spaceProvider.selectedPoi != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: selectedSpace != null ? 180 : 24,
+                  child: SafeArea(
+                    top: false,
+                    child: PoiDetailCard(
+                      poi: spaceProvider.selectedPoi!,
+                      onClose: () => spaceProvider.clearSelectedPoi(),
+                      onNavigate: () =>
+                          spaceProvider.requestRouteToSelectedPoi(),
+                      onClearRoute: () => spaceProvider.clearNavigationRoute(),
+                      isLoadingRoute: spaceProvider.isLoadingNavigationRoute,
+                      hasActiveRoute: spaceProvider.hasActiveNavigationRoute,
+                      isRouteUnsupported:
+                          spaceProvider.isNavigationRouteUnsupported,
+                      routeMessage: spaceProvider.hasActiveNavigationRoute
+                          ? 'Route ready on floor ${spaceProvider.selectedFloor?.floorNumber ?? '-'}'
+                          : spaceProvider.navigationRouteErrorMessage,
+                    ),
+                  ),
+                ),
+
+              // 6. Error Banner (if any)
               if (spaceProvider.hasError && selectedSpace == null)
                 Positioned(
                   left: 16,

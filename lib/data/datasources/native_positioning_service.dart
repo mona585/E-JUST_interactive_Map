@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
+import '../models/position_estimate.dart';
 
 /// Abstract interface communicating with the native Kotlin positioning engine.
 abstract class NativePositioningService {
@@ -11,17 +14,39 @@ abstract class NativePositioningService {
 
   /// Retrieves metadata about the currently active RadioMap in the native engine.
   Future<Map<String, dynamic>?> getActiveRadioMapInfo();
+
+  /// Real-time stream of native indoor position estimates emitted by Kotlin engine.
+  Stream<PositionEstimate> get positionStream;
 }
 
-/// MethodChannel implementation of [NativePositioningService].
+/// MethodChannel and EventChannel implementation of [NativePositioningService].
 class MethodChannelNativePositioningService implements NativePositioningService {
-  static const String channelName =
+  static const String methodChannelName =
       'eg.edu.ejust.anyplace_campusfind/positioning';
+  static const String eventChannelName =
+      'eg.edu.ejust.anyplace_campusfind/position_stream';
 
   final MethodChannel _channel;
+  final EventChannel _eventChannel;
+  Stream<PositionEstimate>? _positionStream;
 
-  MethodChannelNativePositioningService({MethodChannel? channel})
-      : _channel = channel ?? const MethodChannel(channelName);
+  MethodChannelNativePositioningService({
+    MethodChannel? channel,
+    EventChannel? eventChannel,
+  })  : _channel = channel ?? const MethodChannel(methodChannelName),
+        _eventChannel = eventChannel ?? const EventChannel(eventChannelName);
+
+  @override
+  Stream<PositionEstimate> get positionStream {
+    _positionStream ??= _eventChannel
+        .receiveBroadcastStream()
+        .where((event) => event is Map)
+        .map((event) => PositionEstimate.fromMap(Map<dynamic, dynamic>.from(event as Map)))
+        .handleError((error) {
+      debugPrint('[NativePositioningService] Stream error: $error');
+    });
+    return _positionStream!;
+  }
 
   @override
   Future<bool> loadRadioMap(String text, String buid, String floor) async {

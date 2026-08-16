@@ -3,13 +3,15 @@ import 'package:flutter/material.dart';
 
 import '../../data/models/user_location.dart';
 
-/// Visual marker widget displaying the user's real-time GPS location fix.
+/// Visual marker widget displaying the user's real-time position fix (GPS or Indoor Wi-Fi).
 class UserLocationMarker extends StatefulWidget {
   final UserLocation location;
+  final bool isIndoor;
 
   const UserLocationMarker({
     super.key,
     required this.location,
+    this.isIndoor = false,
   });
 
   @override
@@ -45,6 +47,10 @@ class _UserLocationMarkerState extends State<UserLocationMarker>
   Widget build(BuildContext context) {
     final heading = widget.location.heading;
     final hasHeading = heading > 0 && heading <= 360;
+    final isIndoor = widget.isIndoor;
+
+    final primaryColor = isIndoor ? const Color(0xFF0D9488) : const Color(0xFF2563EB); // Teal for Indoor, Blue for GPS
+    final waveColor = isIndoor ? const Color(0xFF14B8A6) : const Color(0xFF3B82F6);
 
     return AnimatedBuilder(
       animation: _pulseAnimation,
@@ -63,38 +69,35 @@ class _UserLocationMarkerState extends State<UserLocationMarker>
                   height: 28,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Color.fromRGBO(
-                      59,
-                      130,
-                      246,
-                      (1.0 - _pulseAnimation.value) * 0.4,
+                    color: waveColor.withValues(
+                      alpha: (1.0 - _pulseAnimation.value) * 0.4,
                     ),
                   ),
                 ),
               ),
 
               // Directional heading arrow if heading is known
-              if (hasHeading)
+              if (hasHeading && !isIndoor)
                 Transform.rotate(
                   angle: heading * (math.pi / 180),
                   child: Container(
                     width: 36,
                     height: 36,
                     alignment: Alignment.topCenter,
-                    child: const CustomPaint(
-                      size: Size(10, 8),
-                      painter: _HeadingArrowPainter(),
+                    child: CustomPaint(
+                      size: const Size(10, 8),
+                      painter: _HeadingArrowPainter(primaryColor),
                     ),
                   ),
                 ),
 
-              // Solid high-contrast GPS dot
+              // Solid high-contrast user dot
               Container(
-                width: 18,
-                height: 18,
+                width: isIndoor ? 22 : 18,
+                height: isIndoor ? 22 : 18,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF2563EB),
+                  color: primaryColor,
                   border: Border.all(color: Colors.white, width: 2.5),
                   boxShadow: const [
                     BoxShadow(
@@ -105,14 +108,20 @@ class _UserLocationMarkerState extends State<UserLocationMarker>
                   ],
                 ),
                 child: Center(
-                  child: Container(
-                    width: 4,
-                    height: 4,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white,
-                    ),
-                  ),
+                  child: isIndoor
+                      ? const Icon(
+                          Icons.wifi,
+                          size: 11,
+                          color: Colors.white,
+                        )
+                      : Container(
+                          width: 4,
+                          height: 4,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
               ),
             ],
@@ -124,12 +133,13 @@ class _UserLocationMarkerState extends State<UserLocationMarker>
 }
 
 class _HeadingArrowPainter extends CustomPainter {
-  const _HeadingArrowPainter();
+  final Color color;
+  const _HeadingArrowPainter(this.color);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF2563EB)
+      ..color = color
       ..style = PaintingStyle.fill;
 
     final path = Path()

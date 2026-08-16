@@ -104,12 +104,14 @@ class BuildingDetailCard extends StatelessWidget {
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: AppTheme.accent
-                                            .withValues(alpha: 0.2),
+                                        color: AppTheme.accent.withValues(
+                                          alpha: 0.2,
+                                        ),
                                         borderRadius: BorderRadius.circular(6),
                                         border: Border.all(
-                                          color: AppTheme.accent
-                                              .withValues(alpha: 0.5),
+                                          color: AppTheme.accent.withValues(
+                                            alpha: 0.5,
+                                          ),
                                         ),
                                       ),
                                       child: Text(
@@ -236,6 +238,8 @@ class BuildingDetailCard extends StatelessWidget {
                         children: [
                           _buildRadioMapStatusBadge(context, provider),
                           _buildFloorplanStatusBadge(context, provider),
+                          _buildPoiStatusBadge(context, provider),
+                          _buildNavigationStatusBadge(context, provider),
                         ],
                       ),
                     ],
@@ -497,8 +501,9 @@ class BuildingDetailCard extends StatelessWidget {
                             boxShadow: isSelected
                                 ? [
                                     BoxShadow(
-                                      color: AppTheme.primaryLight
-                                          .withValues(alpha: 0.4),
+                                      color: AppTheme.primaryLight.withValues(
+                                        alpha: 0.4,
+                                      ),
                                       blurRadius: 8,
                                       offset: const Offset(0, 2),
                                     ),
@@ -544,7 +549,10 @@ class BuildingDetailCard extends StatelessWidget {
     );
   }
 
-  Widget _buildRadioMapStatusBadge(BuildContext context, SpaceProvider provider) {
+  Widget _buildRadioMapStatusBadge(
+    BuildContext context,
+    SpaceProvider provider,
+  ) {
     final status = provider.radioMapStatus;
     Color bgColor;
     Color textColor;
@@ -703,6 +711,142 @@ class BuildingDetailCard extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPoiStatusBadge(BuildContext context, SpaceProvider provider) {
+    final status = provider.poiStatus;
+    Color bgColor;
+    Color textColor;
+    IconData icon;
+    String label;
+
+    switch (status) {
+      case PoiStatus.loading:
+        bgColor = const Color(0xFFD97706).withValues(alpha: 0.2);
+        textColor = const Color(0xFFFBBF24);
+        icon = Icons.sync;
+        label = 'POIs: Loading...';
+      case PoiStatus.ready:
+        bgColor = const Color(0xFF059669).withValues(alpha: 0.2);
+        textColor = const Color(0xFF34D399);
+        icon = Icons.place;
+        label = 'POIs: ${provider.pois.length} loaded';
+      case PoiStatus.error:
+        bgColor = const Color(0xFFDC2626).withValues(alpha: 0.2);
+        textColor = const Color(0xFFF87171);
+        icon = Icons.error_outline;
+        label = provider.poiErrorMessage ?? 'POIs load failed';
+      case PoiStatus.idle:
+        return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: textColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: textColor),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (status == PoiStatus.error) ...[
+            const SizedBox(width: 8),
+            InkWell(
+              onTap: () => provider.loadPoisForSelectedFloor(forceReload: true),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Text(
+                  'Retry',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFFBBF24),
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavigationStatusBadge(
+    BuildContext context,
+    SpaceProvider provider,
+  ) {
+    final status = provider.navigationRouteStatus;
+    Color bgColor;
+    Color textColor;
+    IconData icon;
+    String label;
+
+    switch (status) {
+      case NavigationRouteStatus.loading:
+        bgColor = const Color(0xFF0284C7).withValues(alpha: 0.2);
+        textColor = const Color(0xFF38BDF8);
+        icon = Icons.alt_route;
+        label = 'Route: Calculating...';
+      case NavigationRouteStatus.ready:
+        bgColor = const Color(0xFF059669).withValues(alpha: 0.2);
+        textColor = const Color(0xFF34D399);
+        icon = Icons.route;
+        label = 'Route: Ready';
+      case NavigationRouteStatus.unsupported:
+        bgColor = Colors.white10;
+        textColor = AppTheme.textSecondary;
+        icon = Icons.info_outline;
+        label = provider.navigationRouteErrorMessage ?? 'Route unavailable';
+      case NavigationRouteStatus.error:
+        bgColor = const Color(0xFFDC2626).withValues(alpha: 0.2);
+        textColor = const Color(0xFFF87171);
+        icon = Icons.error_outline;
+        label = provider.navigationRouteErrorMessage ?? 'Route failed';
+      case NavigationRouteStatus.idle:
+        return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: textColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: textColor),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );

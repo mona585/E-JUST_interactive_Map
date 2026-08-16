@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:anyplace_campusfind/data/models/position_estimate.dart';
 import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
 import 'package:anyplace_campusfind/data/models/floor_model.dart';
 import 'package:anyplace_campusfind/data/models/space_model.dart';
@@ -66,6 +67,9 @@ class MockRadioMapRepository implements RadioMapRepository {
 }
 
 class MockNativePositioningService implements NativePositioningService {
+  @override
+  Stream<PositionEstimate> get positionStream => const Stream.empty();
+
   String? loadedText;
   String? activeBuid;
   String? activeFloor;
