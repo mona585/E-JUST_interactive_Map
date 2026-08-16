@@ -390,7 +390,7 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 		btnRefreshNearmeBuildings.setEnabled(false);
 		isBuildingsJobRunning = true;
 
-		mAnyplaceCache.loadWorldBuildings(new FetchBuildingsTaskListener() {
+		AnyplaceServerAPI.fetchBuildings(getApplicationContext(), new FetchBuildingsTaskListener() {
 
 			@Override
 			public void onSuccess(String result, List<BuildingModel> buildings) {
@@ -432,7 +432,7 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 				btnRefreshNearmeBuildings.setEnabled(btnRefreshNearmeBuildingsState);
 				isBuildingsJobRunning = false;
 			}
-		}, this, forceReload);
+		});
 	}
 
 	private void startFloorFetch() throws IndexOutOfBoundsException {
@@ -442,7 +442,7 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 
 			spinnerBuildings.setEnabled(false);
 
-			building.loadFloors(new FetchFloorsByBuidTask.FetchFloorsByBuidTaskListener() {
+			AnyplaceServerAPI.fetchFloors(getApplicationContext(), building.buid, new FetchFloorsByBuidTask.FetchFloorsByBuidTaskListener() {
 
 				@Override
 				public void onSuccess(String result, List<FloorModel> floors) {
@@ -463,7 +463,7 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 					isFloorsJobRunning = false;
 				}
 
-			}, this, true, true);
+			});
 
 		}
 	}
@@ -609,8 +609,7 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 
 			final FloorModel f = b.getFloors().get(selectedFloorIndex);
 
-			final FetchFloorPlanTask fetchFloorPlanTask = new FetchFloorPlanTask(this, b.buid, f.floor_number);
-			fetchFloorPlanTask.setCallbackInterface(new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
+			AnyplaceServerAPI.fetchFloorPlan(this, b.buid, f.floor_number, new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
 
 				private ProgressDialog dialog;
 
@@ -648,16 +647,9 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 					dialog.setMessage("Please be patient...");
 					dialog.setCancelable(true);
 					dialog.setCanceledOnTouchOutside(false);
-					dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
-						@Override
-						public void onCancel(DialogInterface dialog) {
-							fetchFloorPlanTask.cancel(true);
-						}
-					});
 					dialog.show();
 				}
 			});
-			fetchFloorPlanTask.execute();
 		} catch (IndexOutOfBoundsException e) {
 			Toast.makeText(getBaseContext(), "You haven't selected both building and floor...!", Toast.LENGTH_SHORT).show();
 			setResult(RESULT_CANCELED);

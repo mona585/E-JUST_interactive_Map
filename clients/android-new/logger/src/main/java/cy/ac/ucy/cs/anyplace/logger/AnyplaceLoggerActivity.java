@@ -249,14 +249,17 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   private SensorsMain positioning;
   private MovementDetector movementDetector;
 
-  // Direct Hardware Accelerometer & Magnetometer Sensors
+  // Direct Hardware Accelerometer, Magnetometer & Gyroscope Sensors
   private SensorManager mSensorManager;
   private Sensor mAccelerometerSensor;
   private Sensor mMagnetometerSensor;
+  private Sensor mGyroscopeSensor;
   private float[] mGravityMatrix = new float[3];
   private float[] mGeomagneticMatrix = new float[3];
+  private float[] mGyroscopeMatrix = new float[3];
   private boolean mHasGravity = false;
   private boolean mHasGeomagnetic = false;
+  private boolean mHasGyroscope = false;
 
   private final SensorEventListener mHardwareSensorListener = new SensorEventListener() {
     @Override
@@ -272,6 +275,9 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
         System.arraycopy(event.values, 0, mGeomagneticMatrix, 0, 3);
         mHasGeomagnetic = true;
+      } else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
+        System.arraycopy(event.values, 0, mGyroscopeMatrix, 0, 3);
+        mHasGyroscope = true;
       }
 
       if (mHasGravity && mHasGeomagnetic) {
@@ -1019,16 +1025,20 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       positioning.resume();
     }
 
-    // Register Direct Hardware Accelerometer & Magnetometer
+    // Register Direct Hardware Accelerometer, Magnetometer & Gyroscope
     mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
     if (mSensorManager != null) {
       mAccelerometerSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
       mMagnetometerSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+      mGyroscopeSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
       if (mAccelerometerSensor != null) {
         mSensorManager.registerListener(mHardwareSensorListener, mAccelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
       }
       if (mMagnetometerSensor != null) {
         mSensorManager.registerListener(mHardwareSensorListener, mMagnetometerSensor, SensorManager.SENSOR_DELAY_GAME);
+      }
+      if (mGyroscopeSensor != null) {
+        mSensorManager.registerListener(mHardwareSensorListener, mGyroscopeSensor, SensorManager.SENSOR_DELAY_GAME);
       }
     }
 
@@ -1672,6 +1682,9 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     sb.append("Lat[ ").append(latStr).append(" ]");
     sb.append("  Lon[ ").append(lonStr).append(" ]");
     sb.append("\nHeading[ ").append(String.format("%.2f", raw_heading)).append("° ]");
+    if (mHasGyroscope) {
+      sb.append(String.format("  Gyro[%.2f,%.2f,%.2f]", mGyroscopeMatrix[0], mGyroscopeMatrix[1], mGyroscopeMatrix[2]));
+    }
     sb.append("  Status[ ").append(walking ? "Walking" : "Standing").append(" ]");
     sb.append("  Samples[ ").append(mCurrentSamplesTaken).append(" ]");
     mTrackingInfoView.setText(sb.toString());

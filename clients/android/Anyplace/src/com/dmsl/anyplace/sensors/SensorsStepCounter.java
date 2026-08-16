@@ -153,7 +153,7 @@ public class SensorsStepCounter implements SensorEventListener, IAccelerometerLi
 
 		Sensor countSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
 		if (countSensor != null) {
-			mSensorManager.registerListener(this, countSensor, SensorManager.SENSOR_DELAY_UI);
+			mSensorManager.registerListener(this, countSensor, SensorManager.SENSOR_DELAY_FASTEST);
 		}
 	}
 
