@@ -7,30 +7,8 @@ class AppConstants {
   /// SharedPreferences keys.
   static const String prefCampusId = 'selected_campus_id';
   static const String prefRecentWaypoints = 'recent_waypoints';
+  static const String prefSavedPois = 'saved_pois';
   static const String prefHasCompletedOnboarding = 'onboarding_done';
-
-  /// Google Maps API Key. Set via `--dart-define=MAPS_API_KEY=YOUR_KEY` or read from
-  /// `.env.example` (`MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY`).
-  static const String mapsApiKey = String.fromEnvironment(
-    'MAPS_API_KEY',
-    defaultValue: 'YOUR_GOOGLE_MAPS_API_KEY',
-  );
-
-  /// Outdoor tile source. Defaults to Google Maps; fallback to Carto Positron if key is
-  /// not configured. See project plan.
-  static String get outdoorTilesUrl {
-    if (mapsApiKey != null && mapsApiKey.isNotEmpty &&
-        mapsApiKey != 'YOUR_GOOGLE_MAPS_API_KEY') {
-      return 'https://maps.googleapis.com/maps/api/staticmap?';
-    }
-    return 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
-  }
-
-  /// Zoom level at which indoor POIs/floorplan are shown.
-  static const double indoorZoomThreshold = 19;
-
-  /// Zoom level when focusing on a specific building or GPS location.
-  static const double focusedZoom = 17;
 
   /// Default floor number probed when a building has no floor list (the
   /// public backend returns no floors for most UCY buildings).
@@ -70,7 +48,4 @@ class AppConstants {
     if (raw.isEmpty) return const [];
     return raw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
   }
-
-  /// Maximum markers shown before clustering kicks in.
-  static const int clusterThreshold = 12;
 }

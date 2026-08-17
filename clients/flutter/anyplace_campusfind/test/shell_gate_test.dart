@@ -1,41 +1,20 @@
-// Shell no longer gates on bulk load — tabs are always visible.
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:anyplace_campusfind/models/space.dart';
 import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
-import 'package:anyplace_campusfind/providers/map_view_provider.dart';
 import 'package:anyplace_campusfind/providers/providers.dart';
-import 'package:anyplace_campusfind/providers/position_provider.dart';
 import 'package:anyplace_campusfind/screens/main_shell.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
-import 'package:anyplace_campusfind/services/positioning_service.dart';
-
-/// Replaces the real Google Maps surface with a plain box in widget tests so
-/// the platform plugin is never instantiated.
-final Override _mapSurfaceOverride = mapSurfaceBuilderProvider.overrideWithValue(
-  () => const ColoredBox(color: Color(0xFFE0E0E0)),
-);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late ProviderContainer container;
   late CacheService cache;
-
-  final building = Space(
-    buid: 'b1',
-    name: 'Main Building',
-    coordinatesLat: 30.85,
-    coordinatesLon: 29.59,
-    spaceType: 'building',
-  );
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -57,45 +36,19 @@ void main() {
     );
   }
 
-  Override positioningOverride() {
-    return positioningServiceProvider.overrideWith(
-      (ref) => PositioningService(
-        api: ref.read(apiServiceProvider),
-        gpsStreamBuilder: () => const Stream<LatLng>.empty(),
-        wifiScanBuilder: () async => const [],
-        permissionRequest: () async => false,
-      ),
-    );
-  }
-
-  Override positioningGrantedOverride() {
-    return positioningServiceProvider.overrideWith(
-      (ref) => PositioningService(
-        api: ref.read(apiServiceProvider),
-        gpsStreamBuilder: () => const Stream<LatLng>.empty(),
-        wifiScanBuilder: () async => const [],
-        permissionRequest: () async => true,
-      ),
-    );
-  }
-
   testWidgets('tabs are always visible even while data loads', (tester) async {
     final completer = Completer<BulkLoadResult>();
     container = ProviderContainer(overrides: [
       loaderOverride(() => completer.future),
       cacheServiceProvider.overrideWithValue(cache),
-      positioningOverride(),
-      _mapSurfaceOverride,
     ]);
     addTearDown(container.dispose);
 
     await tester.pumpWidget(wrap());
-    // Tabs and nav bar should be visible immediately.
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
 
-    completer.complete(
-        BulkLoadResult(campuses: const [], spaces: [building]));
+    completer.complete(const BulkLoadResult());
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
   });
@@ -103,11 +56,8 @@ void main() {
   testWidgets('shows offline banner when data came from snapshot',
       (tester) async {
     container = ProviderContainer(overrides: [
-      loaderOverride(() async =>
-          BulkLoadResult(campuses: const [], spaces: [building], fromOffline: true)),
+      loaderOverride(() async => const BulkLoadResult(fromOffline: true)),
       cacheServiceProvider.overrideWithValue(cache),
-      positioningOverride(),
-      _mapSurfaceOverride,
     ]);
     addTearDown(container.dispose);
 
@@ -118,37 +68,27 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
   });
 
-  testWidgets('position tracking starts only while the Map tab is active',
+  testWidgets('bottom nav switches between Home, Search, Saved, Profile',
       (tester) async {
     container = ProviderContainer(overrides: [
-      loaderOverride(() async =>
-          BulkLoadResult(campuses: const [], spaces: [building])),
+      loaderOverride(() async => const BulkLoadResult()),
       cacheServiceProvider.overrideWithValue(cache),
-      positioningGrantedOverride(),
-      _mapSurfaceOverride,
     ]);
     addTearDown(container.dispose);
 
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    Finder mapDestination() => find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text('Map'),
-        );
+    expect(find.text('Home'), findsOneWidget);
 
-    expect(container.read(positionStateProvider).isActive, isFalse);
-
-    await tester.tap(mapDestination());
+    await tester.tap(find.text('Search'));
     await tester.pumpAndSettle();
-    expect(container.read(positionStateProvider).isActive, isTrue);
 
-    await tester.tap(find.descendant(
-      of: find.byType(NavigationBar),
-      matching: find.text('Home'),
-    ));
+    await tester.tap(find.text('Saved'));
     await tester.pumpAndSettle();
-    expect(container.read(positionStateProvider).isActive, isFalse);
+
+    await tester.tap(find.text('Profile'));
+    await tester.pumpAndSettle();
   });
 }
 

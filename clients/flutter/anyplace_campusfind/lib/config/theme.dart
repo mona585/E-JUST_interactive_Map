@@ -13,6 +13,7 @@ class AppTheme {
   static const Color textPrimary = Color(0xFF1A1A1A);
   static const Color textSecondary = Color(0xFF666666);
   static const Color textTertiary = Color(0xFF999999);
+  static const Color markerSelected = Color(0xFFFFA000);
 
   static ThemeData light() => ThemeData(
         useMaterial3: true,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../config/theme.dart';
 import '../providers/search_provider.dart';
 
@@ -13,14 +12,38 @@ class SearchResultCard extends StatelessWidget {
   final SearchResult result;
   final VoidCallback onTap;
 
-  Color get _categoryBadgeColor => result.category.color;
+  IconData get _icon {
+    switch (result.entityType) {
+      case 'space':
+        return Icons.business;
+      case 'floor':
+        return Icons.layers;
+      case 'poi':
+        return result.category.icon;
+      default:
+        return Icons.place;
+    }
+  }
 
-  String get _badgeLabel => result.category.badge;
+  Color get _iconColor => result.category.color;
+
+  String get _entityLabel {
+    switch (result.entityType) {
+      case 'space':
+        return 'Building';
+      case 'floor':
+        return 'Floor';
+      case 'poi':
+        return result.subtitle.isNotEmpty ? result.subtitle : 'Place';
+      default:
+        return '';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -30,69 +53,43 @@ class SearchResultCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.all(14),
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(result.name,
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: _iconColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(_icon, color: _iconColor, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(result.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontWeight: FontWeight.w700,
-                            fontSize: 16,
+                            fontSize: 15,
                             color: AppTheme.textPrimary)),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: _categoryBadgeColor,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(_badgeLabel,
+                    const SizedBox(height: 2),
+                    Text(
+                        _entityLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white)),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(result.code.isNotEmpty ? result.code : result.category.badge,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          color: AppTheme.primary)),
-                ],
+                            fontSize: 13, color: AppTheme.textTertiary)),
+                  ],
+                ),
               ),
-              if (result.subtitle.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(result.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 14, color: AppTheme.primary)),
-              ],
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(Icons.apartment, size: 16, color: AppTheme.textTertiary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      result.isFloor
-                          ? '${result.space?.name ?? "Building"} · Floor ${result.floor?.floorNumber ?? "?"}'
-                          : '${result.space?.name ?? "Building"} · ${result.poi?.floorName ?? "Floor ${result.poi?.floorNumber ?? "?"}"}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13, color: AppTheme.textTertiary),
-                    ),
-                  ),
-                  Icon(Icons.arrow_outward, size: 18, color: AppTheme.primary.withValues(alpha: 0.6)),
-                ],
-              ),
+              const SizedBox(width: 8),
+              Icon(Icons.arrow_outward,
+                  size: 16, color: AppTheme.primary.withValues(alpha: 0.6)),
             ],
           ),
         ),

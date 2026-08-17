@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/theme.dart';
 import '../providers/search_provider.dart';
+import '../services/search_service.dart';
+import '../utils/category_deriver.dart';
 import '../widgets/search_result_card.dart';
 import 'detail_navigation.dart';
 
@@ -15,33 +17,42 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
+  EntityCategory? _selectedCategory;
+  late final SearchService _searchService;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchService = ref.read(searchServiceProvider);
+    // Listen to SearchService changes (index updates from background sync)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _searchService.addListener(_onSearchIndexChanged);
+    });
+  }
 
   @override
   void dispose() {
+    _searchService.removeListener(_onSearchIndexChanged);
     _controller.dispose();
     super.dispose();
   }
 
-  void _clearSearch() {
-    _controller.clear();
-    ref.read(searchQueryProvider.notifier).state = '';
+  void _onSearchIndexChanged() {
+    // Rebuild when the search index changes (new data indexed)
+    setState(() {});
   }
 
-  void _clearAllFilters() {
+  void _clearSearch() {
     _controller.clear();
-    ref.read(searchQueryProvider.notifier).state = '';
-    ref.read(searchCategoryFilterProvider.notifier).state = null;
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final index = ref.watch(searchIndexProvider);
-    final query = ref.watch(searchQueryProvider);
-    final category = ref.watch(searchCategoryFilterProvider);
-
-    final categories = index.all.map((r) => r.category).toSet().toList();
-    final results = index.query(query, category: category);
-    final hasActiveFilter = query.isNotEmpty || category != null;
+    final searchService = _searchService;
+    final query = _controller.text;
+    final results = searchService.query(query, category: _selectedCategory);
+    final categories = _discoverCategories(searchService);
 
     return Scaffold(
       appBar: AppBar(
@@ -77,17 +88,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       body: Column(
         children: [
-          // Search bar
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
             child: TextField(
               controller: _controller,
-              onChanged: (v) =>
-                  ref.read(searchQueryProvider.notifier).state = v,
+              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: 'Search professors, rooms, halls...',
+                hintText: 'Search buildings, rooms, professors...',
                 prefixIcon: const Icon(Icons.search, size: 22, color: AppTheme.textTertiary),
-                suffixIcon: query.isNotEmpty
+                suffixIcon: _controller.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.close, size: 20, color: AppTheme.textTertiary),
                         onPressed: _clearSearch,
@@ -97,7 +106,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          // Filter By label + chips
           Padding(
             padding: const EdgeInsets.only(left: 20, right: 20, bottom: 8),
             child: Align(
@@ -112,43 +120,101 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 20),
               children: [
-                _FilterChipWidget(
-                  label: 'Professors',
-                  selected: category == null,
-                  onTap: () =>
-                      ref.read(searchCategoryFilterProvider.notifier).state = null,
+                // "All" chip
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedCategory = null;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _selectedCategory == null
+                            ? AppTheme.primary.withValues(alpha: 0.1)
+                            : AppTheme.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _selectedCategory == null ? AppTheme.primary : AppTheme.cardBorder,
+                          width: _selectedCategory == null ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Text(
+                        'All',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _selectedCategory == null ? AppTheme.primary : AppTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
+                // Category chips
                 for (final c in categories)
-                  _FilterChipWidget(
-                    label: c.label,
-                    selected: category == c,
-                    onTap: () =>
-                        ref.read(searchCategoryFilterProvider.notifier).state =
-                            category == c ? null : c,
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedCategory = (_selectedCategory == c) ? null : c;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: (_selectedCategory == c)
+                              ? c.color.withValues(alpha: 0.1)
+                              : AppTheme.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: (_selectedCategory == c) ? c.color : AppTheme.cardBorder,
+                            width: (_selectedCategory == c) ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Text(
+                          c.label,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: (_selectedCategory == c) ? c.color : AppTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          // Results header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
                 Text('Search Results (${results.length})',
                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
-                const Spacer(),
-                if (hasActiveFilter)
-                  GestureDetector(
-                    onTap: _clearAllFilters,
-                    child: const Text('Clear filters',
-                        style: TextStyle(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.w600)),
+                if (searchService.isSyncing) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(AppTheme.primary.withValues(alpha: 0.5)),
+                    ),
                   ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${searchService.syncedBuildings}/${searchService.totalBuildings}',
+                    style: TextStyle(fontSize: 11, color: AppTheme.textTertiary),
+                  ),
+                ],
               ],
             ),
           ),
           const SizedBox(height: 10),
-          // Results list
           Expanded(
             child: results.isEmpty
                 ? Center(
@@ -157,14 +223,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       children: [
                         Icon(Icons.search_off, size: 48, color: AppTheme.textTertiary.withValues(alpha: 0.3)),
                         const SizedBox(height: 12),
-                        Text(hasActiveFilter ? 'No results match your filters' : 'Start typing to search',
-                            style: const TextStyle(color: AppTheme.textTertiary, fontSize: 14)),
-                        if (hasActiveFilter) ...[
-                          const SizedBox(height: 12),
-                          TextButton.icon(
-                            onPressed: _clearAllFilters,
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: const Text('Clear filters'),
+                        Text(
+                          _controller.text.isNotEmpty || _selectedCategory != null
+                              ? 'No results match your search'
+                              : 'Start typing to search',
+                          style: const TextStyle(color: AppTheme.textTertiary, fontSize: 14),
+                        ),
+                        if (searchService.isSyncing) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Search gets richer as data loads...',
+                            style: TextStyle(color: AppTheme.textTertiary.withValues(alpha: 0.6), fontSize: 12),
                           ),
                         ],
                       ],
@@ -173,54 +242,27 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                     itemCount: results.length,
-                    itemBuilder: (context, i) => SearchResultCard(
-                      result: results[i],
-                      onTap: () => openSearchResult(context, ref, results[i]),
-                    ),
+                    itemBuilder: (context, i) {
+                      final result = results[i];
+                      return SearchResultCard(
+                        result: result,
+                        onTap: () => openSearchResult(context, ref, result),
+                      );
+                    },
                   ),
           ),
         ],
       ),
     );
   }
-}
 
-class _FilterChipWidget extends StatelessWidget {
-  const _FilterChipWidget({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? AppTheme.primary : AppTheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected ? AppTheme.primary : AppTheme.cardBorder,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : AppTheme.textPrimary,
-            ),
-          ),
-        ),
-      ),
-    );
+  List<EntityCategory> _discoverCategories(SearchService searchService) {
+    final seen = <EntityCategory>{};
+    for (final item in searchService.query('', limit: 1000)) {
+      seen.add(item.category);
+    }
+    seen.remove(EntityCategory.other);
+    seen.remove(EntityCategory.floor);
+    return seen.toList();
   }
 }

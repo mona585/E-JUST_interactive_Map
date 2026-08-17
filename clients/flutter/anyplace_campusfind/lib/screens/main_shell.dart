@@ -1,21 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as provider;
 
 import '../config/theme.dart';
 import '../providers/bulk_load_provider.dart';
-import '../providers/position_provider.dart';
 import '../providers/providers.dart';
+import '../providers/search_provider.dart';
+import '../state/space_provider.dart';
+import '../ui/screens/map_screen.dart';
 import 'home_screen.dart';
-import 'map_screen.dart';
 import 'profile_screen.dart';
 import 'saved_screen.dart';
 import 'search_screen.dart';
 
-class MainShell extends ConsumerWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends ConsumerState<MainShell> {
+  bool _syncStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startDataLoading();
+    });
+  }
+
+  Future<void> _startDataLoading() async {
+    if (_syncStarted) return;
+    _syncStarted = true;
+
+    final spaceProvider = provider.Provider.of<SpaceProvider>(context, listen: false);
+    final searchService = ref.read(searchServiceProvider);
+
+    await spaceProvider.loadSpaces();
+
+    if (!mounted) return;
+
+    // Index spaces immediately
+    searchService.addSpaces(spaceProvider.spaces);
+    // Start progressive background sync for floors + POIs
+    spaceProvider.loadAllFloorsAndPois(searchService);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final index = ref.watch(shellTabProvider);
     final bulkLoad = ref.watch(bulkLoadProvider);
     wireCacheNotifications(ref);
@@ -24,7 +58,6 @@ class MainShell extends ConsumerWidget {
       body: Column(
         key: const ValueKey('tabs'),
         children: [
-          const _PositionLifecycle(key: ValueKey('position')),
           if (bulkLoad.hasValue && bulkLoad.value!.fromOffline)
             Material(
               color: const Color(0xFFFFF3E0),
@@ -95,39 +128,6 @@ class MainShell extends ConsumerWidget {
         ],
       ),
     );
-  }
-}
-
-class RootRouter extends ConsumerWidget {
-  const RootRouter({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return const MainShell();
-  }
-}
-
-class _PositionLifecycle extends ConsumerWidget {
-  const _PositionLifecycle({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final index = ref.watch(shellTabProvider);
-    final notifier = ref.read(positionStateProvider.notifier);
-
-    ref.listen(shellTabProvider, (previous, next) {
-      if (next == 1) {
-        notifier.start();
-      } else {
-        notifier.stop();
-      }
-    });
-
-    if (index == 1) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => notifier.start());
-    }
-
-    return const SizedBox.shrink();
   }
 }
 

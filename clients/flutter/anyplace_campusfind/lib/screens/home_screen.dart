@@ -1,23 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as provider;
 
 import '../config/theme.dart';
-import '../models/poi.dart';
+import '../data/models/poi_model.dart';
 import '../providers/providers.dart';
-import '../providers/search_provider.dart';
+import '../state/space_provider.dart';
 import '../utils/category_deriver.dart';
-import 'detail_navigation.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cache = ref.watch(cacheServiceProvider);
-
-    final allPois = <Poi>[
-      for (final s in cache.spaces) ...cache.poisOf(s.buid),
-    ];
+    final spaceProvider = provider.Provider.of<SpaceProvider>(context);
+    final allPois = spaceProvider.pois;
     final categories = CategoryDeriver.discoverCategories(allPois);
 
     return Scaffold(
@@ -62,39 +59,42 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 28),
-          const Text('Quick Access',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
-          const SizedBox(height: 14),
-          if (categories.isNotEmpty)
-            SizedBox(
-              height: 100,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: categories.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 12),
-                itemBuilder: (context, i) => _QuickAccessCard(
-                  category: categories[i],
-                  onTap: () {
-                    ref.read(searchCategoryFilterProvider.notifier).state = categories[i];
-                    ref.read(shellTabProvider.notifier).state = 2;
-                  },
+          if (spaceProvider.isLoading)
+            const Center(child: CircularProgressIndicator())
+          else ...[
+            const Text('Quick Access',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+            const SizedBox(height: 14),
+            if (categories.isNotEmpty)
+              SizedBox(
+                height: 100,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: categories.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, i) => _QuickAccessCard(
+                    category: categories[i],
+                    onTap: () {
+                      ref.read(shellTabProvider.notifier).state = 2;
+                    },
+                  ),
                 ),
               ),
+            const SizedBox(height: 28),
+            Row(
+              children: [
+                const Text('Recent Waypoints',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => ref.read(shellTabProvider.notifier).state = 2,
+                  child: const Text('See All', style: TextStyle(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.w600)),
+                ),
+              ],
             ),
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              const Text('Recent Waypoints',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
-              const Spacer(),
-              TextButton(
-                onPressed: () => ref.read(shellTabProvider.notifier).state = 2,
-                child: const Text('See All', style: TextStyle(color: AppTheme.primary, fontSize: 14, fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const _RecentWaypointsList(),
+            const SizedBox(height: 8),
+            const _RecentWaypointsList(),
+          ],
         ],
       ),
     );
@@ -226,18 +226,13 @@ class _RecentWaypointsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cache = ref.watch(cacheServiceProvider);
-    final index = ref.watch(searchIndexProvider);
 
     return FutureBuilder(
       future: cache.getRecentWaypoints(),
       builder: (context, snapshot) {
         final puids = snapshot.data ?? const <String>[];
-        final results = puids
-            .map((puid) => index.all.where((r) => r.poi?.puid == puid).firstOrNull)
-            .whereType<SearchResult>()
-            .toList();
 
-        if (results.isEmpty) {
+        if (puids.isEmpty) {
           return Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
@@ -255,10 +250,23 @@ class _RecentWaypointsList extends ConsumerWidget {
             ),
           );
         }
+
+        final spaceProvider = provider.Provider.of<SpaceProvider>(context, listen: false);
+        final results = puids
+            .map((puid) => spaceProvider.pois.where((p) => p.puid == puid).firstOrNull)
+            .whereType<PoiModel>()
+            .toList();
+
         return Column(
           children: [
-            for (final result in results)
-              _RecentWaypointCard(result: result, onTap: () => openSearchResult(context, ref, result)),
+            for (final poi in results)
+              _RecentWaypointCard(
+                poi: poi,
+                onTap: () async {
+                  ref.read(shellTabProvider.notifier).state = 1;
+                  await spaceProvider.navigateToPoi(poi);
+                },
+              ),
           ],
         );
       },
@@ -267,26 +275,16 @@ class _RecentWaypointsList extends ConsumerWidget {
 }
 
 class _RecentWaypointCard extends StatelessWidget {
-  const _RecentWaypointCard({required this.result, required this.onTap});
+  const _RecentWaypointCard({required this.poi, required this.onTap});
 
-  final SearchResult result;
+  final PoiModel poi;
   final VoidCallback onTap;
-
-  Color get _iconColor {
-    switch (result.category) {
-      case EntityCategory.professor:
-        return AppTheme.primary;
-      case EntityCategory.cafeteria:
-        return const Color(0xFFFFA000);
-      case EntityCategory.building:
-        return const Color(0xFF1976D2);
-      default:
-        return result.category.color;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
+    final category = CategoryDeriver.fromPoiType(poi.poisType);
+    final iconColor = category.color;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -305,22 +303,22 @@ class _RecentWaypointCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: _iconColor.withValues(alpha: 0.1),
+                  color: iconColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(result.category.icon, color: _iconColor, size: 22),
+                child: Icon(category.icon, color: iconColor, size: 22),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(result.name,
+                    Text(poi.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppTheme.textPrimary)),
                     const SizedBox(height: 2),
-                    Text(result.subtitle.isNotEmpty ? result.subtitle : 'Tap for details',
+                    Text(poi.poisType,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 13, color: AppTheme.textTertiary)),
@@ -328,15 +326,7 @@ class _RecentWaypointCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('${(300 + result.name.hashCode % 500)}m',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.primary)),
-                  const SizedBox(height: 4),
-                  Icon(Icons.arrow_outward, size: 16, color: AppTheme.primary.withValues(alpha: 0.6)),
-                ],
-              ),
+              Icon(Icons.arrow_outward, size: 16, color: AppTheme.primary.withValues(alpha: 0.6)),
             ],
           ),
         ),

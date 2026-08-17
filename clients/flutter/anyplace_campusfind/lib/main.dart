@@ -1,20 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/constants.dart';
 import 'config/theme.dart';
 import 'providers/providers.dart';
 import 'screens/main_shell.dart';
+import 'state/location_provider.dart';
+import 'state/space_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // The app's backend is a fixed build-time constant; a previously persisted
-  // server_url must never override it. Drop any stale value left by older
-  // builds so the app always talks to the public Anyplace backend.
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove('server_url');
-  runApp(const ProviderScope(child: CampusFindApp()));
+
+  final locationProvider = LocationProvider();
+  final spaceProvider = SpaceProvider();
+
+  runApp(
+    provider.MultiProvider(
+      providers: [
+        provider.ChangeNotifierProvider.value(value: locationProvider),
+        provider.ChangeNotifierProvider.value(value: spaceProvider),
+      ],
+      child: const ProviderScope(child: CampusFindApp()),
+    ),
+  );
 }
 
 class CampusFindApp extends StatelessWidget {
@@ -48,9 +60,6 @@ class _RootRouterState extends ConsumerState<RootRouter> {
     _restoreSelection();
   }
 
-  /// Ensures the single primary (UCY) campus is selected. CampusFind is
-  /// single-campus by design — there is no campus picker and no user decision.
-  /// A stale persisted value is normalised to the primary campus.
   Future<void> _restoreSelection() async {
     final saved = await ref.read(cacheServiceProvider).getSelectedCampusId();
     if (!mounted) return;

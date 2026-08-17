@@ -1,77 +1,48 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as provider;
 
-import '../models/poi.dart';
-import '../models/space.dart';
-import '../providers/map_view_provider.dart';
 import '../providers/providers.dart';
 import '../providers/search_provider.dart';
-import '../utils/category_deriver.dart';
-import 'building_detail_screen.dart';
-import 'professor_profile_screen.dart';
+import '../state/space_provider.dart';
 
-/// Routes a search result tap to the map, focusing the correct building
-/// (and floor / POI when the result carries one).
-void openSearchResult(
-  BuildContext context,
-  WidgetRef ref,
-  SearchResult result,
-) {
-  final space = result.space;
-  final poi = result.poi;
-  final floor = result.floor;
-  if (space == null && poi == null) return;
+/// Navigates to a search result by switching to the Map tab and selecting the entity.
+void openSearchResult(BuildContext context, WidgetRef ref, SearchResult result) async {
+  ref.read(shellTabProvider.notifier).state = 1; // Switch to Map tab
 
-  final buid = space?.buid ?? poi!.buid;
-  final floorNumber = floor?.floorNumber ?? poi?.floorNumber;
+  final spaceProvider = provider.Provider.of<SpaceProvider>(context, listen: false);
 
-  debugPrint('[search] result tapped: ${result.name} '
-      '(buid=$buid floor=$floorNumber poi=${poi?.name})');
-
-  // Switch to the Map tab and ask MapScreen to focus the target.
-  ref.read(shellTabProvider.notifier).state = 1;
-  ref.read(mapFocusRequestProvider.notifier).state = MapFocusRequest(
-    buid: buid,
-    floorNumber: floorNumber,
-    poi: poi,
-  );
+  if (result.space != null) {
+    // Building: select it on the map
+    spaceProvider.selectSpace(result.space!);
+  } else if (result.floor != null) {
+    // Floor: find parent space, select it, then select the floor
+    final floor = result.floor!;
+    final space = spaceProvider.spaces.firstWhere(
+      (s) => s.buid == floor.buid,
+      orElse: () => throw StateError('Space ${floor.buid} not found'),
+    );
+    spaceProvider.selectSpace(space);
+    await spaceProvider.loadFloorsForSelectedSpace();
+    final matchingFloor = spaceProvider.floors.firstWhere(
+      (f) => f.floorNumber == floor.floorNumber,
+      orElse: () => floor,
+    );
+    spaceProvider.selectFloor(matchingFloor);
+  } else if (result.poi != null) {
+    // POI: full navigation (space → floor → poi)
+    await spaceProvider.navigateToPoi(result.poi!);
+  }
 }
 
-/// Opens the correct detail screen for a POI (professor → profile, otherwise
-/// the building the POI belongs to).
-void openPoi(
-  BuildContext context,
-  WidgetRef ref,
-  Poi poi, {
-  Space? space,
-}) {
-  _openPoi(context, ref, poi, space: space ?? ref.read(cacheServiceProvider).spaceByBuid(poi.buid));
-}
+/// Navigates to a POI by puid (used by saved/recent lists).
+void openPoi(BuildContext context, WidgetRef ref, String puid) async {
+  ref.read(shellTabProvider.notifier).state = 1; // Switch to Map tab
 
-void _openPoi(
-  BuildContext context,
-  WidgetRef ref,
-  Poi poi, {
-  Space? space,
-}) {
-  final category = CategoryDeriver.derivePoi(poi);
-  if (category == EntityCategory.professor) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ProfessorProfileScreen(poi: poi, space: space),
-      ),
-    );
-    return;
-  }
-  if (space == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${poi.name} (${poi.floorNumber})')),
-    );
-    return;
-  }
-  Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => BuildingDetailScreen(space: space),
-    ),
+  final spaceProvider = provider.Provider.of<SpaceProvider>(context, listen: false);
+  final poi = spaceProvider.pois.firstWhere(
+    (p) => p.puid == puid,
+    orElse: () => throw StateError('POI $puid not found in loaded POIs'),
   );
+  await spaceProvider.navigateToPoi(poi);
 }
