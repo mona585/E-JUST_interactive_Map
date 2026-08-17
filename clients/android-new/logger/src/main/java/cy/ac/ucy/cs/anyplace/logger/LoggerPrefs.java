@@ -91,7 +91,7 @@ public class LoggerPrefs extends PreferenceActivity implements OnSharedPreferenc
 			addBldPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
 				@Override
 				public boolean onPreferenceClick(Preference preference) {
-					Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://ap.cs.ucy.ac.cy/architect/"));
+					Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.PUBLIC_BASE_URL + "/architect/"));
 					startActivity(browserIntent);
 					return true;
 				}

@@ -35,10 +35,10 @@ import okhttp3.Response;
 
 public class AnyplaceServerAPI {
     private static final String TAG = "AnyplaceServerAPI";
-    public static final String SERVER_HOST = "ap.cs.ucy.ac.cy";
-    public static final String SERVER_PORT = "44";
-    public static final String BASE_URL = "https://ap.cs.ucy.ac.cy:44/api";
-    public static final String ACCESS_TOKEN = "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap";
+    public static final String SERVER_HOST = BuildConfig.SERVER_HOST;
+    public static final String SERVER_PORT = BuildConfig.SERVER_PORT;
+    public static final String BASE_URL = BuildConfig.API_BASE_URL;
+    public static final String ACCESS_TOKEN = BuildConfig.BOOTSTRAP_ACCESS_TOKEN;
 
     private static final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(45, TimeUnit.SECONDS)

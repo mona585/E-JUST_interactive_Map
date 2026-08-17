@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-  <string name="default_server_ip_address">ap.cs.ucy.ac.cy</string>
-  <string name="default_server_port">443</string>
-  <string name="ap_default_server_url">https://ap.cs.ucy.ac.cy</string>
-  <string name="anyplace_url">ap.cs.ucy.ac.cy</string>
+  <string name="default_server_ip_address"></string>
+  <string name="default_server_port"></string>
+  <string name="ap_default_server_url"></string>
+  <string name="anyplace_url"></string>
   <string name="preferences_file">LoggerPreferences</string>
 
 

@@ -37,15 +37,37 @@
 package utils
 import play.api.Configuration
 
-import java.io.File
+import java.net.URI
 import javax.inject.{Inject, Singleton}
 
 @Singleton
 class AnyplaceServerAPI @Inject() (conf: Configuration) {
-  val sep = File.separatorChar
-  val SERVER_ADDRESS: String = conf.get[String]("server.address")
-  val SERVER_PORT: String = conf.get[String]("server.port")
-  val SERVER_FULL_URL: String = SERVER_ADDRESS + ":" + SERVER_PORT
-  val SERVER_API_ROOT: String = SERVER_FULL_URL + sep + "anyplace" + sep
-  val ANDROID_API_ROOT: String = SERVER_FULL_URL + sep + "android" + sep
+  val sep = "/"
+  val PUBLIC_BASE_URL: String = normalizePublicBase(conf.get[String]("public.baseUrl"))
+  val SERVER_ADDRESS: String = PUBLIC_BASE_URL
+  val SERVER_PORT: String = publicPort(PUBLIC_BASE_URL)
+  val SERVER_FULL_URL: String = PUBLIC_BASE_URL
+  val SERVER_API_ROOT: String = SERVER_FULL_URL + sep + "api" + sep
+  val ANDROID_API_ROOT: String = SERVER_API_ROOT
+
+  def urlPath(parts: String*): String = {
+    val path = parts.map(_.stripPrefix("/").stripSuffix("/")).filter(_.nonEmpty).mkString("/")
+    SERVER_FULL_URL + sep + path
+  }
+
+  private def normalizePublicBase(value: String): String = {
+    val trimmed = value.trim.stripSuffix("/")
+    val uri = new URI(trimmed)
+    if (uri.getScheme == null || uri.getHost == null) {
+      throw new IllegalArgumentException("public.baseUrl must be an absolute URL")
+    }
+    trimmed
+  }
+
+  private def publicPort(value: String): String = {
+    val uri = new URI(value)
+    if (uri.getPort != -1) uri.getPort.toString
+    else if (uri.getScheme == "https") "443"
+    else "80"
+  }
 }
