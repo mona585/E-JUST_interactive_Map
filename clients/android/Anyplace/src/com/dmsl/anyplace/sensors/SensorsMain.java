@@ -171,7 +171,7 @@ public class SensorsMain implements SensorEventListener {
 		}
 
 		if (orientation != null) {
-			mSensorManager.registerListener(this, orientation, SensorManager.SENSOR_DELAY_FASTEST);
+			mSensorManager.registerListener(this, orientation, SensorManager.SENSOR_DELAY_GAME);
 			Log.i(TAG, "Orientation sensor: " + orientation.getName());
 		}
 
@@ -183,7 +183,7 @@ public class SensorsMain implements SensorEventListener {
 
 		Sensor acc = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 		if (acc != null) {
-			mSensorManager.registerListener(this, acc, SensorManager.SENSOR_DELAY_FASTEST);
+			mSensorManager.registerListener(this, acc, SensorManager.SENSOR_DELAY_GAME);
 			Log.i(TAG, "Accelerometer: " + acc.getName());
 		}
 

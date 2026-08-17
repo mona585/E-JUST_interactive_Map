@@ -44,11 +44,13 @@
   <string name="logger_add_building_summary">Open Anyplace Architect</string>
 
   <string-array name="intervalArray">
+    <item>0.1 sec</item>
     <item>0.5 sec</item>
     <item>1 sec</item>
     <item>2 sec</item>
   </string-array>
   <string-array name="intervalValues">
+    <item>100</item>
     <item>500</item>
     <item>1000</item>
     <item>2000</item>

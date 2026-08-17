@@ -177,6 +177,10 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
   private LocationListener mLocationListener = this;
 
   private Location mLastLocation;
+  private long mWifiPosLastTimestamp = 0L;
+  private String mCurrentLocationMode = "";
+  private boolean mIsAutoSelectingBuilding = false;
+  private long mLastAutoSelectCheckTime = 0L;
   private float raw_heading = 0.0f;
 
   private List<BuildingModel> builds;
@@ -1714,22 +1718,12 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
       if (locationList != null && locationList.size() > 0) {
         Location location = locationList.get(locationList.size() - 1);
         mLastLocation = location;
-
-        if (userData.getPositionWifi() == null) {
-          LatLng newPos = new LatLng(location.getLatitude(), location.getLongitude());
-          if (userMarker != null) {
-            userMarker.setPosition(newPos);
-            userMarker.setRotation(sensorsMain.getRAWHeading() - bearing);
-          } else if (mMap != null) {
-            MarkerOptions marker = new MarkerOptions();
-            marker.position(newPos);
-            marker.title("User").snippet("Estimated Position");
-            marker.icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_icon));
-            marker.rotation(sensorsMain.getRAWHeading() - bearing);
-            userMarker = mMap.addMarker(marker);
+        runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            updateLocation();
           }
-          updatePathProgress(newPos);
-        }
+        });
       }
     }
   };
@@ -2227,6 +2221,55 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
     @Override
     public void onNewWifiResults(int aps) {
         detectedAPs.setText("AP: " + aps);
+        if (aps > 0) {
+            LatLng curPos = null;
+            if (userMarker != null) {
+                curPos = userMarker.getPosition();
+            } else if (mLastLocation != null) {
+                curPos = new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude());
+            }
+            if (curPos != null) {
+                checkAndAutoSelectBuilding(curPos);
+            }
+        }
+    }
+
+    private void checkAndAutoSelectBuilding(final LatLng currentLoc) {
+        if (mIsAutoSelectingBuilding || currentLoc == null) return;
+        long now = System.currentTimeMillis();
+        if (now - mLastAutoSelectCheckTime < 8000L) return;
+        mLastAutoSelectCheckTime = now;
+
+        mIsAutoSelectingBuilding = true;
+        AnyplaceServerAPI.fetchBuildings(this, new FetchBuildingsTaskListener() {
+            @Override
+            public void onSuccess(String result, List<BuildingModel> buildings) {
+                mIsAutoSelectingBuilding = false;
+                if (buildings == null || buildings.isEmpty()) return;
+
+                FetchNearBuildingsTask nearest = new FetchNearBuildingsTask();
+                nearest.run(buildings.iterator(), currentLoc.latitude, currentLoc.longitude, 150);
+
+                if (nearest.buildings != null && !nearest.buildings.isEmpty()) {
+                    final BuildingModel targetBuilding = nearest.buildings.get(0);
+                    BuildingModel selected = userData.getSelectedBuilding();
+                    if (selected == null || !selected.buid.equals(targetBuilding.buid)) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(UnifiedNavigationActivity.this, "Discovered Building: " + targetBuilding.name + ". Opening indoor map...", Toast.LENGTH_SHORT).show();
+                                bypassSelectBuildingActivity(targetBuilding, "0", false);
+                            }
+                        });
+                    }
+                }
+            }
+
+            @Override
+            public void onErrorOrCancel(String result) {
+                mIsAutoSelectingBuilding = false;
+            }
+        });
     }
 
     //Play Services location listener
@@ -2343,6 +2386,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
                 }
             }
             userData.setPositionWifi(finalLat, finalLng);
+            mWifiPosLastTimestamp = System.currentTimeMillis();
         }
         this.runOnUiThread(new Runnable() {
 
@@ -2454,17 +2498,31 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         }
 
         GeoPoint wifiPos = userData.getPositionWifi();
+        boolean isWifiFresh = (System.currentTimeMillis() - mWifiPosLastTimestamp) <= 10000L;
+        boolean hasValidBSSIDFix = (wifiPos != null && isWifiFresh);
         LatLng activePos = null;
+        String newMode = "";
 
-        if (isNearBuilding && wifiPos != null) {
+        if (hasValidBSSIDFix) {
             activePos = new LatLng(wifiPos.dlat, wifiPos.dlon);
+            newMode = "WIFI";
         } else if (mLastLocation != null) {
             activePos = new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude());
-        } else if (wifiPos != null) {
-            activePos = new LatLng(wifiPos.dlat, wifiPos.dlon);
+            newMode = "GPS";
+        }
+
+        if (!newMode.isEmpty() && !newMode.equalsIgnoreCase(mCurrentLocationMode)) {
+            mCurrentLocationMode = newMode;
+            final String modeLabel = newMode.equalsIgnoreCase("WIFI")
+                ? "Indoor Navigation (Wi-Fi BSSID Tracking)"
+                : "Outdoor Navigation (GPS Tracking)";
+            Toast.makeText(this, modeLabel, Toast.LENGTH_SHORT).show();
         }
 
         if (activePos != null) {
+            if (userData.getSelectedBuilding() == null) {
+                checkAndAutoSelectBuilding(activePos);
+            }
             activePos = getSnappedPosition(activePos);
             float currentHeading = getSmoothedHeading(sensorsMain.getRAWHeading());
             if (userMarker != null) {

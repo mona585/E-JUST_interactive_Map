@@ -260,6 +260,9 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   private boolean mHasGravity = false;
   private boolean mHasGeomagnetic = false;
   private boolean mHasGyroscope = false;
+  private final float[] mRMatrix = new float[9];
+  private final float[] mIMatrix = new float[9];
+  private final float[] mOrientationAngles = new float[3];
 
   private final SensorEventListener mHardwareSensorListener = new SensorEventListener() {
     @Override
@@ -281,13 +284,10 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       }
 
       if (mHasGravity && mHasGeomagnetic) {
-        float R[] = new float[9];
-        float I[] = new float[9];
-        boolean success = SensorManager.getRotationMatrix(R, I, mGravityMatrix, mGeomagneticMatrix);
+        boolean success = SensorManager.getRotationMatrix(mRMatrix, mIMatrix, mGravityMatrix, mGeomagneticMatrix);
         if (success) {
-          float orientation[] = new float[3];
-          SensorManager.getOrientation(R, orientation);
-          float azimuthInDegrees = (float) Math.toDegrees(orientation[0]);
+          SensorManager.getOrientation(mRMatrix, mOrientationAngles);
+          float azimuthInDegrees = (float) Math.toDegrees(mOrientationAngles[0]);
           if (azimuthInDegrees < 0) {
             azimuthInDegrees += 360;
           }
@@ -470,7 +470,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     initEditor.putString("password", "ahmedmesbah");
     initEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
     initEditor.putString("server_port", "44");
-    initEditor.putString("samples_interval", "1000");
+    initEditor.putString("samples_interval", "100");
     initEditor.commit();
 
     SharedPreferences apPrefs = getSharedPreferences("Anyplace_Preferences", MODE_PRIVATE);
@@ -480,7 +480,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     apEditor.putString("access_token", "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap");
     apEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
     apEditor.putString("server_port", "44");
-    apEditor.putString("samples_interval", "1000");
+    apEditor.putString("samples_interval", "100");
     apEditor.commit();
 
     SharedPreferences defPrefs = PreferenceManager.getDefaultSharedPreferences(this);
@@ -490,7 +490,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     defEditor.putString("access_token", "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap");
     defEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
     defEditor.putString("server_port", "44");
-    defEditor.putString("samples_interval", "1000");
+    defEditor.putString("samples_interval", "100");
     defEditor.commit();
 
     preferences.registerOnSharedPreferenceChangeListener(this);
@@ -516,7 +516,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     // Create new receiver to get broadcasts
     receiverWifi = new SimpleWifiReceiver();
     wifi.registerScan(receiverWifi);
-    wifi.startScan(preferences.getString("samples_interval", "1000"));
+    wifi.startScan(preferences.getString("samples_interval", "100"));
 
     positioning = new SensorsMain(this);
     movementDetector = new MovementDetector();
@@ -1351,11 +1351,11 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
               try {
                 File cachedServerMap = new File(getBaseContext().getExternalFilesDir(null), "radiomaps/" + b.buid + "/" + f.floor_number + "/indoor-radiomap-mean.txt");
                 if (cachedServerMap.exists() && cachedServerMap.length() > 0) {
-                  new HeatmapTask().execute(cachedServerMap);
+                  executeHeatmapTask(cachedServerMap);
                 } else if (folder_path != null && filename_rss != null) {
                   File localRss = new File(folder_path, filename_rss);
                   if (localRss.exists() && localRss.length() > 0) {
-                    new HeatmapTask().execute(localRss);
+                    executeHeatmapTask(localRss);
                   }
                 }
               } catch (Exception ignored) {}
@@ -1420,7 +1420,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       @Override
       public void onSuccess(File file) {
         if (file != null && file.exists()) {
-          new HeatmapTask().execute(file);
+          executeHeatmapTask(file);
         }
       }
 
@@ -1429,7 +1429,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
         if (folder_path != null && filename_rss != null) {
           File localRss = new File(folder_path, filename_rss);
           if (localRss.exists() && localRss.length() > 0) {
-            new HeatmapTask().execute(localRss);
+            executeHeatmapTask(localRss);
           }
         }
       }
@@ -1457,7 +1457,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
             Log.d(TAG, "inside the Callback class before heatmaptask");
           }
 
-          new HeatmapTask().execute(f);
+          executeHeatmapTask(f);
         } catch (Exception e) {
         }
 
@@ -1653,8 +1653,16 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     curLocation = latlng;
   }
 
+  private long mLastUiUpdateTime = 0;
+
   // update the info view
   private void updateInfoView() {
+    long now = System.currentTimeMillis();
+    if (now - mLastUiUpdateTime < 100) {
+      return;
+    }
+    mLastUiUpdateTime = now;
+
     LatLng displayLoc = curLocation;
     if (displayLoc == null || (displayLoc.latitude == 0.0 && displayLoc.longitude == 0.0)) {
       if (mCurrentBuilding != null && mCurrentBuilding.getPosition() != null && (mCurrentBuilding.getPosition().latitude != 0.0 || mCurrentBuilding.getPosition().longitude != 0.0)) {
@@ -1687,7 +1695,18 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     }
     sb.append("  Status[ ").append(walking ? "Walking" : "Standing").append(" ]");
     sb.append("  Samples[ ").append(mCurrentSamplesTaken).append(" ]");
-    mTrackingInfoView.setText(sb.toString());
+    final String infoText = sb.toString();
+
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      if (mTrackingInfoView != null) mTrackingInfoView.setText(infoText);
+    } else {
+      runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          if (mTrackingInfoView != null) mTrackingInfoView.setText(infoText);
+        }
+      });
+    }
   }
 
   /*
@@ -1982,7 +2001,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     try {
       if (folder_path != null && filename_rss != null) {
         File localRss = new File(folder_path, filename_rss);
-        new HeatmapTask().execute(localRss);
+        executeHeatmapTask(localRss);
       }
     } catch (Exception ignored) {}
   }
@@ -2129,7 +2148,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       int max = Integer.parseInt(getResources().getString(R.string.walk_bar_max));
       MovementDetector.setSensitivity(max - sensitivity);
     } else if (key.equals("samples_interval")) {
-      wifi.startScan(sharedPreferences.getString("samples_interval", "30000"));
+      wifi.startScan(sharedPreferences.getString("samples_interval", "100"));
     }
 
   }
@@ -2156,34 +2175,40 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       adb.show();
   }
 
+  private HeatmapTask mCurrentHeatmapTask = null;
+
+  private synchronized void executeHeatmapTask(File file) {
+    if (file == null || !file.exists() || file.length() == 0) return;
+    if (mCurrentHeatmapTask != null) {
+      try {
+        mCurrentHeatmapTask.cancel(true);
+      } catch (Exception ignored) {}
+    }
+    mCurrentHeatmapTask = new HeatmapTask();
+    mCurrentHeatmapTask.execute(file);
+  }
+
   private class HeatmapTask extends AsyncTask<File, Integer, List<LatLng>> {
-    private static final boolean DEBUG = false;
 
     public HeatmapTask() {
-
     }
 
-    private void parseRadiomapFile(File targetFile, List<LatLng> list) {
-      if (targetFile == null || !targetFile.exists() || targetFile.length() == 0) return;
-      try {
-        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(targetFile));
+    private void parseRadiomapFile(File file, List<LatLng> list) {
+      if (file == null || !file.exists()) return;
+      try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(file))) {
         String line;
         while ((line = br.readLine()) != null) {
-          if (line.startsWith("#") || line.trim().isEmpty()) continue;
-          String[] tokens = line.trim().split("[,\\s]+");
-          try {
-            if (tokens.length >= 3 && tokens[0].length() > 9) {
-              double lat = Double.parseDouble(tokens[1]);
-              double lng = Double.parseDouble(tokens[2]);
-              list.add(new LatLng(lat, lng));
-            } else if (tokens.length >= 2) {
+          line = line.trim();
+          if (line.isEmpty() || line.startsWith("#")) continue;
+          String[] tokens = line.split(" ");
+          if (tokens.length >= 2) {
+            try {
               double lat = Double.parseDouble(tokens[0]);
               double lng = Double.parseDouble(tokens[1]);
               list.add(new LatLng(lat, lng));
-            }
-          } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+          }
         }
-        br.close();
       } catch (Exception e) {
         Log.e(TAG, "Error parsing radiomap file: " + e.getMessage());
       }
@@ -2193,14 +2218,12 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     protected List<LatLng> doInBackground(File... params) {
       List<LatLng> list = new ArrayList<>();
 
-      // 1. Read from provided radiomap file parameter
       File primaryFile = null;
       if (params != null && params.length > 0 && params[0] != null) {
         primaryFile = params[0];
         parseRadiomapFile(primaryFile, list);
       }
 
-      // 2. Read from cached server radiomap file (indoor-radiomap-mean.txt)
       if (mCurrentBuilding != null && mCurrentFloor != null) {
         try {
           File cachedServerMap = new File(getBaseContext().getExternalFilesDir(null), "radiomaps/" + mCurrentBuilding.buid + "/" + mCurrentFloor.floor_number + "/indoor-radiomap-mean.txt");
@@ -2210,7 +2233,6 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
         } catch (Exception ignored) {}
       }
 
-      // 3. Read from local anyplace_rss.txt
       if (folder_path != null && filename_rss != null) {
         try {
           File localRss = new File(folder_path, filename_rss);
@@ -2225,6 +2247,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
     @Override
     protected void onPostExecute(List<LatLng> result) {
+      if (isCancelled()) return;
       if (result == null || result.isEmpty()) {
         Log.d(TAG, "No fingerprint radiomap records available for display.");
         return;
@@ -2232,60 +2255,69 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
       // Clear existing circles and tile overlay to avoid duplication
       if (mHeatmapOverlay != null) {
-        mHeatmapOverlay.remove();
+        try { mHeatmapOverlay.remove(); } catch (Exception ignored) {}
         mHeatmapOverlay = null;
       }
       for (Circle c : mFingerprintCircles) {
         if (c != null) {
-          c.remove();
+          try { c.remove(); } catch (Exception ignored) {}
         }
       }
       mFingerprintCircles.clear();
 
-      // Draw bright cyan/blue fingerprint location circles on Google Map for all sample points
       if (mMap != null) {
+        // Draw up to 100 unique sample point circles on map to keep rendering lightweight and 60fps fast
+        int count = 0;
+        java.util.Set<String> uniqueLocs = new java.util.HashSet<>();
         for (LatLng latLng : result) {
-          if (latLng != null) {
-            Circle circle = mMap.addCircle(new CircleOptions()
-                .center(latLng)
-                .radius(1.0)
-                .strokeColor(android.graphics.Color.rgb(0, 180, 255))
-                .fillColor(android.graphics.Color.argb(220, 0, 150, 255))
-                .strokeWidth(3.0f)
-                .zIndex(10));
-            mFingerprintCircles.add(circle);
+          if (latLng != null && count < 100) {
+            String key = String.format("%.5f,%.5f", latLng.latitude, latLng.longitude);
+            if (uniqueLocs.add(key)) {
+              Circle circle = mMap.addCircle(new CircleOptions()
+                  .center(latLng)
+                  .radius(1.0)
+                  .strokeColor(android.graphics.Color.rgb(0, 180, 255))
+                  .fillColor(android.graphics.Color.argb(220, 0, 150, 255))
+                  .strokeWidth(3.0f)
+                  .zIndex(10));
+              mFingerprintCircles.add(circle);
+              count++;
+            }
           }
         }
 
         try {
           List<WeightedLatLng> weightedList = new ArrayList<>();
           for (LatLng latLng : result) {
-            weightedList.add(new WeightedLatLng(latLng));
+            if (latLng != null) {
+              weightedList.add(new WeightedLatLng(latLng));
+            }
           }
 
-          int[] colors = {
-              android.graphics.Color.rgb(0, 150, 255),  // Deep Blue
-              android.graphics.Color.rgb(0, 230, 255),  // Bright Cyan
-              android.graphics.Color.rgb(50, 255, 100), // Lime Green
-              android.graphics.Color.rgb(255, 200, 0)   // Yellow
-          };
-          float[] startPoints = { 0.2f, 0.5f, 0.8f, 1.0f };
-          com.google.maps.android.heatmaps.Gradient gradient = new com.google.maps.android.heatmaps.Gradient(colors, startPoints);
+          if (!weightedList.isEmpty()) {
+            int[] colors = {
+                android.graphics.Color.rgb(0, 150, 255),  // Deep Blue
+                android.graphics.Color.rgb(0, 230, 255),  // Bright Cyan
+                android.graphics.Color.rgb(50, 255, 100), // Lime Green
+                android.graphics.Color.rgb(255, 200, 0)   // Yellow
+            };
+            float[] startPoints = { 0.2f, 0.5f, 0.8f, 1.0f };
+            com.google.maps.android.heatmaps.Gradient gradient = new com.google.maps.android.heatmaps.Gradient(colors, startPoints);
 
-          mProvider = new HeatmapTileProvider.Builder()
-              .weightedData(weightedList)
-              .gradient(gradient)
-              .radius(35)
-              .opacity(0.75)
-              .build();
+            mProvider = new HeatmapTileProvider.Builder()
+                .weightedData(weightedList)
+                .gradient(gradient)
+                .radius(35)
+                .opacity(0.75)
+                .build();
 
-          mHeatmapOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider).zIndex(1));
+            mHeatmapOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider).zIndex(1));
+          }
         } catch (Exception e) {
           Log.e(TAG, "Error displaying heatmap tile overlay: " + e.getMessage());
         }
       }
     }
-
   }
 
   interface PreviousRunningTask {

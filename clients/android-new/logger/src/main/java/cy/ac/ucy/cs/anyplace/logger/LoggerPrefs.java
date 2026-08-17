@@ -121,7 +121,7 @@ public class LoggerPrefs extends PreferenceActivity implements OnSharedPreferenc
 
 		Preference intervalPref = findPreference("samples_interval");
 		if (intervalPref != null) {
-			intervalPref.setSummary("Sampling Interval: " + sp.getString("samples_interval", "1000") + " ms");
+			intervalPref.setSummary("Sampling Interval: " + sp.getString("samples_interval", "100") + " ms");
 		}
 
 		Preference folderPref = findPreference("folder_browser");

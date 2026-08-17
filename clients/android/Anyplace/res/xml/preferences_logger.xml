@@ -53,7 +53,7 @@
         -->
 
         <ListPreference
-            android:defaultValue="1000"
+            android:defaultValue="100"
             android:entries="@array/intervalArray"
             android:entryValues="@array/intervalValues"
             android:key="samples_interval"

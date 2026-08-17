@@ -365,7 +365,7 @@ public class AnyplaceLoggerActivity extends SherlockFragmentActivity implements 
         // Create new receiver to get broadcasts
         receiverWifi = new SimpleWifiReceiver();
         wifi.registerScan(receiverWifi);
-        wifi.startScan(preferences.getString("samples_interval", "1000"));
+        wifi.startScan(preferences.getString("samples_interval", "100"));
 
         positioning = new SensorsMain(this);
         movementDetector = new MovementDetector();
@@ -1169,8 +1169,15 @@ public class AnyplaceLoggerActivity extends SherlockFragmentActivity implements 
         curLocation = latlng;
     }
 
+    private long mLastUiUpdateTime = 0;
+
     // update the info view
     private void updateInfoView() {
+        long now = System.currentTimeMillis();
+        if (now - mLastUiUpdateTime < 100) {
+            return;
+        }
+        mLastUiUpdateTime = now;
 
         StringBuilder sb = new StringBuilder();
         sb.append("Lat[ ");
@@ -1190,8 +1197,17 @@ public class AnyplaceLoggerActivity extends SherlockFragmentActivity implements 
         sb.append("  Samples[ ");
         sb.append(mCurrentSamplesTaken);
         sb.append(" ]");
-        mTrackingInfoView.setText(sb.toString());
-
+        final String infoText = sb.toString();
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (mTrackingInfoView != null) mTrackingInfoView.setText(infoText);
+        } else {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (mTrackingInfoView != null) mTrackingInfoView.setText(infoText);
+                }
+            });
+        }
     }
 
     /*
@@ -1575,7 +1591,7 @@ public class AnyplaceLoggerActivity extends SherlockFragmentActivity implements 
             int max = Integer.parseInt(getResources().getString(R.string.walk_bar_max));
             MovementDetector.setSensitivity(max - sensitivity);
         } else if (key.equals("samples_interval")) {
-            wifi.startScan(sharedPreferences.getString("samples_interval", "1000"));
+            wifi.startScan(sharedPreferences.getString("samples_interval", "100"));
         }
 
     }

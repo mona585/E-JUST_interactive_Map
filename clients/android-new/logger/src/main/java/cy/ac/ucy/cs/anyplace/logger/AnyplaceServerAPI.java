@@ -92,7 +92,7 @@ public class AnyplaceServerAPI {
                         });
                         return;
                     }
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     Log.e(TAG, "Error fetching buildings: " + e.getMessage(), e);
                 }
 

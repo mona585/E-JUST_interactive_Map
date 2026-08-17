@@ -33,6 +33,7 @@
   <application
       android:allowBackup="true"
       android:usesCleartextTraffic="true"
+      android:largeHeap="true"
       android:icon="@drawable/anyplace_logo_icon_bg"
       android:label="@string/app_name"
       android:theme="@style/Theme.AnyplaceTheme" >
