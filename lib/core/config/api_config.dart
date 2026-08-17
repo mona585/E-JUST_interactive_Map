@@ -38,6 +38,23 @@ class ApiConfig {
   /// Body: `{}`
   static const String endpointFloorplans64 = '/api/floorplans64';
 
+  /// Endpoint to retrieve all POIs for a specific floor.
+  /// Method: POST
+  /// Body: `{"buid": "<buid>", "floor_number": "<floor_number>"}`
+  static const String endpointPoisFloorAll = '/api/mapping/pois/floor/all';
+
+  /// Endpoint to retrieve a route between two POIs.
+  /// Method: POST
+  /// Body: `{"pois_from": "<puid>", "pois_to": "<puid>"}`
+  static const String endpointNavigationRoute = '/api/navigation/route';
+
+  /// Endpoint to retrieve a route from coordinates on a floor to a POI.
+  /// Method: POST
+  /// Body:
+  /// `{"coordinates_lat":"<lat>","coordinates_lon":"<lon>","floor_number":"<floor>","pois_to":"<puid>"}`
+  static const String endpointNavigationRouteCoordinates =
+      '/api/navigation/route/coordinates';
+
   /// Default RadioMap filename used by Anyplace.
   static const String defaultRadiomapMeanFilename = 'indoor-radiomap-mean.txt';
 

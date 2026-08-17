@@ -9,6 +9,14 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        positioningBridge = PositioningBridge(flutterEngine.dartExecutor.binaryMessenger)
+        positioningBridge = PositioningBridge(
+            flutterEngine.dartExecutor.binaryMessenger,
+            applicationContext
+        )
+    }
+
+    override fun onDestroy() {
+        positioningBridge?.dispose()
+        super.onDestroy()
     }
 }

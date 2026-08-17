@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:anyplace_campusfind/data/models/position_estimate.dart';
 import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
 import 'package:anyplace_campusfind/data/models/floor_model.dart';
 import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
+import 'package:anyplace_campusfind/data/models/poi_model.dart';
 import 'package:anyplace_campusfind/data/models/space_model.dart';
 import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
+import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
 import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
 import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
 import 'package:anyplace_campusfind/state/space_provider.dart';
@@ -41,7 +43,7 @@ class MockRadioRepo implements RadioMapRepository {
     String floor, {
     bool forceReload = false,
   }) async =>
-      '# NaN -110\n# X, Y, HEADING, mac\n1.0, 2.0, 0, -80\n';
+      '# NaN -110\n1.0, 2.0, 0, -80\n';
 
   @override
   Future<bool> isRadioMapCached(String buid, String floor) async => true;
@@ -54,21 +56,40 @@ class MockRadioRepo implements RadioMapRepository {
 }
 
 class MockFloorplanRepo implements FloorplanRepository {
-  final Map<String, FloorplanModel> floorplans;
-  final Duration delay;
-  final Map<String, Duration> customDelays;
-
-  MockFloorplanRepo({
-    required this.floorplans,
-    this.delay = Duration.zero,
-    this.customDelays = const {},
-  });
-
   @override
   Future<FloorplanModel?> getFloorplan(
     String buid,
     String floor,
     FloorModel floorMetadata, {
+    bool forceReload = false,
+  }) async =>
+      null;
+
+  @override
+  Future<bool> isFloorplanCached(String buid, String floor) async => false;
+
+  @override
+  Future<void> clearFloorplan(String buid, String floor) async {}
+
+  @override
+  Future<void> clearAll() async {}
+}
+
+class MockPoiRepo implements PoiRepository {
+  final Map<String, List<PoiModel>> pois;
+  final Duration delay;
+  final Map<String, Duration> customDelays;
+
+  MockPoiRepo({
+    required this.pois,
+    this.delay = Duration.zero,
+    this.customDelays = const {},
+  });
+
+  @override
+  Future<List<PoiModel>> getPoisByFloor(
+    String buid,
+    String floor, {
     bool forceReload = false,
   }) async {
     final key = '$buid/$floor';
@@ -76,21 +97,21 @@ class MockFloorplanRepo implements FloorplanRepository {
     if (reqDelay > Duration.zero) {
       await Future<void>.delayed(reqDelay);
     }
-    return floorplans[key];
+    return pois[key] ?? [];
   }
 
   @override
-  Future<bool> isFloorplanCached(String buid, String floor) async =>
-      floorplans.containsKey('$buid/$floor');
+  Future<bool> isPoisCached(String buid, String floor) async =>
+      pois.containsKey('$buid/$floor');
 
   @override
-  Future<void> clearFloorplan(String buid, String floor) async {
-    floorplans.remove('$buid/$floor');
+  Future<void> clearPois(String buid, String floor) async {
+    pois.remove('$buid/$floor');
   }
 
   @override
   Future<void> clearAll() async {
-    floorplans.clear();
+    pois.clear();
   }
 }
 
@@ -99,11 +120,7 @@ class MockNativePosService implements NativePositioningService {
   Stream<PositionEstimate> get positionStream => const Stream.empty();
 
   @override
-  Future<bool> loadRadioMap(
-    String text,
-    String buid,
-    String floor,
-  ) async =>
+  Future<bool> loadRadioMap(String text, String buid, String floor) async =>
       true;
 
   @override
@@ -155,45 +172,40 @@ void main() {
     topRightLng: 33.425,
   );
 
-  const planA1 = FloorplanModel(
+  const poiA1 = PoiModel(
+    puid: 'poi_A1',
     buid: 'buid_A',
     floorNumber: '1',
-    imagePath: '/path/buid_A/1/floorplan.png',
-    bottomLeftLat: 35.140,
-    bottomLeftLng: 33.410,
-    topRightLat: 35.145,
-    topRightLng: 33.415,
-    imageSizeBytes: 150000,
-    isCached: true,
+    name: 'G01 Room',
+    poisType: 'Room',
+    latitude: 35.141,
+    longitude: 33.411,
   );
 
-  const planA2 = FloorplanModel(
+  const poiA2 = PoiModel(
+    puid: 'poi_A2',
     buid: 'buid_A',
     floorNumber: '2',
-    imagePath: '/path/buid_A/2/floorplan.png',
-    bottomLeftLat: 35.140,
-    bottomLeftLng: 33.410,
-    topRightLat: 35.145,
-    topRightLng: 33.415,
-    imageSizeBytes: 180000,
-    isCached: true,
+    name: 'Office 201',
+    poisType: 'Office',
+    latitude: 35.142,
+    longitude: 33.412,
   );
 
-  const planB1 = FloorplanModel(
+  const poiB1 = PoiModel(
+    puid: 'poi_B1',
     buid: 'buid_B',
     floorNumber: '1',
-    imagePath: '/path/buid_B/1/floorplan.png',
-    bottomLeftLat: 35.150,
-    bottomLeftLng: 33.420,
-    topRightLat: 35.155,
-    topRightLng: 33.425,
-    imageSizeBytes: 120000,
-    isCached: true,
+    name: 'Main Entrance',
+    poisType: 'Entrance',
+    latitude: 35.151,
+    longitude: 33.421,
   );
 
   late MockSpaceRepo spaceRepo;
   late MockRadioRepo radioRepo;
   late MockFloorplanRepo floorplanRepo;
+  late MockPoiRepo poiRepo;
   late MockNativePosService nativePosService;
   late SpaceProvider provider;
 
@@ -206,10 +218,11 @@ void main() {
       },
     );
     radioRepo = MockRadioRepo();
-    floorplanRepo = MockFloorplanRepo(floorplans: {
-      'buid_A/1': planA1,
-      'buid_A/2': planA2,
-      'buid_B/1': planB1,
+    floorplanRepo = MockFloorplanRepo();
+    poiRepo = MockPoiRepo(pois: {
+      'buid_A/1': [poiA1],
+      'buid_A/2': [poiA2],
+      'buid_B/1': [poiB1],
     });
     nativePosService = MockNativePosService();
 
@@ -217,12 +230,13 @@ void main() {
       repository: spaceRepo,
       radioMapRepository: radioRepo,
       floorplanRepository: floorplanRepo,
+      poiRepository: poiRepo,
       nativePositioningService: nativePosService,
     );
   });
 
-  group('SpaceProvider Floorplan Integration', () {
-    test('Floor selection triggers floorplan acquisition and sets ready state',
+  group('SpaceProvider POI Integration', () {
+    test('Floor selection triggers POI acquisition and sets ready state',
         () async {
       provider.selectSpace(buildingA);
       await provider.loadFloorsForSelectedSpace();
@@ -230,83 +244,77 @@ void main() {
       provider.selectFloor(floorA1);
       await Future<void>.delayed(Duration.zero);
 
-      expect(provider.hasActiveFloorplan, isTrue);
-      expect(provider.floorplanStatus, FloorplanStatus.ready);
-      expect(provider.activeFloorplan?.imageSizeBytes, equals(150000));
-      expect(
-        provider.activeFloorplanImagePath,
-        equals('/path/buid_A/1/floorplan.png'),
-      );
+      expect(provider.hasPois, isTrue);
+      expect(provider.poiStatus, PoiStatus.ready);
+      expect(provider.pois.length, equals(1));
+      expect(provider.pois.first.name, equals('G01 Room'));
     });
 
-    test('Switching floors (A/1 -> A/2) replaces active floorplan', () async {
+    test('Switching floors (A/1 -> A/2) replaces POIs', () async {
       provider.selectSpace(buildingA);
       await provider.loadFloorsForSelectedSpace();
 
       provider.selectFloor(floorA1);
       await Future<void>.delayed(Duration.zero);
-      expect(provider.activeFloorplan?.floorNumber, '1');
+      expect(provider.pois.first.puid, 'poi_A1');
 
       provider.selectFloor(floorA2);
       await Future<void>.delayed(Duration.zero);
 
-      expect(provider.hasActiveFloorplan, isTrue);
-      expect(provider.activeFloorplan?.floorNumber, '2');
-      expect(provider.activeFloorplan?.imageSizeBytes, equals(180000));
-      expect(
-        provider.activeFloorplanImagePath,
-        equals('/path/buid_A/2/floorplan.png'),
-      );
+      expect(provider.hasPois, isTrue);
+      expect(provider.pois.first.puid, 'poi_A2');
+      expect(provider.pois.first.name, 'Office 201');
     });
 
-    test(
-        'Switching buildings (A/1 -> B/1) clears previous floorplan and loads new one',
+    test('Switching buildings (A/1 -> B/1) clears old POIs and loads new POIs',
         () async {
       provider.selectSpace(buildingA);
       await provider.loadFloorsForSelectedSpace();
 
       provider.selectFloor(floorA1);
       await Future<void>.delayed(Duration.zero);
-      expect(provider.hasActiveFloorplan, isTrue);
+      expect(provider.hasPois, isTrue);
 
       // Select Building B
       provider.selectSpace(buildingB);
       expect(provider.selectedFloor, isNull);
-      expect(provider.hasActiveFloorplan, isFalse);
-      expect(provider.floorplanStatus, FloorplanStatus.idle);
+      expect(provider.hasPois, isFalse);
+      expect(provider.poiStatus, PoiStatus.idle);
 
       await provider.loadFloorsForSelectedSpace();
       provider.selectFloor(floorB1);
       await Future<void>.delayed(Duration.zero);
 
-      expect(provider.hasActiveFloorplan, isTrue);
-      expect(provider.activeFloorplan?.buid, 'buid_B');
-      expect(provider.activeFloorplan?.imageSizeBytes, equals(120000));
+      expect(provider.hasPois, isTrue);
+      expect(provider.pois.first.puid, 'poi_B1');
     });
 
-    test('Clearing selection resets active floorplan', () async {
+    test('Clearing selection resets POIs and selected POI', () async {
       provider.selectSpace(buildingA);
       await provider.loadFloorsForSelectedSpace();
       provider.selectFloor(floorA1);
       await Future<void>.delayed(Duration.zero);
-      expect(provider.hasActiveFloorplan, isTrue);
+      expect(provider.hasPois, isTrue);
+
+      provider.selectPoi(poiA1);
+      expect(provider.selectedPoi, equals(poiA1));
 
       provider.clearSelection();
 
       expect(provider.selectedSpace, isNull);
       expect(provider.selectedFloor, isNull);
-      expect(provider.hasActiveFloorplan, isFalse);
-      expect(provider.activeFloorplan, isNull);
-      expect(provider.floorplanStatus, FloorplanStatus.idle);
+      expect(provider.hasPois, isFalse);
+      expect(provider.selectedPoi, isNull);
+      expect(provider.poiStatus, PoiStatus.idle);
     });
 
     test(
-        'Rapid switching out-of-order race condition preserves newest floorplan',
+        'Rapid switching out-of-order race condition preserves newest POIs',
         () async {
-      final slowFloorplanRepo = MockFloorplanRepo(
-        floorplans: {
-          'buid_A/1': planA1,
-          'buid_A/2': planA2,
+      final slowPoiRepo = MockPoiRepo(
+        pois: {
+          'buid_A/1': [poiA1],
+          'buid_A/2': [poiA2],
         },
         customDelays: {
           'buid_A/1': const Duration(milliseconds: 100),
@@ -317,25 +325,25 @@ void main() {
       final raceProvider = SpaceProvider(
         repository: spaceRepo,
         radioMapRepository: radioRepo,
-        floorplanRepository: slowFloorplanRepo,
+        floorplanRepository: floorplanRepo,
+        poiRepository: slowPoiRepo,
         nativePositioningService: nativePosService,
       );
 
       raceProvider.selectSpace(buildingA);
       await raceProvider.loadFloorsForSelectedSpace();
 
-      // Trigger slow A/1 download
+      // Trigger slow A/1 POI request
       raceProvider.selectFloor(floorA1);
-      // Immediately switch to fast A/2 download
+      // Immediately switch to fast A/2 POI request
       raceProvider.selectFloor(floorA2);
 
       // Wait for both to complete
       await Future<void>.delayed(const Duration(milliseconds: 150));
 
       expect(raceProvider.selectedFloor?.floorNumber, '2');
-      expect(raceProvider.hasActiveFloorplan, isTrue);
-      expect(raceProvider.activeFloorplan?.floorNumber, '2');
-      expect(raceProvider.activeFloorplan?.imageSizeBytes, equals(180000));
+      expect(raceProvider.hasPois, isTrue);
+      expect(raceProvider.pois.first.puid, 'poi_A2');
     });
   });
 }
