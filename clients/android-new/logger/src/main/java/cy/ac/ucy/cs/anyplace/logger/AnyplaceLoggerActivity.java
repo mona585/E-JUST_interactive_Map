@@ -466,30 +466,30 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
         cy.ac.ucy.cs.anyplace.lib.R.xml.preferences_logger, true);
     preferences = getSharedPreferences(getString(R.string.preferences_file), MODE_PRIVATE);
     SharedPreferences.Editor initEditor = preferences.edit();
-    initEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    initEditor.putString("password", "ahmedmesbah");
-    initEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    initEditor.putString("server_port", "44");
+    if (!BuildConfig.BOOTSTRAP_USERNAME.isEmpty()) initEditor.putString("username", BuildConfig.BOOTSTRAP_USERNAME);
+    if (!BuildConfig.BOOTSTRAP_PASSWORD.isEmpty()) initEditor.putString("password", BuildConfig.BOOTSTRAP_PASSWORD);
+    initEditor.putString("server_ip_address", BuildConfig.SERVER_HOST);
+    initEditor.putString("server_port", BuildConfig.SERVER_PORT);
     initEditor.putString("samples_interval", "1000");
     initEditor.commit();
 
     SharedPreferences apPrefs = getSharedPreferences("Anyplace_Preferences", MODE_PRIVATE);
     SharedPreferences.Editor apEditor = apPrefs.edit();
-    apEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    apEditor.putString("password", "ahmedmesbah");
-    apEditor.putString("access_token", "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap");
-    apEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    apEditor.putString("server_port", "44");
+    if (!BuildConfig.BOOTSTRAP_USERNAME.isEmpty()) apEditor.putString("username", BuildConfig.BOOTSTRAP_USERNAME);
+    if (!BuildConfig.BOOTSTRAP_PASSWORD.isEmpty()) apEditor.putString("password", BuildConfig.BOOTSTRAP_PASSWORD);
+    if (!BuildConfig.BOOTSTRAP_ACCESS_TOKEN.isEmpty()) apEditor.putString("access_token", BuildConfig.BOOTSTRAP_ACCESS_TOKEN);
+    apEditor.putString("server_ip_address", BuildConfig.SERVER_HOST);
+    apEditor.putString("server_port", BuildConfig.SERVER_PORT);
     apEditor.putString("samples_interval", "1000");
     apEditor.commit();
 
     SharedPreferences defPrefs = PreferenceManager.getDefaultSharedPreferences(this);
     SharedPreferences.Editor defEditor = defPrefs.edit();
-    defEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    defEditor.putString("password", "ahmedmesbah");
-    defEditor.putString("access_token", "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap");
-    defEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    defEditor.putString("server_port", "44");
+    if (!BuildConfig.BOOTSTRAP_USERNAME.isEmpty()) defEditor.putString("username", BuildConfig.BOOTSTRAP_USERNAME);
+    if (!BuildConfig.BOOTSTRAP_PASSWORD.isEmpty()) defEditor.putString("password", BuildConfig.BOOTSTRAP_PASSWORD);
+    if (!BuildConfig.BOOTSTRAP_ACCESS_TOKEN.isEmpty()) defEditor.putString("access_token", BuildConfig.BOOTSTRAP_ACCESS_TOKEN);
+    defEditor.putString("server_ip_address", BuildConfig.SERVER_HOST);
+    defEditor.putString("server_port", BuildConfig.SERVER_PORT);
     defEditor.putString("samples_interval", "1000");
     defEditor.commit();
 

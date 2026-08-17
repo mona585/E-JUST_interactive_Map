@@ -78,9 +78,9 @@
         <category android:name="android.intent.category.BROWSABLE" />
 
         <data
-            android:host="ap.cs.ucy.ac.cy"
+            android:host="${anyplaceHost}"
             android:pathPrefix="/anyplace/navigation"
-            android:scheme="http" >
+            android:scheme="${anyplaceScheme}" >
         </data>
       </intent-filter>
 

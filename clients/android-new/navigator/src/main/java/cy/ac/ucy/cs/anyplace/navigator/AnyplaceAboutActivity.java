@@ -81,7 +81,7 @@ public class AnyplaceAboutActivity extends Activity {
 		img.setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View v) {
-				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://anyplace.cs.ucy.ac.cy/"));
+				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.PUBLIC_BASE_URL + "/"));
 				startActivity(browserIntent);
 			}
 		});

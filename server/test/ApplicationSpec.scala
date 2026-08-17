@@ -3,6 +3,8 @@ import play.api.test._
 import play.api.test.Helpers._
 import play.api.libs.json.{Json, JsValue}
 import play.api.mvc.Result
+import play.api.Configuration
+import utils.AnyplaceServerAPI
 import scala.concurrent.Future
 import java.io.ByteArrayInputStream
 import java.util.zip.GZIPInputStream
@@ -41,6 +43,23 @@ class ApplicationSpec extends PlaySpecification {
       status(spacesReq) must equalTo(OK)
       val json = extractJson(spacesReq)
       (json \ "spaces").asOpt[Seq[JsValue]] must beSome
+    }
+
+    "mount Android Logger/Navigator space compatibility endpoints" in new WithApplication {
+      val coOwnersReq = route(app, FakeRequest(POST, "/api/auth/mapping/space/coowners").withJsonBody(Json.obj())).get
+      val accessReq = route(app, FakeRequest(POST, "/api/auth/mapping/space/access").withJsonBody(Json.obj())).get
+
+      status(coOwnersReq) must beOneOf(UNAUTHORIZED, BAD_REQUEST, FORBIDDEN)
+      status(accessReq) must beOneOf(UNAUTHORIZED, BAD_REQUEST, FORBIDDEN)
+    }
+
+    "build public API URLs from public.baseUrl with URL separators" in {
+      val api = new AnyplaceServerAPI(Configuration("public.baseUrl" -> "https://staging.example.edu/"))
+
+      api.SERVER_FULL_URL must equalTo("https://staging.example.edu")
+      api.SERVER_PORT must equalTo("443")
+      api.urlPath("api", "floortiles", "building_1", "0", "tiles_archive.zip") must
+        equalTo("https://staging.example.edu/api/floortiles/building_1/0/tiles_archive.zip")
     }
 
   }
