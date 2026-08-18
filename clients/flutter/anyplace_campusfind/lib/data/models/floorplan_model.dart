@@ -1,6 +1,5 @@
 import 'dart:typed_data';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Data model representing an acquired geographic floorplan image for a building floor.
 class FloorplanModel {
@@ -30,8 +29,8 @@ class FloorplanModel {
 
   /// Geographic bounding box for overlay positioning on FlutterMap.
   LatLngBounds get bounds => LatLngBounds(
-        LatLng(bottomLeftLat, bottomLeftLng),
-        LatLng(topRightLat, topRightLng),
+        southwest: LatLng(bottomLeftLat, bottomLeftLng),
+        northeast: LatLng(topRightLat, topRightLng),
       );
 
   /// Center coordinate of the floorplan.

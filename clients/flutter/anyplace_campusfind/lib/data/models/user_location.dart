@@ -1,4 +1,4 @@
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Represents a geographic position obtained from the device GPS.
 class UserLocation {
@@ -48,6 +48,6 @@ class UserLocation {
 
   @override
   String toString() {
-    return 'UserLocation(lat: $latitude, lng: $longitude, acc: ${accuracy.toStringAsFixed(1)}m, heading: ${heading.toStringAsFixed(1)}°)';
+    return 'UserLocation(lat: $latitude, lng: $longitude, acc: ${accuracy.toStringAsFixed(1)}m, heading: ${heading.toStringAsFixed(1)}Â°)';
   }
 }

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../data/datasources/anyplace_api_client.dart';
 import '../data/datasources/native_positioning_service.dart';
@@ -77,6 +80,9 @@ class SpaceProvider extends ChangeNotifier {
   int _navigationRouteRequestId = 0;
   LocationProvider? _locationProvider;
 
+  // Batch loading pause flag (user action priority)
+  bool _batchPaused = false;
+
   // Default coordinate if no space selected (Cyprus / UCY area)
   static const LatLng defaultCenter = LatLng(35.1444, 33.4105);
 
@@ -109,6 +115,30 @@ class SpaceProvider extends ChangeNotifier {
       _selectedSpace?.buid,
       _selectedFloor?.floorNumber,
     );
+  }
+
+  /// Retries [fn] up to [maxRetries] times with exponential backoff.
+  Future<T> _withRetry<T>(
+    Future<T> Function() fn, {
+    int maxRetries = 2,
+    String label = '',
+  }) async {
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (attempt < maxRetries) {
+          final delaySec = 1 << attempt; // 1s, 2s, 4s...
+          debugPrint(
+            '[SpaceProvider] $label attempt ${attempt + 1} failed ($e), retrying in ${delaySec}s...',
+          );
+          await Future.delayed(Duration(seconds: delaySec));
+        } else {
+          rethrow;
+        }
+      }
+    }
+    throw StateError('unreachable');
   }
 
   List<SpaceModel> get spaces => _spaces;
@@ -179,8 +209,10 @@ class SpaceProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final fetched = await _repository.getPublicSpaces(
-        forceReload: forceReload,
+      final fetched = await _withRetry(
+        () => _repository.getPublicSpaces(forceReload: forceReload),
+        maxRetries: 2,
+        label: 'loadSpaces',
       );
       _spaces = fetched;
       _errorMessage = null;
@@ -218,6 +250,7 @@ class SpaceProvider extends ChangeNotifier {
       _resetPoiState();
       _resetNavigationRouteState();
       _syncLocationProvider();
+      _batchPaused = true; // Pause background batch Ã¢â‚¬â€ user action takes priority
       notifyListeners();
 
       // Automatically fetch floors for newly selected space
@@ -244,6 +277,7 @@ class SpaceProvider extends ChangeNotifier {
       _resetPoiState();
       _resetNavigationRouteState();
       _syncLocationProvider();
+      _batchPaused = false; // Resume background batch
       notifyListeners();
     }
   }
@@ -356,7 +390,8 @@ class SpaceProvider extends ChangeNotifier {
     return true;
   }
 
-  /// Requests a navigation route from the current effective indoor position to the selected POI.
+  /// Requests a navigation route from the current position to the selected POI.
+  /// Uses a 3-strategy cascade identical to building routing.
   Future<void> requestRouteToSelectedPoi() async {
     final poi = _selectedPoi;
     final floor = _selectedFloor;
@@ -386,21 +421,16 @@ class SpaceProvider extends ChangeNotifier {
       return;
     }
 
-    if (locationProvider.isIndoorWifiActive &&
-        locationProvider.latestIndoorEstimate?.floor != floor.floorNumber) {
-      _navigationRouteStatus = NavigationRouteStatus.unsupported;
-      _navigationRouteErrorMessage =
-          'Your current indoor estimate does not match the selected floor.';
-      notifyListeners();
-      return;
-    }
-
     final int requestId = ++_navigationRouteRequestId;
     _navigationRouteStatus = NavigationRouteStatus.loading;
     _navigationRouteErrorMessage = null;
     _navigationDestinationPuid = poi.puid;
     notifyListeners();
 
+    final destLatLng = poi.latLng;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 1: Anyplace coordinate-based routing (works when already indoors) Ã¢â€â‚¬Ã¢â€â‚¬
+    debugPrint('[SpaceProvider] Strategy 1: coordinate-based routing...');
     try {
       final route = await _navigationRepository.getRouteFromCoordinates(
         latitude: currentLocation.latitude,
@@ -410,46 +440,164 @@ class SpaceProvider extends ChangeNotifier {
       );
 
       if (requestId != _navigationRouteRequestId ||
-          _selectedPoi?.puid != poi.puid ||
-          _selectedFloor?.floorNumber != floor.floorNumber) {
+          _selectedPoi?.puid != poi.puid) {
         return;
       }
 
-      if (!route.hasRenderablePath) {
-        _navigationRouteStatus = NavigationRouteStatus.unsupported;
-        _activeNavigationRoute = null;
-        _navigationRouteErrorMessage =
-            'Anyplace returned an incomplete route for this POI.';
-      } else {
+      if (route.hasRenderablePath) {
+        debugPrint('[SpaceProvider] Strategy 1 succeeded');
         _navigationRouteStatus = NavigationRouteStatus.ready;
         _activeNavigationRoute = route;
         _navigationRouteErrorMessage = null;
+        notifyListeners();
+        return;
       }
+      debugPrint('[SpaceProvider] Strategy 1 failed: no renderable path');
     } on ApiException catch (e) {
       if (requestId != _navigationRouteRequestId) return;
-
-      final message = e.message.toLowerCase();
-      if (message.contains('not supported') ||
-          message.contains('between buildings') ||
-          message.contains('starting poi') ||
+      final msg = e.message.toLowerCase();
+      if (msg.contains('not supported') ||
+          msg.contains('no route found') ||
+          msg.contains('not be connected') ||
           e.statusCode == 400 ||
           e.statusCode == 404) {
-        _navigationRouteStatus = NavigationRouteStatus.unsupported;
+        debugPrint('[SpaceProvider] Strategy 1 failed: ${e.message}');
       } else {
+        debugPrint('[SpaceProvider] Strategy 1 error: ${e.message}');
         _navigationRouteStatus = NavigationRouteStatus.error;
+        _activeNavigationRoute = null;
+        _navigationRouteErrorMessage = e.message;
+        notifyListeners();
+        return;
       }
-      _activeNavigationRoute = null;
-      _navigationRouteErrorMessage = e.message;
     } catch (e) {
       if (requestId != _navigationRouteRequestId) return;
+      debugPrint('[SpaceProvider] Strategy 1 exception: $e');
       _navigationRouteStatus = NavigationRouteStatus.error;
       _activeNavigationRoute = null;
       _navigationRouteErrorMessage = 'Error requesting route: $e';
-    } finally {
-      if (requestId == _navigationRouteRequestId) {
-        notifyListeners();
+      notifyListeners();
+      return;
+    }
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 2: POI-to-POI routing (closest POI near user Ã¢â€ â€™ destination POI) Ã¢â€â‚¬Ã¢â€â‚¬
+    if (requestId != _navigationRouteRequestId) return;
+
+    debugPrint('[SpaceProvider] Strategy 2: POI-to-POI routing...');
+
+    // Find closest POI to user's GPS on the currently loaded POIs
+    NavigationRoutePoint? originPoi;
+    if (_pois.isNotEmpty) {
+      final userLatLng = currentLocation;
+      var bestDist = double.infinity;
+      for (final p in _pois) {
+        if (p.puid == poi.puid) continue;
+        final dist = Geolocator.distanceBetween(userLatLng.latitude, userLatLng.longitude, p.latitude, p.longitude);
+        if (dist < bestDist) {
+          bestDist = dist;
+          originPoi = NavigationRoutePoint(
+            latitude: p.latitude,
+            longitude: p.longitude,
+            puid: p.puid,
+            buid: p.buid,
+            floorNumber: p.floorNumber,
+            poisType: p.poisType,
+          );
+        }
       }
     }
+
+    if (originPoi != null) {
+      debugPrint(
+        '[SpaceProvider] Strategy 2: POI-to-POI ${originPoi.puid} -> ${poi.puid}',
+      );
+      try {
+        final route = await _navigationRepository.getRouteBetweenPois(
+          fromPuid: originPoi.puid,
+          toPuid: poi.puid,
+        );
+
+        if (requestId != _navigationRouteRequestId ||
+            _selectedPoi?.puid != poi.puid) {
+          return;
+        }
+
+        if (route.hasRenderablePath) {
+          debugPrint('[SpaceProvider] Strategy 2 succeeded');
+          _navigationRouteStatus = NavigationRouteStatus.ready;
+          _activeNavigationRoute = route;
+          _navigationRouteErrorMessage = null;
+          notifyListeners();
+          return;
+        }
+        debugPrint('[SpaceProvider] Strategy 2 failed: no renderable path');
+      } on ApiException catch (e) {
+        if (requestId != _navigationRouteRequestId) return;
+        debugPrint('[SpaceProvider] Strategy 2 failed: ${e.message}');
+      } catch (e) {
+        if (requestId != _navigationRouteRequestId) return;
+        debugPrint('[SpaceProvider] Strategy 2 exception: $e');
+      }
+    } else {
+      debugPrint('[SpaceProvider] Strategy 2 skipped: no origin POI found');
+    }
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 3: OSRM outdoor walking path to POI + indoor segment (ALWAYS works) Ã¢â€â‚¬Ã¢â€â‚¬
+    if (requestId != _navigationRouteRequestId) return;
+
+    debugPrint('[SpaceProvider] Strategy 3 (hybrid): OSRM outdoor to POI...');
+
+    final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
+      fromLat: currentLocation.latitude,
+      fromLon: currentLocation.longitude,
+      toLat: destLatLng.latitude,
+      toLon: destLatLng.longitude,
+    );
+
+    final outdoorPoints = <NavigationRoutePoint>[];
+    if (osrmPath.length >= 2) {
+      for (final pt in osrmPath) {
+        outdoorPoints.add(NavigationRoutePoint.outdoor(
+          latitude: pt.latitude,
+          longitude: pt.longitude,
+          buid: poi.buid,
+          floorNumber: poi.floorNumber,
+        ));
+      }
+    } else {
+      // Fallback: straight line if OSRM fails
+      outdoorPoints.addAll([
+        NavigationRoutePoint.outdoor(
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          buid: poi.buid,
+          floorNumber: poi.floorNumber,
+        ),
+        NavigationRoutePoint(
+          latitude: destLatLng.latitude,
+          longitude: destLatLng.longitude,
+          puid: poi.puid,
+          buid: poi.buid,
+          floorNumber: poi.floorNumber,
+          poisType: poi.poisType,
+        ),
+      ]);
+    }
+
+    final hybridRoute = NavigationRouteModel.hybrid(
+      outdoorPoints: outdoorPoints,
+      indoorRoute: null,
+    );
+
+    debugPrint(
+      '[SpaceProvider] Strategy 3 (hybrid): ${hybridRoute.points.length} points '
+      '(outdoor: ${outdoorPoints.length})',
+    );
+
+    _navigationRouteStatus = NavigationRouteStatus.ready;
+    _activeNavigationRoute = hybridRoute;
+    _navigationRouteErrorMessage = null;
+    notifyListeners();
   }
 
   /// Clears the currently displayed navigation route.
@@ -461,6 +609,189 @@ class SpaceProvider extends ChangeNotifier {
       _resetNavigationRouteState();
       notifyListeners();
     }
+  }
+
+  /// Requests a route from the user's current location to [targetSpace].
+  ///
+  /// **Always produces a visible route** using a hybrid strategy:
+  /// 1. Try Anyplace coordinate-based routing (works when inside/nearby).
+  /// 2. Try POI-to-POI indoor routing (entrance Ã¢â€ â€™ interior).
+  /// 3. Build a GPSÃ¢â€ â€™entrance outdoor polyline and merge with any indoor path.
+  /// 4. Worst case: straight line from GPS to building center.
+  Future<void> requestRouteToBuilding(SpaceModel targetSpace) async {
+    final locationProvider = _locationProvider;
+    final currentLocation = locationProvider?.currentLocation;
+
+    if (locationProvider == null || currentLocation == null) {
+      _navigationRouteStatus = NavigationRouteStatus.error;
+      _navigationRouteErrorMessage =
+          'Current location is unavailable. Center on your location first.';
+      notifyListeners();
+      return;
+    }
+
+    debugPrint(
+      '[SpaceProvider] requestRouteToBuilding: ${targetSpace.name} '
+      '(buid: ${targetSpace.buid}, user GPS: ${currentLocation.latitude},${currentLocation.longitude})',
+    );
+
+    // Make sure this building is selected and floors are loaded
+    if (_selectedSpace?.buid != targetSpace.buid) {
+      selectSpace(targetSpace);
+      await loadFloorsForSelectedSpace();
+    }
+
+    // Find ground floor or first floor
+    final groundFloor = _floors.where((f) => f.floorNumber == '0').firstOrNull ??
+        (_floors.isNotEmpty ? _floors.first : null);
+
+    final String floorNumber = groundFloor?.floorNumber ?? '0';
+
+    debugPrint('[SpaceProvider] requestRouteToBuilding: using floor $floorNumber');
+
+    // Select the ground floor to load POIs
+    if (groundFloor != null && _selectedFloor?.floorNumber != groundFloor.floorNumber) {
+      selectFloor(groundFloor);
+      await loadPoisForSelectedFloor();
+    }
+
+    debugPrint('[SpaceProvider] requestRouteToBuilding: ${_pois.length} POIs loaded');
+
+    // Find entrance POI and any other interior POI
+    final entrancePoi = _pois.where((p) =>
+        p.isBuildingEntrance ||
+        p.poisType.toLowerCase().contains('entrance')).firstOrNull;
+    final targetPoi = entrancePoi ?? (_pois.isNotEmpty ? _pois.first : null);
+    final interiorPoi = _pois.where((p) => p.puid != targetPoi?.puid).firstOrNull;
+
+    // Destination for the route = entrance if found, else the building's own coordinates
+    final destLatLng = targetPoi != null
+        ? targetPoi.latLng
+        : targetSpace.latLng;
+    final destBuid = targetPoi?.buid ?? targetSpace.buid;
+
+    final int requestId = ++_navigationRouteRequestId;
+    _navigationRouteStatus = NavigationRouteStatus.loading;
+    _navigationRouteErrorMessage = null;
+    _navigationDestinationPuid = targetPoi?.puid;
+    notifyListeners();
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 1: Coordinate-based routing (indoor / near building) Ã¢â€â‚¬Ã¢â€â‚¬
+    if (targetPoi != null) {
+      try {
+        debugPrint('[SpaceProvider] Strategy 1: coordinate-based routing...');
+        final route = await _navigationRepository.getRouteFromCoordinates(
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          floorNumber: floorNumber,
+          destinationPuid: targetPoi.puid,
+        );
+        if (requestId != _navigationRouteRequestId) return;
+
+        if (route.hasRenderablePath) {
+          debugPrint('[SpaceProvider] Strategy 1 succeeded: ${route.points.length} points');
+          _navigationRouteStatus = NavigationRouteStatus.ready;
+          _activeNavigationRoute = route;
+          _navigationRouteErrorMessage = null;
+          notifyListeners();
+          return;
+        }
+        debugPrint('[SpaceProvider] Strategy 1 returned ${route.points.length} pts (need >=2)');
+      } on ApiException catch (e) {
+        if (requestId != _navigationRouteRequestId) return;
+        debugPrint('[SpaceProvider] Strategy 1 failed: ${e.message}');
+      } catch (e) {
+        if (requestId != _navigationRouteRequestId) return;
+        debugPrint('[SpaceProvider] Strategy 1 error: $e');
+      }
+    }
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 2: POI-to-POI indoor route (entrance Ã¢â€ â€™ interior) Ã¢â€â‚¬Ã¢â€â‚¬
+    NavigationRouteModel? indoorRoute;
+    if (targetPoi != null && interiorPoi != null) {
+      try {
+        debugPrint(
+          '[SpaceProvider] Strategy 2: POI-to-POI ${interiorPoi.puid} Ã¢â€ â€™ ${targetPoi.puid}',
+        );
+        indoorRoute = await _navigationRepository.getRouteBetweenPois(
+          fromPuid: interiorPoi.puid,
+          toPuid: targetPoi.puid,
+        );
+        if (requestId != _navigationRouteRequestId) return;
+
+        if (indoorRoute.hasRenderablePath) {
+          debugPrint('[SpaceProvider] Strategy 2 succeeded: ${indoorRoute.points.length} points');
+        } else {
+          debugPrint('[SpaceProvider] Strategy 2 returned ${indoorRoute.points.length} pts');
+          indoorRoute = null;
+        }
+      } on ApiException catch (e) {
+        if (requestId != _navigationRouteRequestId) return;
+        debugPrint('[SpaceProvider] Strategy 2 failed: ${e.message}');
+        indoorRoute = null;
+      } catch (e) {
+        if (requestId != _navigationRouteRequestId) return;
+        debugPrint('[SpaceProvider] Strategy 2 error: $e');
+        indoorRoute = null;
+      }
+    }
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 3: OSRM outdoor walking path + indoor route (ALWAYS produces a route) Ã¢â€â‚¬Ã¢â€â‚¬
+    if (requestId != _navigationRouteRequestId) return;
+
+    // Get real walking path from OSRM
+    final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
+      fromLat: currentLocation.latitude,
+      fromLon: currentLocation.longitude,
+      toLat: destLatLng.latitude,
+      toLon: destLatLng.longitude,
+    );
+
+    // Convert OSRM path to NavigationRoutePoints (marked as outdoor)
+    final outdoorPoints = <NavigationRoutePoint>[];
+    if (osrmPath.length >= 2) {
+      for (final pt in osrmPath) {
+        outdoorPoints.add(NavigationRoutePoint.outdoor(
+          latitude: pt.latitude,
+          longitude: pt.longitude,
+          buid: destBuid,
+          floorNumber: floorNumber,
+        ));
+      }
+    } else {
+      // Fallback: straight line if OSRM fails
+      outdoorPoints.addAll([
+        NavigationRoutePoint.outdoor(
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          buid: destBuid,
+          floorNumber: floorNumber,
+        ),
+        NavigationRoutePoint(
+          latitude: destLatLng.latitude,
+          longitude: destLatLng.longitude,
+          puid: targetPoi?.puid ?? '__building_center__',
+          buid: destBuid,
+          floorNumber: floorNumber,
+          poisType: targetPoi?.poisType ?? 'building',
+        ),
+      ]);
+    }
+
+    final hybridRoute = NavigationRouteModel.hybrid(
+      outdoorPoints: outdoorPoints,
+      indoorRoute: indoorRoute,
+    );
+
+    debugPrint(
+      '[SpaceProvider] Strategy 3 (hybrid): ${hybridRoute.points.length} points '
+      '(outdoor: ${outdoorPoints.length}, indoor: ${indoorRoute?.points.length ?? 0})',
+    );
+
+    _navigationRouteStatus = NavigationRouteStatus.ready;
+    _activeNavigationRoute = hybridRoute;
+    _navigationRouteErrorMessage = null;
+    notifyListeners();
   }
 
   /// Fetches floors for the currently selected space.
@@ -481,9 +812,13 @@ class SpaceProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final fetchedFloors = await _repository.getFloorsByBuid(
-        targetBuid,
-        forceReload: forceReload,
+      final fetchedFloors = await _withRetry(
+        () => _repository.getFloorsByBuid(
+          targetBuid,
+          forceReload: forceReload,
+        ),
+        maxRetries: 1,
+        label: 'loadFloors($targetBuid)',
       );
 
       // Verify that the building did not change while request was awaiting
@@ -734,10 +1069,14 @@ class SpaceProvider extends ChangeNotifier {
     );
 
     try {
-      final fetchedPois = await _poiRepository.getPoisByFloor(
-        targetBuid,
-        targetFloor,
-        forceReload: forceReload,
+      final fetchedPois = await _withRetry(
+        () => _poiRepository.getPoisByFloor(
+          targetBuid,
+          targetFloor,
+          forceReload: forceReload,
+        ),
+        maxRetries: 1,
+        label: 'loadPois($targetBuid/F$targetFloor)',
       );
 
       // Verify request is still fresh and selections haven't changed
@@ -857,37 +1196,81 @@ class SpaceProvider extends ChangeNotifier {
   }
 
   /// Progressive background sync: fetches floors + POIs for all buildings
-  /// and indexes them into [searchService]. Runs throttled to avoid network spikes.
+  /// and indexes them into [searchService]. Uses batched concurrency to avoid
+  /// flooding the network or blocking the main thread.
   Future<void> loadAllFloorsAndPois(SearchService searchService) async {
     searchService.markSyncStarted(_spaces.length);
 
-    for (int i = 0; i < _spaces.length; i++) {
-      final space = _spaces[i];
-      try {
-        final floors = await _repository.getFloorsByBuid(space.buid);
-        searchService.addFloors(space.buid, floors);
+    const int batchSize = 3;
+    int processed = 0;
 
-        for (final floor in floors) {
-          try {
-            final pois = await _poiRepository.getPoisByFloor(
-              space.buid,
-              floor.floorNumber,
-            );
-            searchService.addPois(space.buid, floor.floorNumber, pois);
-          } catch (_) {
-            // Skip failed floor POI fetch
-          }
-        }
-      } catch (_) {
-        // Skip failed building
+    for (int i = 0; i < _spaces.length; i += batchSize) {
+      // Respect user-action pause
+      while (_batchPaused) {
+        await Future.delayed(const Duration(milliseconds: 500));
       }
 
-      searchService.markSyncProgress(i + 1);
+      final batch = _spaces.sublist(
+        i,
+        (i + batchSize > _spaces.length) ? _spaces.length : i + batchSize,
+      );
 
-      // Throttle: yield to event loop between buildings
-      await Future.delayed(const Duration(milliseconds: 50));
+      // Fetch floors for all buildings in this batch concurrently
+      final floorResults = await Future.wait(
+        batch.map((space) async {
+          try {
+            final floors = await _repository.getFloorsByBuid(space.buid);
+            return _FloorFetchResult(space.buid, floors, null);
+          } catch (e) {
+            return _FloorFetchResult(space.buid, const [], e);
+          }
+        }),
+        eagerError: false,
+      );
+
+      // Process floor results and fetch POIs per building SEQUENTIALLY
+      for (final result in floorResults) {
+        // Check pause between each building
+        while (_batchPaused) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+
+        if (result.error == null && result.floors.isNotEmpty) {
+          searchService.addFloors(result.buid, result.floors);
+
+          // Fetch POIs for each floor sequentially (not all at once)
+          for (final floor in result.floors) {
+            try {
+              final pois = await _poiRepository.getPoisByFloor(
+                result.buid,
+                floor.floorNumber,
+              );
+              searchService.addPois(result.buid, floor.floorNumber, pois);
+            } catch (e) {
+              debugPrint(
+                '[SpaceProvider] loadAllFloorsAndPois: POI fetch failed for '
+                '${result.buid}/F${floor.floorNumber}: $e',
+              );
+            }
+          }
+        }
+
+        processed++;
+        searchService.markSyncProgress(processed);
+      }
+
+      // Yield to event loop between batches (200ms to avoid server overload)
+      await Future.delayed(const Duration(milliseconds: 200));
     }
 
     searchService.markSyncComplete();
   }
 }
+
+class _FloorFetchResult {
+  final String buid;
+  final List<FloorModel> floors;
+  final Object? error;
+  _FloorFetchResult(this.buid, this.floors, this.error);
+}
+

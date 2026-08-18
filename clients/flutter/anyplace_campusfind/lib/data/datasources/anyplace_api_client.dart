@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../config/api_config.dart';
 import '../models/floor_model.dart';
@@ -642,11 +643,26 @@ class AnyplaceApiClient {
         );
       }
 
-      return NavigationRouteModel.fromJson(jsonMap);
+      final route = NavigationRouteModel.fromJson(jsonMap);
+
+      debugPrint(
+        '[AnyplaceApi] Route has ${route.points.length} points (num_of_pois from server: ${jsonMap['num_of_pois']})',
+      );
+
+      if (!route.hasRenderablePath) {
+        throw ApiException(
+          'No route found between the requested locations. The points may not be connected.',
+          statusCode: response.statusCode,
+        );
+      }
+
+      return route;
     } on SocketException catch (e) {
       throw ApiException('Network connection error: ${e.message}');
     } on TimeoutException {
       throw const ApiException('Connection to Anyplace backend timed out.');
+    } on ApiException {
+      rethrow;
     } on FormatException catch (e) {
       throw ApiException('Invalid response format from server: ${e.message}');
     }
@@ -711,11 +727,26 @@ class AnyplaceApiClient {
         );
       }
 
-      return NavigationRouteModel.fromJson(jsonMap);
+      final route = NavigationRouteModel.fromJson(jsonMap);
+
+      debugPrint(
+        '[AnyplaceApi] Coordinate route has ${route.points.length} points (num_of_pois from server: ${jsonMap['num_of_pois']})',
+      );
+
+      if (!route.hasRenderablePath) {
+        throw ApiException(
+          'No route found between the requested locations. The points may not be connected.',
+          statusCode: response.statusCode,
+        );
+      }
+
+      return route;
     } on SocketException catch (e) {
       throw ApiException('Network connection error: ${e.message}');
     } on TimeoutException {
       throw const ApiException('Connection to Anyplace backend timed out.');
+    } on ApiException {
+      rethrow;
     } on FormatException catch (e) {
       throw ApiException('Invalid response format from server: ${e.message}');
     }
@@ -745,6 +776,79 @@ class AnyplaceApiClient {
     }
 
     return response.body;
+  }
+
+  /// Fetches an outdoor walking route from OSRM public API.
+  ///
+  /// Returns a list of [LatLng] waypoints along the walking path.
+  /// [from] is the user's GPS position, [to] is the destination (e.g. building entrance).
+  static Future<List<LatLng>> fetchOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async {
+    final uri = Uri.parse(
+      'http://router.project-osrm.org/route/v1/foot/'
+      '$fromLon,$fromLat;$toLon,$toLat'
+      '?overview=full&geometries=geojson',
+    );
+
+    debugPrint('[OSRM] --> GET $uri');
+
+    try {
+      final response = await http.get(uri).timeout(
+        const Duration(seconds: 10),
+      );
+
+      debugPrint('[OSRM] <-- HTTP ${response.statusCode}');
+
+      if (response.statusCode != 200) {
+        debugPrint('[OSRM] Non-200 status: ${response.body}');
+        return [];
+      }
+
+      final json = jsonDecode(response.body);
+      if (json['code'] != 'Ok') {
+        debugPrint('[OSRM] Route error: ${json['code']}');
+        return [];
+      }
+
+      final routes = json['routes'] as List?;
+      if (routes == null || routes.isEmpty) {
+        debugPrint('[OSRM] No routes returned');
+        return [];
+      }
+
+      final geometry = routes[0]['geometry'];
+      if (geometry == null) return [];
+
+      final coords = geometry['coordinates'] as List?;
+      if (coords == null || coords.isEmpty) return [];
+
+      final points = coords.map<LatLng>((c) {
+        final lon = (c[0] as num).toDouble();
+        final lat = (c[1] as num).toDouble();
+        return LatLng(lat, lon);
+      }).toList();
+
+      debugPrint(
+        '[OSRM] Route: ${points.length} waypoints, '
+        '${(routes[0]['distance'] as num?)?.toStringAsFixed(0) ?? '?'}m, '
+        '${(routes[0]['duration'] as num?)?.toStringAsFixed(0) ?? '?'}s',
+      );
+
+      return points;
+    } on SocketException catch (e) {
+      debugPrint('[OSRM] SocketException: ${e.message}');
+      return [];
+    } on TimeoutException {
+      debugPrint('[OSRM] Timeout');
+      return [];
+    } catch (e) {
+      debugPrint('[OSRM] Error: $e');
+      return [];
+    }
   }
 
   /// Closes the client when done.

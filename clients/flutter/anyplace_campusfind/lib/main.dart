@@ -8,6 +8,7 @@ import 'config/theme.dart';
 import 'providers/providers.dart';
 import 'screens/main_shell.dart';
 import 'state/location_provider.dart';
+import 'state/navigation_controller.dart';
 import 'state/space_provider.dart';
 
 Future<void> main() async {
@@ -17,12 +18,17 @@ Future<void> main() async {
 
   final locationProvider = LocationProvider();
   final spaceProvider = SpaceProvider();
+  final navigationController = NavigationController(
+    spaceProvider: spaceProvider,
+    locationProvider: locationProvider,
+  );
 
   runApp(
     provider.MultiProvider(
       providers: [
         provider.ChangeNotifierProvider.value(value: locationProvider),
         provider.ChangeNotifierProvider.value(value: spaceProvider),
+        provider.ChangeNotifierProvider.value(value: navigationController),
       ],
       child: const ProviderScope(child: CampusFindApp()),
     ),

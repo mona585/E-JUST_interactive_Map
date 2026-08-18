@@ -1,22 +1,21 @@
 import 'dart:io';
+import 'dart:math' show cos, pi;
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/map_config.dart';
+import '../../config/navigation_config.dart';
 import '../../config/theme.dart';
 import '../../data/models/space_model.dart';
 import '../../state/location_provider.dart';
+import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
-import '../widgets/building_marker.dart';
 import '../widgets/building_search_sheet.dart';
 import '../widgets/map_bottom_sheet.dart';
 import '../widgets/map_controls.dart';
-import '../widgets/poi_marker.dart';
-import '../widgets/user_location_marker.dart';
 
-/// Main Map Screen displaying Anyplace buildings, indoor floorplans, indoor POIs, and device GPS on FlutterMap.
+/// Main Map Screen displaying Anyplace buildings, indoor floorplans, indoor POIs, and device GPS on Google Maps.
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -24,20 +23,36 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
-  late final MapController _mapController;
+class _MapScreenState extends State<MapScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+  GoogleMapController? _mapController;
   String? _lastCenteredFloorKey;
+  bool _lastFollowMode = false;
+  bool _hasInitialCentering = false;
+
+  // Marker icon caches (generated once from widget screenshots)
+  BitmapDescriptor? _buildingIcon;
+  BitmapDescriptor? _buildingSelectedIcon;
 
   @override
   void initState() {
     super.initState();
-    _mapController = MapController();
+    WidgetsBinding.instance.addObserver(this);
+
+    // Generate marker icons from widgets
+    _generateMarkerIcons();
 
     // Trigger initial loading of spaces and bind location provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final spaceProvider = context.read<SpaceProvider>();
       final locationProvider = context.read<LocationProvider>();
       spaceProvider.setLocationProvider(locationProvider);
+
+      // Start GPS tracking and auto-center on first valid location.
+      // requestAndCenter handles permission request + initial fix + starts tracking.
+      locationProvider.addListener(_checkInitialCentering);
+      locationProvider.requestAndCenter();
+
       // Spaces are loaded by MainShell. Listen for when they arrive.
       if (spaceProvider.spaces.isEmpty) {
         void listener() {
@@ -48,7 +63,103 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         }
         spaceProvider.addListener(listener);
       }
+
+      // Listen for NavigationController changes to follow user position
+      final navController = context.read<NavigationController>();
+      navController.addListener(_onNavigationChanged);
     });
+  }
+
+  Future<void> _generateMarkerIcons() async {
+    // Generate building marker icons using default Google Maps marker with custom hue
+    _buildingIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+    _buildingSelectedIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
+  }
+
+  /// Connector POIs (elevators, stairs, or named "Connector") are hidden from
+  /// the map but remain in the data/navigation layers for floor-transition
+  /// detection and routing.
+  static bool _isConnectorPoi(String poisType, String name) {
+    final t = poisType.toLowerCase();
+    final n = name.toLowerCase();
+    return t.contains('elevator') || t.contains('stairs') ||
+        t.contains('staircase') || n.contains('connector');
+  }
+
+  /// One-time listener that centers the map on the user's first valid location.
+  void _checkInitialCentering() {
+    if (_hasInitialCentering) return;
+    final location = context.read<LocationProvider>().currentLocation;
+    if (location != null && _mapController != null) {
+      _hasInitialCentering = true;
+      context.read<LocationProvider>().removeListener(_checkInitialCentering);
+      _animatedMapMove(location.latLng, MapConfig.defaultZoom);
+    }
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    _mapController = null;
+    WidgetsBinding.instance.removeObserver(this);
+    try {
+      context.read<LocationProvider>().removeListener(_checkInitialCentering);
+    } catch (_) {}
+    try {
+      final navController = context.read<NavigationController>();
+      navController.removeListener(_onNavigationChanged);
+    } catch (_) {}
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final nav = context.read<NavigationController>();
+    if (!nav.isActive) return;
+
+    if (state == AppLifecycleState.paused) {
+      debugPrint('[MapScreen] App paused ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â navigation continues');
+    } else if (state == AppLifecycleState.resumed) {
+      debugPrint('[MapScreen] App resumed ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â still navigating');
+      // Re-center camera on user position after resume
+      final location = context.read<LocationProvider>().currentLocation;
+      if (location != null && nav.followMode) {
+        _followUserPosition(location.latLng, nav.subState);
+      }
+    }
+  }
+
+  void _onNavigationChanged() {
+    if (!mounted) return;
+    final nav = context.read<NavigationController>();
+    final locationProvider = context.read<LocationProvider>();
+    final location = locationProvider.currentLocation;
+
+    if (nav.isActive && nav.followMode && location != null) {
+      _followUserPosition(location.latLng, nav.subState);
+    }
+
+    // Detect follow mode turning on (e.g. re-center tap)
+    if (nav.followMode && !_lastFollowMode && location != null) {
+      _followUserPosition(location.latLng, nav.subState);
+    }
+    _lastFollowMode = nav.followMode;
+  }
+
+  void _followUserPosition(LatLng userPosition, NavigationSubState subState) {
+    if (!mounted || _mapController == null) return;
+    final targetZoom = subState == NavigationSubState.indoor
+        ? NavigationConfig.indoorFollowZoom
+        : NavigationConfig.outdoorFollowZoom;
+
+    // Lower-third positioning
+    final screenHeight = MediaQuery.of(context).size.height;
+    final latOffset = (screenHeight * (1.0 - NavigationConfig.followLowerThirdFraction)) * 0.000008;
+
+    _animatedMapMove(
+      LatLng(userPosition.latitude - latOffset, userPosition.longitude),
+      targetZoom,
+    );
   }
 
   void _onBuildingTapped(SpaceModel space) {
@@ -58,54 +169,23 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   void _animatedMapMove(LatLng destLocation, double destZoom) {
-    final latTween = Tween<double>(
-      begin: _mapController.camera.center.latitude,
-      end: destLocation.latitude,
+    if (_mapController == null) return;
+    _mapController!.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: destLocation,
+          zoom: destZoom,
+        ),
+      ),
     );
-    final lngTween = Tween<double>(
-      begin: _mapController.camera.center.longitude,
-      end: destLocation.longitude,
-    );
-    final zoomTween = Tween<double>(
-      begin: _mapController.camera.zoom,
-      end: destZoom,
-    );
-
-    final controller = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
-
-    final animation = CurvedAnimation(
-      parent: controller,
-      curve: Curves.easeInOutCubic,
-    );
-
-    controller.addListener(() {
-      _mapController.move(
-        LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
-        zoomTween.evaluate(animation),
-      );
-    });
-
-    animation.addStatusListener((status) {
-      if (status == AnimationStatus.completed ||
-          status == AnimationStatus.dismissed) {
-        controller.dispose();
-      }
-    });
-
-    controller.forward();
   }
 
   void _zoomIn() {
-    final currentZoom = _mapController.camera.zoom;
-    _mapController.move(_mapController.camera.center, currentZoom + 1.0);
+    _mapController?.animateCamera(CameraUpdate.zoomIn());
   }
 
   void _zoomOut() {
-    final currentZoom = _mapController.camera.zoom;
-    _mapController.move(_mapController.camera.center, currentZoom - 1.0);
+    _mapController?.animateCamera(CameraUpdate.zoomOut());
   }
 
   Future<void> _onMyLocationTapped() async {
@@ -180,7 +260,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       if (_lastCenteredFloorKey != key) {
         _lastCenteredFloorKey = key;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _mapController.camera.zoom < 18.0) {
+          if (mounted && _mapController != null) {
             _animatedMapMove(
               spaceProvider.activeFloorplan?.center ??
                   spaceProvider.selectedSpace!.latLng,
@@ -194,6 +274,158 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
+  /// Fits the camera to frame the full active navigation route with padding.
+  void _fitRouteBounds(SpaceProvider spaceProvider) {
+    final route = spaceProvider.activeNavigationRoute;
+    if (route == null || route.polylinePoints.isEmpty) return;
+
+    // Compute bounds from polyline points
+    double minLat = route.polylinePoints.first.latitude;
+    double maxLat = route.polylinePoints.first.latitude;
+    double minLng = route.polylinePoints.first.longitude;
+    double maxLng = route.polylinePoints.first.longitude;
+    for (final point in route.polylinePoints) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    // Apply padding to the bounds
+    final paddingMeters = NavigationConfig.routeFramePadding;
+    final latPad = paddingMeters / 111320.0;
+    final centerLat = (minLat + maxLat) / 2.0;
+    final lngPad = paddingMeters / (111320.0 * cos(centerLat * pi / 180));
+
+    final paddedBounds = LatLngBounds(
+      southwest: LatLng(minLat - latPad, minLng - lngPad),
+      northeast: LatLng(maxLat + latPad, maxLng + lngPad),
+    );
+
+    final center = LatLng(
+      (paddedBounds.southwest.latitude + paddedBounds.northeast.latitude) / 2.0,
+      (paddedBounds.southwest.longitude + paddedBounds.northeast.longitude) / 2.0,
+    );
+    final latSpan = paddedBounds.northeast.latitude - paddedBounds.southwest.latitude;
+    final lngSpan = paddedBounds.northeast.longitude - paddedBounds.southwest.longitude;
+
+    final maxSpan = latSpan > lngSpan ? latSpan : lngSpan;
+    final estimatedZoom = (19.0 - (maxSpan * 100).clamp(0.0, 15.0)).clamp(
+      MapConfig.indoorFloorplanZoom,
+      19.0,
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _animatedMapMove(center, estimatedZoom);
+    });
+  }
+
+  /// Build markers for the map
+  Set<Marker> _buildMarkers(SpaceProvider spaceProvider, LocationProvider locationProvider, SpaceModel? selectedSpace) {
+    final markers = <Marker>{};
+
+    // Building markers
+    for (final space in spaceProvider.spaces) {
+      final isSelected = selectedSpace?.buid == space.buid;
+      markers.add(Marker(
+        markerId: MarkerId(space.buid),
+        position: space.latLng,
+        icon: isSelected ? (_buildingSelectedIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow)) : (_buildingIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)),
+        infoWindow: InfoWindow(
+          title: space.name,
+          snippet: space.spaceType,
+          onTap: () => _onBuildingTapped(space),
+        ),
+        onTap: () => _onBuildingTapped(space),
+      ));
+    }
+
+    // Indoor POI markers (connectors hidden — see _isConnectorPoi)
+    if (spaceProvider.hasPois) {
+      for (final poi in spaceProvider.pois) {
+        if (_isConnectorPoi(poi.poisType, poi.name)) continue;
+        markers.add(Marker(
+          markerId: MarkerId(poi.puid),
+          position: poi.latLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+          infoWindow: InfoWindow(
+            title: poi.name,
+            snippet: poi.poisType,
+          ),
+          onTap: () {
+            spaceProvider.selectPoi(poi);
+            _animatedMapMove(poi.latLng, _mapController != null ? 18.0 : MapConfig.defaultZoom);
+          },
+        ));
+      }
+    }
+
+    // User location marker (using default blue dot)
+    // Note: Custom UserLocationMarker with animation will be added as overlay in Phase 4
+    if (locationProvider.currentLocation != null) {
+      markers.add(Marker(
+        markerId: const MarkerId('user_location'),
+        position: locationProvider.currentLocation!.latLng,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ));
+    }
+
+    return markers;
+  }
+
+  /// Build polylines for navigation routes
+  Set<Polyline> _buildPolylines(SpaceProvider spaceProvider) {
+    final polylines = <Polyline>{};
+    final route = spaceProvider.activeNavigationRoute;
+    if (route == null) return polylines;
+
+    // Outdoor segment (dotted blue)
+    if (route.hasOutdoorSegment) {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('route_outdoor'),
+        points: route.outdoorPolylinePoints,
+        width: 5,
+        color: const Color(0xFF1E88E5).withValues(alpha: 0.9),
+        patterns: [PatternItem.dot, PatternItem.gap(10)],
+      ));
+    }
+
+    // Indoor segment (solid red)
+    if (route.hasIndoorSegment) {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('route_indoor'),
+        points: route.indoorPolylinePoints,
+        width: 6,
+        color: AppTheme.primary.withValues(alpha: 0.85),
+      ));
+    }
+
+    return polylines;
+  }
+
+  /// Build ground overlays for floorplan images
+  Set<GroundOverlay> _buildGroundOverlays(SpaceProvider spaceProvider) {
+    final overlays = <GroundOverlay>{};
+    if (!spaceProvider.hasActiveFloorplan || spaceProvider.activeFloorplanImagePath == null) {
+      return overlays;
+    }
+
+    final floorplan = spaceProvider.activeFloorplan!;
+    final imageBytes = File(spaceProvider.activeFloorplanImagePath!).readAsBytesSync();
+
+    overlays.add(GroundOverlay.fromBounds(
+      groundOverlayId: GroundOverlayId(
+        'floorplan_${floorplan.buid}_${floorplan.floorNumber}',
+      ),
+      image: BitmapDescriptor.bytes(imageBytes, bitmapScaling: MapBitmapScaling.none),
+      bounds: floorplan.bounds,
+      transparency: 0.0,
+    ));
+
+    return overlays;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<SpaceProvider, LocationProvider>(
@@ -203,143 +435,51 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
         _checkFloorplanCameraCenter(spaceProvider);
 
+        // Initial camera position
+        final initialTarget = selectedSpace?.latLng ??
+            userLocation?.latLng ??
+            SpaceProvider.defaultCenter;
+
         return Scaffold(
           body: Stack(
             children: [
-              // 1. FlutterMap Base + Indoor Floorplan Image Overlay + POIs + Markers
-              FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter:
-                      selectedSpace?.latLng ??
-                      userLocation?.latLng ??
-                      SpaceProvider.defaultCenter,
-                  initialZoom: MapConfig.defaultZoom,
-                  minZoom: MapConfig.minZoom,
-                  maxZoom: MapConfig.maxZoom,
-                  interactionOptions: const InteractionOptions(
-                    flags: InteractiveFlag.all,
-                  ),
-                  onTap: (_, _) {
-                    if (spaceProvider.selectedPoi != null) {
-                      spaceProvider.clearSelectedPoi();
-                    } else if (selectedSpace != null) {
-                      spaceProvider.clearSelection();
-                    }
-                  },
+              // 1. Google Map
+              GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: initialTarget,
+                  zoom: MapConfig.defaultZoom,
                 ),
-                children: [
-                  // 1. Base CARTO Voyager Layer (English & Arabic map labels)
-                  TileLayer(
-                    urlTemplate: MapConfig.cartoVoyagerUrlTemplate,
-                    subdomains: MapConfig.cartoSubdomains,
-                    userAgentPackageName: MapConfig.userAgentPackageName,
-                    maxNativeZoom: MapConfig.maxNativeTileZoom.toInt(),
-                    maxZoom: MapConfig.maxZoom,
-                  ),
-
-                  // 2. Indoor Floorplan Overlay Layer (geographically aligned WGS84 image overlay)
-                  if (spaceProvider.hasActiveFloorplan &&
-                      spaceProvider.activeFloorplanImagePath != null)
-                    OverlayImageLayer(
-                      key: ValueKey(
-                        'floorplan_${spaceProvider.selectedSpace?.buid}_${spaceProvider.selectedFloor?.floorNumber}',
-                      ),
-                      overlayImages: [
-                        OverlayImage(
-                          bounds: spaceProvider.activeFloorplan!.bounds,
-                          imageProvider: FileImage(
-                            File(spaceProvider.activeFloorplanImagePath!),
-                          ),
-                          opacity: 1.0,
-                        ),
-                      ],
-                    ),
-
-                  // 3. Active Navigation Route Layer
-                  if (spaceProvider.hasActiveNavigationRoute)
-                    PolylineLayer(
-                      key: ValueKey(
-                        'route_${spaceProvider.navigationDestinationPuid}_${spaceProvider.selectedFloor?.floorNumber}',
-                      ),
-                      polylines: [
-                        Polyline(
-                          points: spaceProvider
-                              .activeNavigationRoute!
-                              .polylinePoints,
-                          strokeWidth: 6,
-                          color: AppTheme.primary.withValues(alpha: 0.85),
-                          borderStrokeWidth: 2,
-                          borderColor: AppTheme.surface,
-                        ),
-                      ],
-                    ),
-
-                  // 4. Building Markers Layer
-                  MarkerLayer(
-                    markers: spaceProvider.spaces.map((space) {
-                      final isSelected = selectedSpace?.buid == space.buid;
-                      return Marker(
-                        point: space.latLng,
-                        width: isSelected ? 48.0 : 38.0,
-                        height: isSelected ? 48.0 : 38.0,
-                        alignment: Alignment.center,
-                        child: BuildingMarker(
-                          space: space,
-                          isSelected: isSelected,
-                          onTap: () => _onBuildingTapped(space),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-
-                  // 5. Indoor POI Markers Layer (rendered above floorplan image)
-                  if (spaceProvider.hasPois)
-                    MarkerLayer(
-                      key: ValueKey(
-                        'pois_${spaceProvider.selectedSpace?.buid}_${spaceProvider.selectedFloor?.floorNumber}',
-                      ),
-                      markers: spaceProvider.pois.map((poi) {
-                        final isSelectedPoi =
-                            spaceProvider.selectedPoi?.puid == poi.puid;
-                        return Marker(
-                          point: poi.latLng,
-                          width: isSelectedPoi ? 65.0 : 60.0,
-                          height: isSelectedPoi ? 65.0 : 60.0,
-                          alignment: Alignment.topCenter,
-                          child: PoiMarker(
-                            poi: poi,
-                            isSelected: isSelectedPoi,
-                            onTap: () {
-                              spaceProvider.selectPoi(poi);
-                              _animatedMapMove(
-                                poi.latLng,
-                                _mapController.camera.zoom,
-                              );
-                            },
-                          ),
-                        );
-                      }).toList(),
-                    ),
-
-                  // 6. User Location Marker Layer (ALWAYS top-most!)
-                  if (userLocation != null)
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: userLocation.latLng,
-                          width: 48.0,
-                          height: 48.0,
-                          alignment: Alignment.center,
-                          child: UserLocationMarker(
-                            key: const Key('user_location_marker'),
-                            location: userLocation,
-                            isIndoor: locationProvider.isIndoorWifiActive,
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
+                onMapCreated: (controller) {
+                  _mapController = controller;
+                  // If location was already acquired before map creation, center now
+                  _checkInitialCentering();
+                },
+                onTap: (LatLng latLng) {
+                  if (spaceProvider.selectedPoi != null) {
+                    spaceProvider.clearSelectedPoi();
+                  } else if (selectedSpace != null) {
+                    spaceProvider.clearSelection();
+                  }
+                },
+                onCameraMove: (CameraPosition position) {
+                  final nav = context.read<NavigationController>();
+                  if (nav.isActive && nav.followMode) {
+                    // Don't exit follow mode during programmatic moves
+                  }
+                },
+                onCameraIdle: () {
+                  // Camera movement complete
+                },
+                myLocationEnabled: false,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                compassEnabled: false,
+                mapToolbarEnabled: false,
+                
+                
+                markers: _buildMarkers(spaceProvider, locationProvider, selectedSpace),
+                polylines: _buildPolylines(spaceProvider),
+                groundOverlays: _buildGroundOverlays(spaceProvider),
               ),
 
               // 2. Top Header Bar
@@ -391,13 +531,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                                   letterSpacing: 0.3,
                                 ),
                               ),
-                              Text(
-                                spaceProvider.isLoading
-                                    ? 'Loading campus spaces...'
-                                    : '${spaceProvider.spaces.length} spaces mapped',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppTheme.textSecondary,
+                              GestureDetector(
+                                onTap: spaceProvider.errorMessage != null &&
+                                        spaceProvider.spaces.isEmpty &&
+                                        !spaceProvider.isLoading
+                                    ? () => spaceProvider.loadSpaces(forceReload: true)
+                                    : null,
+                                child: Text(
+                                  spaceProvider.isLoading
+                                      ? 'Loading campus spaces...'
+                                      : spaceProvider.errorMessage != null &&
+                                              spaceProvider.spaces.isEmpty
+                                          ? 'No connection ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â tap to retry'
+                                          : '${spaceProvider.spaces.length} spaces mapped',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: spaceProvider.errorMessage != null &&
+                                            spaceProvider.spaces.isEmpty
+                                        ? const Color(0xFFDC2626)
+                                        : AppTheme.textSecondary,
+                                  ),
                                 ),
                               ),
                             ],
@@ -465,7 +618,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     alignment: Alignment.centerRight,
                     child: MapControls(
                       onSearch: _openSearchSheet,
-                      onRecenter: _onMyLocationTapped,
+                      onRecenter: () {
+                        final nav = context.read<NavigationController>();
+                        if (nav.isActive) {
+                          nav.resumeFollowMode();
+                        }
+                        _onMyLocationTapped();
+                      },
                       onZoomIn: _zoomIn,
                       onZoomOut: _zoomOut,
                       onReload: () =>
@@ -488,6 +647,81 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                     key: ValueKey(
                       'sheet_${spaceProvider.selectedSpace?.buid}_${spaceProvider.selectedPoi?.puid}',
                     ),
+                    onFitRouteBounds: _fitRouteBounds,
+                  ),
+                ),
+
+              // 5. Navigation Status Bar (during active navigation)
+              if (context.select<NavigationController, bool>(
+                (nav) => nav.isActive,
+              ))
+                Positioned(
+                  left: 16,
+                  right: 76,
+                  bottom: 24,
+                  child: Consumer<NavigationController>(
+                    builder: (context, nav, _) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: AppTheme.cardBorder),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              nav.subState == NavigationSubState.indoor
+                                  ? Icons.wifi
+                                  : nav.subState == NavigationSubState.transitioning
+                                      ? Icons.swap_vert
+                                      : Icons.gps_fixed,
+                              size: 16,
+                              color: nav.subState == NavigationSubState.indoor
+                                  ? const Color(0xFF0D9488)
+                                  : nav.subState == NavigationSubState.transitioning
+                                      ? const Color(0xFFF59E0B)
+                                      : AppTheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                   Text(
+                                    nav.positioningStatus,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.textPrimary,
+                                    ),
+                                  ),
+                                  if (nav.isRerouting)
+                                    const Text(
+                                      'Recalculating route...',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Color(0xFFDC2626),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
 

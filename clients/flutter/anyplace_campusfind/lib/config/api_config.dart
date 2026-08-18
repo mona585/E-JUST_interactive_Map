@@ -48,5 +48,5 @@ class ApiConfig {
   static const String defaultRadiomapMeanFilename = 'indoor-radiomap-mean.txt';
 
   /// Timeout duration for HTTP requests.
-  static const Duration requestTimeout = Duration(seconds: 20);
+  static const Duration requestTimeout = Duration(seconds: 30);
 }

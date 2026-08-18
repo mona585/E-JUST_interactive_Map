@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../config/navigation_config.dart';
 import '../data/datasources/gps_location_service.dart';
 import '../data/datasources/location_service.dart';
 import '../data/datasources/native_positioning_service.dart';
@@ -30,6 +33,31 @@ enum LocationStateStatus {
   error,
 }
 
+/// Positioning stability state for indoor navigation.
+enum PositioningStability {
+  /// No valid indoor estimates available.
+  unavailable,
+
+  /// Receiving estimates but not yet stable (not enough consecutive valid ones).
+  acquiring,
+
+  /// Enough consecutive valid estimates to trust the position.
+  stable,
+}
+
+/// A single entry in the positioning stability rolling window.
+class _StabilityEntry {
+  final LatLng position;
+  final DateTime timestamp;
+  final int matchedAps;
+
+  _StabilityEntry({
+    required this.position,
+    required this.timestamp,
+    required this.matchedAps,
+  });
+}
+
 /// Provider managing outdoor device GPS position, native indoor Wi-Fi position,
 /// and evaluating position source precedence.
 class LocationProvider extends ChangeNotifier {
@@ -51,6 +79,11 @@ class LocationProvider extends ChangeNotifier {
   Timer? _indoorStaleTimer;
   int _indoorEstimateGeneration = 0;
   bool _isTracking = false;
+
+  // -- Positioning stability tracker --
+  final List<_StabilityEntry> _stabilityWindow = [];
+  PositioningStability _positioningStability = PositioningStability.unavailable;
+  PositioningStability get positioningStability => _positioningStability;
 
   LocationProvider({
     LocationService? locationService,
@@ -96,6 +129,21 @@ class LocationProvider extends ChangeNotifier {
           '[LocationProvider] Native position estimate received: $estimate',
         );
         _latestIndoorEstimate = estimate;
+
+        // Feed stability window if estimate is valid and matches current floor
+        if (estimate.isValid &&
+            estimate.buid == _activeIndoorBuid &&
+            estimate.floor == _activeIndoorFloor &&
+            estimate.latitude != null &&
+            estimate.longitude != null) {
+          _stabilityWindow.add(_StabilityEntry(
+            position: LatLng(estimate.latitude!, estimate.longitude!),
+            timestamp: estimate.timestamp,
+            matchedAps: estimate.matchedAps,
+          ));
+          _evaluateStability();
+        }
+
         _scheduleIndoorStaleTimer();
         _evaluatePositionPolicy();
       },
@@ -148,6 +196,10 @@ class LocationProvider extends ChangeNotifier {
       _indoorStaleTimer?.cancel();
       _indoorStaleTimer = null;
       _indoorEstimateGeneration++;
+      _resetStability();
+    } else {
+      // Floor changed to a new value Ã¢â‚¬â€ reset stability for new floor
+      _resetStability();
     }
 
     _evaluatePositionPolicy();
@@ -181,6 +233,58 @@ class LocationProvider extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  /// Evaluates positioning stability based on a rolling window of indoor estimates.
+  void _evaluateStability() {
+    final now = DateTime.now();
+    final windowDuration = Duration(seconds: NavigationConfig.stabilityWindowSeconds);
+
+    // Evict entries older than the window
+    _stabilityWindow.removeWhere(
+      (e) => now.difference(e.timestamp) > windowDuration,
+    );
+
+    if (_stabilityWindow.length < NavigationConfig.stabilityMinEstimates) {
+      _updateStability(PositioningStability.acquiring);
+      return;
+    }
+
+    // Check matched APs threshold
+    final hasMinAps = _stabilityWindow.every(
+      (e) => e.matchedAps >= NavigationConfig.stabilityMinMatchedAps,
+    );
+    if (!hasMinAps) {
+      _updateStability(PositioningStability.acquiring);
+      return;
+    }
+
+    // Check position delta between consecutive entries
+    // Distance calculation now uses Geolocator
+    bool stable = true;
+    for (var i = 1; i < _stabilityWindow.length; i++) {
+      final delta = Geolocator.distanceBetween(_stabilityWindow[i - 1].position.latitude, _stabilityWindow[i - 1].position.longitude, _stabilityWindow[i].position.latitude, _stabilityWindow[i].position.longitude);
+      if (delta > NavigationConfig.stabilityMaxDelta) {
+        stable = false;
+        break;
+      }
+    }
+
+    _updateStability(
+      stable ? PositioningStability.stable : PositioningStability.acquiring,
+    );
+  }
+
+  void _updateStability(PositioningStability newStability) {
+    if (_positioningStability == newStability) return;
+    _positioningStability = newStability;
+    debugPrint('[LocationProvider] Positioning stability: $newStability');
+    notifyListeners();
+  }
+
+  void _resetStability() {
+    _stabilityWindow.clear();
+    _updateStability(PositioningStability.unavailable);
   }
 
   /// Requests permission, acquires current GPS position, and begins live GPS tracking.

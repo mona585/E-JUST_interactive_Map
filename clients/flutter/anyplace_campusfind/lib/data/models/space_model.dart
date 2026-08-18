@@ -1,4 +1,4 @@
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Represents a space (building, vessel, etc.) in the Anyplace backend.
 class SpaceModel {

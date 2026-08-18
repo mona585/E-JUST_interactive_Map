@@ -1,4 +1,4 @@
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Represents a native indoor position estimate calculated from Wi-Fi fingerprinting.
 class PositionEstimate {

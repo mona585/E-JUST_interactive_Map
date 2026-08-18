@@ -9,8 +9,11 @@ class PoiDetailCard extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onNavigate;
   final VoidCallback onClearRoute;
+  final VoidCallback? onStartDirections;
+  final VoidCallback? onEndNavigation;
   final bool isLoadingRoute;
   final bool hasActiveRoute;
+  final bool isNavigating;
   final String? routeMessage;
   final bool isRouteUnsupported;
 
@@ -20,8 +23,11 @@ class PoiDetailCard extends StatelessWidget {
     required this.onClose,
     required this.onNavigate,
     required this.onClearRoute,
+    this.onStartDirections,
+    this.onEndNavigation,
     this.isLoadingRoute = false,
     this.hasActiveRoute = false,
+    this.isNavigating = false,
     this.routeMessage,
     this.isRouteUnsupported = false,
   });
@@ -152,64 +158,94 @@ class PoiDetailCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: isLoadingRoute ? null : onNavigate,
-                    icon: isLoadingRoute
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Icon(
-                            hasActiveRoute ? Icons.alt_route : Icons.directions,
-                            size: 18,
-                          ),
-                    label: Text(
-                      isLoadingRoute
-                          ? 'Loading Route...'
-                          : hasActiveRoute
-                          ? 'Refresh Route'
-                          : 'Route Here',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primary,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: AppTheme.primary.withValues(
-                        alpha: 0.4,
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+            // During active navigation — show End Navigation button
+            if (isNavigating) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: onEndNavigation,
+                  icon: const Icon(Icons.stop_circle, size: 18),
+                  label: const Text('End Navigation'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFDC2626),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                 ),
-                if (hasActiveRoute) ...[
-                  const SizedBox(width: 10),
-                  OutlinedButton(
-                    onPressed: onClearRoute,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.textPrimary,
-                      side: const BorderSide(color: AppTheme.cardBorder),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  if (hasActiveRoute) ...[
+                    // Route loaded in preview — show "Start Directions"
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: onStartDirections,
+                        icon: const Icon(Icons.play_arrow, size: 20),
+                        label: const Text('Start Directions'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF059669),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
                     ),
-                    child: const Text('Clear'),
-                  ),
+                    const SizedBox(width: 10),
+                    OutlinedButton(
+                      onPressed: onClearRoute,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.textPrimary,
+                        side: const BorderSide(color: AppTheme.cardBorder),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Clear'),
+                    ),
+                  ] else ...[
+                    // No route yet — show "Route Here"
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: isLoadingRoute ? null : onNavigate,
+                        icon: isLoadingRoute
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.directions, size: 18),
+                        label: Text(
+                          isLoadingRoute ? 'Loading Route...' : 'Route Here',
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor:
+                              AppTheme.primary.withValues(alpha: 0.4),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
-            ),
+              ),
+            ],
             if (routeMessage != null && routeMessage!.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(

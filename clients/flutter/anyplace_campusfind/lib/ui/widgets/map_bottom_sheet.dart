@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart' as provider;
 
 import '../../config/theme.dart';
+import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
 import '../../utils/category_deriver.dart';
 import '../widgets/building_detail_card.dart';
@@ -16,7 +17,9 @@ import '../widgets/poi_detail_card.dart';
 ///
 /// Drag gesture is on the handle/header only so the body ListView scrolls freely.
 class MapBottomSheet extends StatefulWidget {
-  const MapBottomSheet({super.key});
+  final void Function(SpaceProvider)? onFitRouteBounds;
+
+  const MapBottomSheet({super.key, this.onFitRouteBounds});
 
   @override
   State<MapBottomSheet> createState() => _MapBottomSheetState();
@@ -112,6 +115,7 @@ class _MapBottomSheetState extends State<MapBottomSheet>
   @override
   Widget build(BuildContext context) {
     final spaceProvider = provider.Provider.of<SpaceProvider>(context);
+    final navController = provider.Provider.of<NavigationController>(context);
     final selectedSpace = spaceProvider.selectedSpace;
     final selectedPoi = spaceProvider.selectedPoi;
     final screenHeight = MediaQuery.of(context).size.height;
@@ -153,7 +157,9 @@ class _MapBottomSheetState extends State<MapBottomSheet>
                     ),
                   ),
                   const SizedBox(height: 10),
-                  if (selectedSpace != null)
+                  if (navController.isActive)
+                    _buildNavigationHeader(spaceProvider, navController)
+                  else if (selectedSpace != null)
                     _buildTitleBar(
                       icon: Icons.business,
                       name: selectedSpace.name,
@@ -187,12 +193,32 @@ class _MapBottomSheetState extends State<MapBottomSheet>
                 if (selectedPoi != null)
                   PoiDetailCard(
                     poi: selectedPoi,
-                    onClose: () => spaceProvider.clearSelectedPoi(),
+                    onClose: () {
+                      spaceProvider.clearSelectedPoi();
+                      if (navController.isPreview) navController.endNavigation();
+                    },
                     onNavigate: () =>
                         spaceProvider.requestRouteToSelectedPoi(),
-                    onClearRoute: () => spaceProvider.clearNavigationRoute(),
+                    onClearRoute: () {
+                      spaceProvider.clearNavigationRoute();
+                      navController.endNavigation();
+                    },
+                    onStartDirections: () {
+                      navController.startRoutePreview(
+                        destinationPuid: selectedPoi.puid,
+                        destinationSpace: spaceProvider.selectedSpace!,
+                        destinationFloorNumber: selectedPoi.floorNumber,
+                      );
+                      navController.startActiveNavigation();
+                      widget.onFitRouteBounds?.call(spaceProvider);
+                    },
+                    onEndNavigation: () {
+                      navController.endNavigation();
+                      spaceProvider.clearNavigationRoute();
+                    },
                     isLoadingRoute: spaceProvider.isLoadingNavigationRoute,
                     hasActiveRoute: spaceProvider.hasActiveNavigationRoute,
+                    isNavigating: navController.isActive,
                     isRouteUnsupported:
                         spaceProvider.isNavigationRouteUnsupported,
                     routeMessage: spaceProvider.hasActiveNavigationRoute
@@ -248,6 +274,109 @@ class _MapBottomSheetState extends State<MapBottomSheet>
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavigationHeader(
+    SpaceProvider spaceProvider,
+    NavigationController navController,
+  ) {
+    final destName = navController.destinationSpace?.name ?? 'Navigating';
+    final floor = navController.currentNavigatingFloor;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          // Positioning icon
+          Icon(
+            navController.subState == NavigationSubState.indoor
+                ? Icons.wifi
+                : navController.subState == NavigationSubState.transitioning
+                    ? Icons.swap_vert
+                    : Icons.gps_fixed,
+            size: 18,
+            color: navController.subState == NavigationSubState.indoor
+                ? const Color(0xFF0D9488)
+                : navController.subState == NavigationSubState.transitioning
+                    ? const Color(0xFFF59E0B)
+                    : AppTheme.primary,
+          ),
+          const SizedBox(width: 8),
+          // Building name
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  destName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                Text(
+                  navController.positioningStatus,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: navController.isRerouting
+                        ? const Color(0xFFDC2626)
+                        : AppTheme.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Floor chip
+          if (floor != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: AppTheme.primary.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Text(
+                'F$floor',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.primary,
+                ),
+              ),
+            ),
+          ],
+          // End navigation button
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () {
+              navController.endNavigation();
+              spaceProvider.clearNavigationRoute();
+            },
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDC2626).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.stop_circle,
+                size: 20,
+                color: Color(0xFFDC2626),
+              ),
             ),
           ),
         ],

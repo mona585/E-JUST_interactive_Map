@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../data/models/floor_model.dart';
 import '../../data/models/space_model.dart';
+import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
 
 /// Card showing detailed metadata, interactive floor selector, and RadioMap status for a selected building.
@@ -229,14 +230,13 @@ class BuildingDetailCard extends StatelessWidget {
                       errorMessage: floorsError,
                     ),
 
-                    // STATUS BADGES (RadioMap & Floorplan when a floor is selected)
+                    // STATUS BADGES (Floorplan, POI, Navigation when a floor is selected)
                     if (selectedFloor != null) ...[
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
                         children: [
-                          _buildRadioMapStatusBadge(context, provider),
                           _buildFloorplanStatusBadge(context, provider),
                           _buildPoiStatusBadge(context, provider),
                           _buildNavigationStatusBadge(context, provider),
@@ -267,6 +267,73 @@ class BuildingDetailCard extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Consumer2<SpaceProvider, NavigationController>(
+                            builder: (context, spaceProvider, navController, _) {
+                              final isRouteLoading =
+                                  spaceProvider.isLoadingNavigationRoute;
+                              final hasRoute =
+                                  spaceProvider.hasActiveNavigationRoute;
+                              final isActive = navController.isActive;
+
+                              return ElevatedButton.icon(
+                                onPressed: (isRouteLoading || isActive)
+                                    ? null
+                                    : () {
+                                        if (hasRoute) {
+                                          spaceProvider.clearNavigationRoute();
+                                          navController.endNavigation();
+                                        } else {
+                                          spaceProvider
+                                              .requestRouteToBuilding(space);
+                                        }
+                                      },
+                                icon: isRouteLoading
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Icon(
+                                        isActive
+                                            ? Icons.stop_circle
+                                            : hasRoute
+                                                ? Icons.alt_route
+                                                : Icons.directions,
+                                        size: 18,
+                                      ),
+                                label: Text(
+                                  isRouteLoading
+                                      ? 'Routing...'
+                                      : isActive
+                                          ? 'Navigating'
+                                          : hasRoute
+                                              ? 'Clear Route'
+                                              : 'Route Here',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isActive
+                                      ? const Color(0xFFDC2626)
+                                      : hasRoute
+                                          ? const Color(0xFF059669)
+                                          : AppTheme.primary,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor:
+                                      AppTheme.primary.withValues(alpha: 0.4),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -544,90 +611,6 @@ class BuildingDetailCard extends StatelessWidget {
                 }).toList(),
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRadioMapStatusBadge(
-    BuildContext context,
-    SpaceProvider provider,
-  ) {
-    final status = provider.radioMapStatus;
-    Color bgColor;
-    Color textColor;
-    IconData icon;
-    String label;
-
-    switch (status) {
-      case RadioMapStatus.loading:
-        bgColor = AppTheme.primary.withValues(alpha: 0.1);
-        textColor = AppTheme.primary;
-        icon = Icons.sync;
-        label = 'RadioMap: Downloading...';
-      case RadioMapStatus.ready:
-        bgColor = const Color(0xFF059669).withValues(alpha: 0.1);
-        textColor = const Color(0xFF059669);
-        icon = Icons.wifi_tethering;
-        label = provider.isRadioMapCached
-            ? 'RadioMap: Ready (Cached)'
-            : 'RadioMap: Ready';
-      case RadioMapStatus.unsupported:
-        bgColor = const Color(0xFFF5F5F5);
-        textColor = AppTheme.textSecondary;
-        icon = Icons.info_outline;
-        label = 'No RadioMap for this floor';
-      case RadioMapStatus.error:
-        bgColor = const Color(0xFFDC2626).withValues(alpha: 0.1);
-        textColor = const Color(0xFFDC2626);
-        icon = Icons.error_outline;
-        label = provider.radioMapErrorMessage ?? 'RadioMap load failed';
-      case RadioMapStatus.idle:
-        return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: textColor.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: textColor),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (status == RadioMapStatus.error) ...[
-            const SizedBox(width: 8),
-            InkWell(
-              onTap: () =>
-                  provider.loadRadioMapForSelectedFloor(forceReload: true),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(
-                  'Retry',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
