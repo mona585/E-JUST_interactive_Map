@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../models/user_location.dart';
@@ -51,26 +52,33 @@ class GpsLocationService implements LocationService {
   @override
   Future<UserLocation?> getCurrentPosition() async {
     final status = await checkPermission();
+    debugPrint('[GpsLocationService] getCurrentPosition: permission=$status');
     if (status != LocationPermissionStatus.granted) {
       return null;
     }
 
     try {
+      debugPrint('[GpsLocationService] Calling Geolocator.getCurrentPosition...');
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
+          timeLimit: Duration(seconds: 15),
         ),
       );
+      debugPrint('[GpsLocationService] Got position: ${position.latitude},${position.longitude}');
       return _toUserLocation(position);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GpsLocationService] getCurrentPosition failed: $e');
       // Fall back to last known position if current position times out
       try {
         final lastKnown = await Geolocator.getLastKnownPosition();
+        debugPrint('[GpsLocationService] Last known: ${lastKnown != null ? "${lastKnown.latitude},${lastKnown.longitude}" : "null"}');
         if (lastKnown != null) {
           return _toUserLocation(lastKnown);
         }
-      } catch (_) {}
+      } catch (e2) {
+        debugPrint('[GpsLocationService] getLastKnownPosition also failed: $e2');
+      }
       return null;
     }
   }

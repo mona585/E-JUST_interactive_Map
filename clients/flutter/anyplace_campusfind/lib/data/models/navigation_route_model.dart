@@ -1,5 +1,20 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import 'route_segment.dart';
+
+/// Status of a navigation route model.
+enum RouteModelStatus {
+  /// All segments generated successfully. Full active navigation enabled.
+  ready,
+
+  /// One or more segments failed. Show available segments with warning.
+  /// Active navigation is DISABLED for partial routes.
+  partial,
+
+  /// No usable route could be generated.
+  error,
+}
+
 /// A single Anyplace navigation waypoint returned by the routing API.
 class NavigationRoutePoint {
   final double latitude;
@@ -76,7 +91,22 @@ class NavigationRoutePoint {
 class NavigationRouteModel {
   final List<NavigationRoutePoint> points;
 
-  const NavigationRouteModel({required this.points});
+  /// Ordered list of route segments for cross-building navigation.
+  /// Empty for legacy routes that don't use the segment model.
+  final List<RouteSegment> segments;
+
+  /// Overall status of this route.
+  final RouteModelStatus status;
+
+  /// Warning message shown when [status] is [NavigationRouteStatus.partial].
+  final String? partialRouteWarning;
+
+  const NavigationRouteModel({
+    required this.points,
+    this.segments = const [],
+    this.status = RouteModelStatus.ready,
+    this.partialRouteWarning,
+  });
 
   /// Creates a hybrid route: outdoor segment (GPS â†’ entrance) + indoor segment (POI-to-POI).
   ///
@@ -140,8 +170,80 @@ class NavigationRouteModel {
     return NavigationRouteModel(points: routePoints);
   }
 
+  /// Creates a route from segments, generating flat points automatically.
+  factory NavigationRouteModel.fromSegments({
+    required List<RouteSegment> segments,
+    required RouteModelStatus status,
+    String? partialRouteWarning,
+  }) {
+    final allPoints = <NavigationRoutePoint>[];
+    for (final seg in segments) {
+      for (final pt in seg.points) {
+        allPoints.add(NavigationRoutePoint(
+          latitude: pt.latitude,
+          longitude: pt.longitude,
+          puid: seg.connectorPoiId ?? '__segment__',
+          buid: seg.buildingId ?? '',
+          floorNumber: seg.floorNumber ?? '',
+          poisType: seg.type.name,
+          isOutdoor: seg.type == RouteSegmentType.outdoorWalking,
+        ));
+      }
+    }
+    return NavigationRouteModel(
+      points: allPoints,
+      segments: segments,
+      status: status,
+      partialRouteWarning: partialRouteWarning,
+    );
+  }
+
   bool get hasPoints => points.isNotEmpty;
   bool get hasRenderablePath => points.length >= 2;
+
+  /// Whether this route uses the segment model (cross-building navigation).
+  bool get hasSegments => segments.isNotEmpty;
+
+  /// Whether this is a partial route (some segments failed).
+  bool get isPartial => status == RouteModelStatus.partial;
+
+  /// Whether this route is fully navigable (ready status, has segments).
+  bool get isFullyNavigable =>
+      status == RouteModelStatus.ready && hasSegments;
+
+  /// Reconstructs the flat point list from segments for backward compatibility.
+  /// If no segments exist, returns the original [points] list.
+  List<NavigationRoutePoint> get flatPoints {
+    if (segments.isEmpty) return points;
+    final result = <NavigationRoutePoint>[];
+    for (final seg in segments) {
+      for (final pt in seg.points) {
+        result.add(NavigationRoutePoint(
+          latitude: pt.latitude,
+          longitude: pt.longitude,
+          puid: seg.connectorPoiId ?? '__segment__',
+          buid: seg.buildingId ?? '',
+          floorNumber: seg.floorNumber ?? '',
+          poisType: seg.type.name,
+          isOutdoor: seg.type == RouteSegmentType.outdoorWalking,
+        ));
+      }
+    }
+    return result;
+  }
+
+  /// Total distance across all segments in meters.
+  double get totalDistance =>
+      segments.fold(0.0, (sum, seg) => sum + seg.distance);
+
+  /// Estimated total duration in seconds (approximation: 1.4 m/s walking speed).
+  double get estimatedDuration => totalDistance / 1.4;
+
+  /// The current segment being navigated, or null if not started.
+  RouteSegment? get currentSegment => null; // Set by NavigationController
+
+  /// The next segment after the current one, or null.
+  RouteSegment? get nextSegment => null; // Set by NavigationController
 
   List<LatLng> get polylinePoints =>
       points.map((point) => point.latLng).toList();

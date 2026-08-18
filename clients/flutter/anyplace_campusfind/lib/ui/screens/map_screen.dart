@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../config/map_config.dart';
 import '../../config/navigation_config.dart';
 import '../../config/theme.dart';
+import '../../data/models/route_segment.dart';
 import '../../data/models/space_model.dart';
 import '../../state/location_provider.dart';
 import '../../state/navigation_controller.dart';
@@ -76,14 +77,13 @@ class _MapScreenState extends State<MapScreen>
     _buildingSelectedIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
   }
 
-  /// Connector POIs (elevators, stairs, or named "Connector") are hidden from
-  /// the map but remain in the data/navigation layers for floor-transition
+  /// Connector POIs (elevators, stairs, or `pois_type == "None"`) are hidden
+  /// from the map but remain in the data/navigation layers for floor-transition
   /// detection and routing.
   static bool _isConnectorPoi(String poisType, String name) {
     final t = poisType.toLowerCase();
-    final n = name.toLowerCase();
-    return t.contains('elevator') || t.contains('stairs') ||
-        t.contains('staircase') || n.contains('connector');
+    return t == 'none' || t.contains('elevator') ||
+        t.contains('stairs') || t.contains('staircase');
   }
 
   /// One-time listener that centers the map on the user's first valid location.
@@ -91,6 +91,7 @@ class _MapScreenState extends State<MapScreen>
     if (_hasInitialCentering) return;
     final location = context.read<LocationProvider>().currentLocation;
     if (location != null && _mapController != null) {
+      debugPrint('[MapScreen] Auto-centering on ${location.latitude},${location.longitude}');
       _hasInitialCentering = true;
       context.read<LocationProvider>().removeListener(_checkInitialCentering);
       _animatedMapMove(location.latLng, MapConfig.defaultZoom);
@@ -380,6 +381,27 @@ class _MapScreenState extends State<MapScreen>
     final route = spaceProvider.activeNavigationRoute;
     if (route == null) return polylines;
 
+    // Segment-based rendering (cross-building navigation)
+    if (route.hasSegments) {
+      for (var i = 0; i < route.segments.length; i++) {
+        final seg = route.segments[i];
+        if (seg.isEmpty) continue;
+
+        final style = _segmentStyles[seg.type];
+        if (style != null) {
+          polylines.add(Polyline(
+            polylineId: PolylineId('route_segment_$i'),
+            points: seg.points,
+            width: style.width,
+            color: style.color,
+            patterns: style.patterns ?? [],
+          ));
+        }
+      }
+      return polylines;
+    }
+
+    // Legacy rendering (non-segment routes)
     // Outdoor segment (dotted blue)
     if (route.hasOutdoorSegment) {
       polylines.add(Polyline(
@@ -403,6 +425,34 @@ class _MapScreenState extends State<MapScreen>
 
     return polylines;
   }
+
+  /// Segment type → polyline style mapping.
+  static final Map<RouteSegmentType, _SegmentStyle> _segmentStyles = {
+    RouteSegmentType.outdoorWalking: _SegmentStyle(
+      color: Color(0xFF1E88E5).withValues(alpha: 0.9),
+      width: 5,
+      patterns: [PatternItem.dot, PatternItem.gap(10)],
+    ),
+    RouteSegmentType.indoorRouting: _SegmentStyle(
+      color: AppTheme.primary.withValues(alpha: 0.85),
+      width: 6,
+    ),
+    RouteSegmentType.exitTransition: _SegmentStyle(
+      color: Color(0xFFFF9800).withValues(alpha: 0.85),
+      width: 5,
+      patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+    ),
+    RouteSegmentType.entranceTransition: _SegmentStyle(
+      color: Color(0xFF4CAF50).withValues(alpha: 0.85),
+      width: 5,
+      patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+    ),
+    RouteSegmentType.floorTransition: _SegmentStyle(
+      color: Color(0xFF9C27B0).withValues(alpha: 0.85),
+      width: 4,
+      patterns: [PatternItem.dot, PatternItem.gap(8)],
+    ),
+  };
 
   /// Build ground overlays for floorplan images
   Set<GroundOverlay> _buildGroundOverlays(SpaceProvider spaceProvider) {
@@ -782,4 +832,17 @@ class _MapScreenState extends State<MapScreen>
       },
     );
   }
+}
+
+/// Polyline style for a route segment.
+class _SegmentStyle {
+  final Color color;
+  final int width;
+  final List<PatternItem>? patterns;
+
+  const _SegmentStyle({
+    required this.color,
+    required this.width,
+    this.patterns,
+  });
 }

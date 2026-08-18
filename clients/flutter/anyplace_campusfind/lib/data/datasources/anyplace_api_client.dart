@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -851,8 +852,142 @@ class AnyplaceApiClient {
     }
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // OSRM with metadata (for entrance selection scoring)
+  // ──────────────────────────────────────────────────────────────
+
+  /// Computes the initial bearing (in degrees, 0-360) from [from] to [to].
+  static double _computeBearing(LatLng from, LatLng to) {
+    final dLon = _toRadians(to.longitude - from.longitude);
+    final lat1 = _toRadians(from.latitude);
+    final lat2 = _toRadians(to.latitude);
+    final y = sin(dLon) * cos(lat2);
+    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    final bearing = atan2(y, x);
+    return (_toDegrees(bearing) + 360) % 360;
+  }
+
+  static double _toRadians(double degrees) => degrees * pi / 180.0;
+  static double _toDegrees(double radians) => radians * 180.0 / pi;
+
+  /// Full OSRM route result including geometry, distance, duration, and
+  /// the final bearing near the destination.
+  ///
+  /// Used by [CrossBuildingRouter] for entrance selection scoring.
+  static Future<OsrmRouteResult?> fetchOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async {
+    final uri = Uri.parse(
+      'http://router.project-osrm.org/route/v1/foot/'
+      '$fromLon,$fromLat;$toLon,$toLat'
+      '?overview=full&geometries=geojson',
+    );
+
+    debugPrint('[OSRM] --> GET $uri');
+
+    try {
+      final response = await http.get(uri).timeout(
+        const Duration(seconds: 10),
+      );
+
+      debugPrint('[OSRM] <-- HTTP ${response.statusCode}');
+
+      if (response.statusCode != 200) {
+        debugPrint('[OSRM] Non-200 status: ${response.body}');
+        return null;
+      }
+
+      final json = jsonDecode(response.body);
+      if (json['code'] != 'Ok') {
+        debugPrint('[OSRM] Route error: ${json['code']}');
+        return null;
+      }
+
+      final routes = json['routes'] as List?;
+      if (routes == null || routes.isEmpty) {
+        debugPrint('[OSRM] No routes returned');
+        return null;
+      }
+
+      final route = routes[0];
+      final geometry = route['geometry'];
+      if (geometry == null) return null;
+
+      final coords = geometry['coordinates'] as List?;
+      if (coords == null || coords.isEmpty) return null;
+
+      final points = coords.map<LatLng>((c) {
+        final lon = (c[0] as num).toDouble();
+        final lat = (c[1] as num).toDouble();
+        return LatLng(lat, lon);
+      }).toList();
+
+      final distanceMeters = (route['distance'] as num?)?.toDouble() ?? 0.0;
+      final durationSeconds = (route['duration'] as num?)?.toDouble() ?? 0.0;
+
+      // Compute final bearing from the last two geometry coordinates
+      double finalBearing = 0.0;
+      if (points.length >= 2) {
+        finalBearing = _computeBearing(
+          points[points.length - 2],
+          points[points.length - 1],
+        );
+      }
+
+      debugPrint(
+        '[OSRM] Route: ${points.length} waypoints, '
+        '${distanceMeters.toStringAsFixed(0)}m, '
+        '${durationSeconds.toStringAsFixed(0)}s, '
+        'bearing: ${finalBearing.toStringAsFixed(1)}°',
+      );
+
+      return OsrmRouteResult(
+        points: points,
+        distanceMeters: distanceMeters,
+        durationSeconds: durationSeconds,
+        finalBearingDegrees: finalBearing,
+      );
+    } on SocketException catch (e) {
+      debugPrint('[OSRM] SocketException: ${e.message}');
+      return null;
+    } on TimeoutException {
+      debugPrint('[OSRM] Timeout');
+      return null;
+    } catch (e) {
+      debugPrint('[OSRM] Error: $e');
+      return null;
+    }
+  }
+
   /// Closes the client when done.
   void dispose() {
     _client.close();
   }
+}
+
+/// Full OSRM route result including geometry, distance, duration, and
+/// the final bearing near the destination.
+class OsrmRouteResult {
+  /// Ordered list of waypoints forming the route.
+  final List<LatLng> points;
+
+  /// Total route distance in meters.
+  final double distanceMeters;
+
+  /// Total route duration in seconds.
+  final double durationSeconds;
+
+  /// The initial bearing (in degrees, 0-360) of the final route segment
+  /// near the destination. Used for entrance selection scoring.
+  final double finalBearingDegrees;
+
+  const OsrmRouteResult({
+    required this.points,
+    required this.distanceMeters,
+    required this.durationSeconds,
+    required this.finalBearingDegrees,
+  });
 }

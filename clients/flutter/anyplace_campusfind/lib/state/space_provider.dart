@@ -16,6 +16,8 @@ import '../data/repositories/navigation_repository.dart';
 import '../data/repositories/poi_repository.dart';
 import '../data/repositories/radiomap_repository.dart';
 import '../data/repositories/space_repository.dart';
+import '../data/repositories/cross_building_router.dart';
+import '../data/models/user_location.dart';
 import '../services/search_service.dart';
 import 'location_provider.dart';
 
@@ -39,6 +41,7 @@ class SpaceProvider extends ChangeNotifier {
   final PoiRepository _poiRepository;
   final NavigationRepository _navigationRepository;
   final NativePositioningService _nativePositioningService;
+  late final CrossBuildingRouter _crossBuildingRouter;
 
   List<SpaceModel> _spaces = const [];
   SpaceModel? _selectedSpace;
@@ -102,7 +105,32 @@ class SpaceProvider extends ChangeNotifier {
        _navigationRepository =
            navigationRepository ?? AnyplaceNavigationRepository(),
        _nativePositioningService =
-           nativePositioningService ?? MethodChannelNativePositioningService();
+           nativePositioningService ?? MethodChannelNativePositioningService() {
+    _crossBuildingRouter = CrossBuildingRouter(
+      isPositionInBuilding: (position, buildingBuid) {
+        return _isPositionInBuilding(position, buildingBuid);
+      },
+      loadPois: (buid, floorNumber) async {
+        try {
+          final client = AnyplaceApiClient();
+          return await client.fetchPoisByFloor(buid, floorNumber);
+        } catch (e) {
+          debugPrint('[SpaceProvider] loadPois callback failed for $buid/$floorNumber: $e');
+          return <PoiModel>[];
+        }
+      },
+      loadFloorNumbers: (buid) async {
+        try {
+          final client = AnyplaceApiClient();
+          final floors = await client.fetchFloorsForBuilding(buid);
+          return floors.map((f) => f.floorNumber).toList();
+        } catch (e) {
+          debugPrint('[SpaceProvider] loadFloorNumbers callback failed for $buid: $e');
+          return <String>[];
+        }
+      },
+    );
+  }
 
   /// Binds LocationProvider for indoor floor position scoping.
   void setLocationProvider(LocationProvider? locationProvider) {
@@ -427,6 +455,37 @@ class SpaceProvider extends ChangeNotifier {
     _navigationDestinationPuid = poi.puid;
     notifyListeners();
 
+    // ── Cross-building / Outdoor→Indoor detection for POI navigation ──
+    final userBuilding = _detectBuildingFromPolygon(currentLocation);
+    final targetPoiBuilding = _spaces.where((s) => s.buid == poi.buid).firstOrNull;
+    final shouldTryCrossBuilding =
+        targetPoiBuilding != null &&
+        (userBuilding == null || userBuilding.buid != targetPoiBuilding.buid);
+
+    if (shouldTryCrossBuilding) {
+      debugPrint(
+        '[SpaceProvider] POI cross-building: user ${userBuilding != null ? "in ${userBuilding.name}" : "outside"} → ${poi.name} in ${targetPoiBuilding.name}',
+      );
+      try {
+        final crossRoute = await _crossBuildingRouter.composeRoute(
+          userLocation: currentLocation.latLng,
+          targetSpace: targetPoiBuilding,
+          allBuildings: _spaces,
+          targetPuid: poi.puid,
+        );
+        if (crossRoute != null) {
+          _navigationRouteStatus = NavigationRouteStatus.ready;
+          _activeNavigationRoute = crossRoute;
+          _navigationRouteErrorMessage = crossRoute.partialRouteWarning;
+          notifyListeners();
+          return;
+        }
+      } catch (e) {
+        debugPrint('[SpaceProvider] POI cross-building router failed: $e');
+        // Fall through to existing cascade
+      }
+    }
+
     final destLatLng = poi.latLng;
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 1: Anyplace coordinate-based routing (works when already indoors) Ã¢â€â‚¬Ã¢â€â‚¬
@@ -634,6 +693,36 @@ class SpaceProvider extends ChangeNotifier {
       '[SpaceProvider] requestRouteToBuilding: ${targetSpace.name} '
       '(buid: ${targetSpace.buid}, user GPS: ${currentLocation.latitude},${currentLocation.longitude})',
     );
+
+    // ── Cross-building / Outdoor→Indoor detection ──
+    // Always try cross-building router when user is NOT in the same building.
+    // The router handles both: user inside another building AND user outside all buildings.
+    final userBuilding = _detectBuildingFromPolygon(currentLocation);
+    final shouldTryCrossBuilding =
+        userBuilding == null || userBuilding.buid != targetSpace.buid;
+
+    if (shouldTryCrossBuilding) {
+      debugPrint(
+        '[SpaceProvider] Cross-building check: user ${userBuilding != null ? "in ${userBuilding.name}" : "outside"} → ${targetSpace.name}',
+      );
+      try {
+        final crossRoute = await _crossBuildingRouter.composeRoute(
+          userLocation: currentLocation.latLng,
+          targetSpace: targetSpace,
+          allBuildings: _spaces,
+        );
+        if (crossRoute != null) {
+          _navigationRouteStatus = NavigationRouteStatus.ready;
+          _activeNavigationRoute = crossRoute;
+          _navigationRouteErrorMessage = crossRoute.partialRouteWarning;
+          notifyListeners();
+          return;
+        }
+      } catch (e) {
+        debugPrint('[SpaceProvider] Cross-building router failed: $e');
+        // Fall through to existing cascade
+      }
+    }
 
     // Make sure this building is selected and floors are loaded
     if (_selectedSpace?.buid != targetSpace.buid) {
@@ -1264,6 +1353,49 @@ class SpaceProvider extends ChangeNotifier {
     }
 
     searchService.markSyncComplete();
+  }
+
+  /// Checks if a [position] is inside a building's bounding box.
+  /// Uses a simple radius check from the building centroid.
+  bool _isPositionInBuilding(LatLng position, String buildingBuid) {
+    final building = _spaces.firstWhere(
+      (s) => s.buid == buildingBuid,
+      orElse: () => const SpaceModel(
+        buid: '', name: '', latitude: 0, longitude: 0,
+      ),
+    );
+    if (building.buid.isEmpty) return false;
+
+    // Simple distance check: if within 100m of building centroid, consider inside
+    final distance = Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      building.latitude,
+      building.longitude,
+    );
+    return distance < 100; // 100m radius threshold
+  }
+
+  /// Detects which building the user is inside by checking distance to all buildings.
+  /// Returns the closest building if within 100m, or null if outdoors.
+  SpaceModel? _detectBuildingFromPolygon(UserLocation userLocation) {
+    SpaceModel? closestBuilding;
+    double closestDistance = double.infinity;
+
+    for (final building in _spaces) {
+      final distance = Geolocator.distanceBetween(
+        userLocation.latitude,
+        userLocation.longitude,
+        building.latitude,
+        building.longitude,
+      );
+      if (distance < 100 && distance < closestDistance) {
+        closestDistance = distance;
+        closestBuilding = building;
+      }
+    }
+
+    return closestBuilding;
   }
 }
 

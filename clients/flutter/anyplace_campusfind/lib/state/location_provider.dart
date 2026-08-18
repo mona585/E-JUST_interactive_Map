@@ -289,12 +289,14 @@ class LocationProvider extends ChangeNotifier {
 
   /// Requests permission, acquires current GPS position, and begins live GPS tracking.
   Future<UserLocation?> requestAndCenter() async {
+    debugPrint('[LocationProvider] requestAndCenter called');
     _status = LocationStateStatus.requesting;
     _errorMessage = null;
     notifyListeners();
 
     // 1. Check if location services are enabled
     final serviceEnabled = await _locationService.isLocationServiceEnabled();
+    debugPrint('[LocationProvider] Location service enabled: $serviceEnabled');
     if (!serviceEnabled) {
       _status = LocationStateStatus.serviceDisabled;
       _errorMessage = 'Location services are disabled. Please turn on GPS.';
@@ -304,6 +306,7 @@ class LocationProvider extends ChangeNotifier {
 
     // 2. Request permission
     final permStatus = await _locationService.requestPermission();
+    debugPrint('[LocationProvider] Permission status: $permStatus');
     switch (permStatus) {
       case LocationPermissionStatus.denied:
         _status = LocationStateStatus.permissionDenied;
@@ -327,7 +330,9 @@ class LocationProvider extends ChangeNotifier {
 
     // 3. Obtain current GPS position
     try {
+      debugPrint('[LocationProvider] Calling getCurrentPosition...');
       final position = await _locationService.getCurrentPosition();
+      debugPrint('[LocationProvider] getCurrentPosition returned: ${position != null ? "${position.latitude},${position.longitude}" : "null"}');
       if (position != null) {
         _gpsLocation = position;
         _status = LocationStateStatus.tracking;
@@ -342,6 +347,7 @@ class LocationProvider extends ChangeNotifier {
         return null;
       }
     } catch (e) {
+      debugPrint('[LocationProvider] getCurrentPosition error: $e');
       _status = LocationStateStatus.error;
       _errorMessage = 'Error acquiring GPS location: $e';
       notifyListeners();
@@ -351,19 +357,26 @@ class LocationProvider extends ChangeNotifier {
 
   /// Starts listening to real-time GPS location updates.
   void startTracking() {
-    if (_isTracking) return;
+    if (_isTracking) {
+      debugPrint('[LocationProvider] startTracking already tracking, skip');
+      return;
+    }
 
+    debugPrint('[LocationProvider] startTracking: subscribing to GPS stream');
     _gpsSubscription?.cancel();
     _isTracking = true;
 
     _gpsSubscription = _locationService.getPositionStream().listen(
       (location) {
+        debugPrint('[LocationProvider] GPS update: ${location.latitude},${location.longitude}');
         _gpsLocation = location;
         _status = LocationStateStatus.tracking;
         _errorMessage = null;
         _evaluatePositionPolicy();
+        notifyListeners();
       },
       onError: (error) {
+        debugPrint('[LocationProvider] GPS stream error: $error');
         _errorMessage = 'GPS tracking error: $error';
         notifyListeners();
       },

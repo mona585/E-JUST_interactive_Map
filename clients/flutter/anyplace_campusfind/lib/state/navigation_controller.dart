@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../config/navigation_config.dart';
 import '../data/models/navigation_route_model.dart';
 import '../data/models/poi_model.dart';
+import '../data/models/route_segment.dart';
 import '../data/models/space_model.dart';
 import '../data/models/user_location.dart';
 import '../data/repositories/navigation_repository.dart';
@@ -55,6 +56,12 @@ class NavigationController extends ChangeNotifier {
   // -- Building entry detection --
   bool _buildingPreloaded = false;
 
+  // -- Segment tracking for cross-building navigation --
+  int _currentSegmentIndex = 0;
+  bool _isPaused = false;
+  String? _pauseMessage;
+  DateTime? _lastGpsLossTime;
+
   NavigationController({
     required this._spaceProvider,
     required this._locationProvider,
@@ -78,6 +85,30 @@ class NavigationController extends ChangeNotifier {
   bool get isRerouting => _isRerouting;
   String? get destinationPuid => _destinationPuid;
   SpaceModel? get destinationSpace => _destinationSpace;
+
+  // Segment navigation getters
+  int get currentSegmentIndex => _currentSegmentIndex;
+  bool get isPaused => _isPaused;
+  String? get pauseMessage => _pauseMessage;
+  bool get isPartialRoute => _activeRoute?.isPartial ?? false;
+
+  /// The current segment being navigated, or null if not started.
+  RouteSegment? get currentSegment {
+    if (_activeRoute == null || !_activeRoute!.hasSegments) return null;
+    if (_currentSegmentIndex >= _activeRoute!.segments.length) return null;
+    return _activeRoute!.segments[_currentSegmentIndex];
+  }
+
+  /// The next segment after the current one, or null.
+  RouteSegment? get nextSegment {
+    if (_activeRoute == null || !_activeRoute!.hasSegments) return null;
+    final nextIdx = _currentSegmentIndex + 1;
+    if (nextIdx >= _activeRoute!.segments.length) return null;
+    return _activeRoute!.segments[nextIdx];
+  }
+
+  /// Total number of segments in the current route.
+  int get totalSegments => _activeRoute?.segments.length ?? 0;
 
   /// User-friendly positioning status message.
   String get positioningStatus {
@@ -156,6 +187,7 @@ class NavigationController extends ChangeNotifier {
     _followMode = true;
     _exitConfirmationCounter = 0;
     _isRerouting = false;
+    _resetSegmentTracking();
     _newFloorEstimateCount = 0;
     _lastFloorSwitchTime = null;
     _transitionStartTime = null;
@@ -213,6 +245,8 @@ class NavigationController extends ChangeNotifier {
     _checkBuildingExit(location);
     checkBuildingApproach(location);
     checkEntranceProximity(location);
+    _checkSegmentTransition(location);
+    _checkGpsLoss(location);
     notifyListeners();
   }
 
@@ -623,7 +657,7 @@ class NavigationController extends ChangeNotifier {
     final elapsed = DateTime.now().difference(startTime);
     if (elapsed.inSeconds >= NavigationConfig.transitionTimeoutSeconds) {
       debugPrint(
-        '[NavigationController] Floor transition timed out after ${elapsed.inSeconds}s Ã¢â‚¬â€ aborting',
+        '[NavigationController] Floor transition timed out after ${elapsed.inSeconds}s — aborting',
       );
       // Abort transition: revert to previous floor, keep GPS-based tracking
       _isTransitioningFloors = false;
@@ -636,7 +670,110 @@ class NavigationController extends ChangeNotifier {
     }
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Dispose Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ──────────────────────────────────────────────────────────────
+  // Segment transition detection (cross-building navigation)
+  // ──────────────────────────────────────────────────────────────
+
+  /// Checks if the user has transitioned between route segments.
+  void _checkSegmentTransition(UserLocation location) {
+    if (_activeRoute == null || !_activeRoute!.hasSegments) return;
+    if (_currentSegmentIndex >= _activeRoute!.segments.length) return;
+
+    final currentSeg = _activeRoute!.segments[_currentSegmentIndex];
+    if (currentSeg.isEmpty) return;
+
+    // Check proximity to segment endpoint
+    final endPoint = currentSeg.endPoint;
+    if (endPoint == null) return;
+
+    final distance = Geolocator.distanceBetween(
+      location.latitude,
+      location.longitude,
+      endPoint.latitude,
+      endPoint.longitude,
+    );
+
+    // Use appropriate threshold based on segment type
+    final threshold = currentSeg.type == RouteSegmentType.floorTransition
+        ? NavigationConfig.connectorProximityThreshold
+        : 10.0; // 10m for regular segment endpoints
+
+    if (distance <= threshold) {
+      debugPrint(
+        '[NavigationController] Segment $_currentSegmentIndex complete '
+        '(${currentSeg.type.name}), advancing to next',
+      );
+      _advanceToNextSegment();
+    }
+  }
+
+  /// Advances to the next route segment.
+  void _advanceToNextSegment() {
+    if (_activeRoute == null || !_activeRoute!.hasSegments) return;
+
+    final nextIdx = _currentSegmentIndex + 1;
+    if (nextIdx >= _activeRoute!.segments.length) {
+      debugPrint('[NavigationController] All segments complete — navigation finished');
+      // Navigation complete
+      return;
+    }
+
+    _currentSegmentIndex = nextIdx;
+    final nextSeg = _activeRoute!.segments[_currentSegmentIndex];
+
+    debugPrint(
+      '[NavigationController] Now on segment $_currentSegmentIndex: '
+      '${nextSeg.type.name} (${nextSeg.instruction ?? "no instruction"})',
+    );
+
+    // Update floor if segment specifies one
+    if (nextSeg.floorNumber != null && nextSeg.buildingId != null) {
+      _currentNavigatingFloor = nextSeg.floorNumber;
+    }
+
+    notifyListeners();
+  }
+
+  /// Pauses navigation (e.g., during GPS loss).
+  void _pauseNavigation(String message) {
+    if (_isPaused) return;
+    _isPaused = true;
+    _pauseMessage = message;
+    _lastGpsLossTime = DateTime.now();
+    debugPrint('[NavigationController] Paused: $message');
+    notifyListeners();
+  }
+
+  /// Resumes navigation after GPS restore.
+  void _resumeNavigation() {
+    if (!_isPaused) return;
+    _isPaused = false;
+    _pauseMessage = null;
+    _lastGpsLossTime = null;
+    debugPrint('[NavigationController] Resumed');
+    notifyListeners();
+  }
+
+  /// Resets segment tracking when navigation stops.
+  void _resetSegmentTracking() {
+    _currentSegmentIndex = 0;
+    _isPaused = false;
+    _pauseMessage = null;
+    _lastGpsLossTime = null;
+  }
+
+  /// Checks for GPS signal loss and pauses/resumes navigation.
+  void _checkGpsLoss(UserLocation location) {
+    // If GPS accuracy is very poor (>100m), consider it lost
+    if (location.accuracy > 100) {
+      if (!_isPaused) {
+        _pauseNavigation('GPS signal weak — waiting for better signal');
+      }
+    } else if (_isPaused && _lastGpsLossTime != null) {
+      // Resume if GPS is good again
+      _resumeNavigation();
+    }
+  }
 
   @override
   void dispose() {

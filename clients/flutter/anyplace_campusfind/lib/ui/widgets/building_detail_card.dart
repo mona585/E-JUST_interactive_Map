@@ -777,34 +777,44 @@ class BuildingDetailCard extends StatelessWidget {
     SpaceProvider provider,
   ) {
     final status = provider.navigationRouteStatus;
+    final route = provider.activeNavigationRoute;
+    final isPartial = route?.isPartial ?? false;
     Color bgColor;
     Color textColor;
     IconData icon;
     String label;
 
-    switch (status) {
-      case NavigationRouteStatus.loading:
-        bgColor = AppTheme.primary.withValues(alpha: 0.1);
-        textColor = AppTheme.primary;
-        icon = Icons.alt_route;
-        label = 'Route: Calculating...';
-      case NavigationRouteStatus.ready:
-        bgColor = const Color(0xFF059669).withValues(alpha: 0.1);
-        textColor = const Color(0xFF059669);
-        icon = Icons.route;
-        label = 'Route: Ready';
-      case NavigationRouteStatus.unsupported:
-        bgColor = const Color(0xFFF5F5F5);
-        textColor = AppTheme.textSecondary;
-        icon = Icons.info_outline;
-        label = provider.navigationRouteErrorMessage ?? 'Route unavailable';
-      case NavigationRouteStatus.error:
-        bgColor = const Color(0xFFDC2626).withValues(alpha: 0.1);
-        textColor = const Color(0xFFDC2626);
-        icon = Icons.error_outline;
-        label = provider.navigationRouteErrorMessage ?? 'Route failed';
-      case NavigationRouteStatus.idle:
-        return const SizedBox.shrink();
+    // Check for partial route warning
+    if (isPartial && route?.partialRouteWarning != null) {
+      bgColor = const Color(0xFFF59E0B).withValues(alpha: 0.1);
+      textColor = const Color(0xFFF59E0B);
+      icon = Icons.warning_amber_outlined;
+      label = route!.partialRouteWarning!;
+    } else {
+      switch (status) {
+        case NavigationRouteStatus.loading:
+          bgColor = AppTheme.primary.withValues(alpha: 0.1);
+          textColor = AppTheme.primary;
+          icon = Icons.alt_route;
+          label = 'Route: Calculating...';
+        case NavigationRouteStatus.ready:
+          bgColor = const Color(0xFF059669).withValues(alpha: 0.1);
+          textColor = const Color(0xFF059669);
+          icon = Icons.route;
+          label = 'Route: Ready';
+        case NavigationRouteStatus.unsupported:
+          bgColor = const Color(0xFFF5F5F5);
+          textColor = AppTheme.textSecondary;
+          icon = Icons.info_outline;
+          label = provider.navigationRouteErrorMessage ?? 'Route unavailable';
+        case NavigationRouteStatus.error:
+          bgColor = const Color(0xFFDC2626).withValues(alpha: 0.1);
+          textColor = const Color(0xFFDC2626);
+          icon = Icons.error_outline;
+          label = provider.navigationRouteErrorMessage ?? 'Route failed';
+        case NavigationRouteStatus.idle:
+          return const SizedBox.shrink();
+      }
     }
 
     return Container(
