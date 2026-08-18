@@ -19,6 +19,15 @@ checkBackupTaken $backup
 
 backupPrepare $backupDir $backupLatest
 
+# Coordinated backup (D-10): MongoDB dump plus the floorplan/radiomap
+# filesystem roots, from the same run, plus a checksummed manifest so a
+# restore can be verified for completeness rather than trusted blindly.
 createBackup $backup
+backupFilesystemRoots "$backup/filesystem"
+writeManifest $backup
+
+finalizeBackup $backup
 
 deleteOldBackups $backupDir
+
+echo -e "\n[✓] Coordinated backup complete: ${backupTar}(.gpg)"

@@ -60,14 +60,19 @@ class AnyPlaceTilerHelper @Inject()(cc: ControllerComponents,
           FLOOR_TILES_ZIP_NAME
     }
 
-    // CHECK:PM
+    /**
+     * Builds the public HTTP link to the generated tiles archive.
+     *
+     * This must always use "/" (URL path separator), never the host OS's
+     * File.separatorChar, and must match the live route
+     * `GET /api/floortiles/:buid/:floor_number/*file` (see api.routes),
+     * not the legacy `/anyplace/floortiles` path. (R-10)
+     */
     def getFloorTilesZipLinkFor(buid: String, floor: String): String = {
         if (buid.trim().isEmpty || floor.trim().isEmpty) {
             return null
         }
-        //TODO:NN from /developers .. this must also change..
-        api.SERVER_FULL_URL + api.sep +
-          "anyplace/floortiles/" + buid + api.sep + floor + api.sep + FLOOR_TILES_ZIP_NAME
+        api.SERVER_FULL_URL + "/api/floortiles/" + buid + "/" + floor + "/" + FLOOR_TILES_ZIP_NAME
     }
 
     /**

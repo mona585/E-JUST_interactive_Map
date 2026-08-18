@@ -30,3 +30,4 @@ venv.bak/
 pythonenv*
 
 config.sh
+admin/fixture_state.env

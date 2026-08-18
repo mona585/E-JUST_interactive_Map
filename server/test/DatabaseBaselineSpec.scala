@@ -31,8 +31,17 @@ class DatabaseBaselineSpec extends PlaySpecification {
 
   "Database Baseline & Hydration Contract" should {
 
-    "assign admin role to the first user registered on empty system" in new WithApplication {
-      // Use a unique email/username for each run so duplicate-email 400 can't occur
+    "assign admin role only when registering the very first user, never otherwise" in new WithApplication {
+      // This test runs against whatever database state the suite is pointed
+      // at, which may already have users from a prior admin bootstrap or an
+      // earlier spec in this run. So it does not hard-code "the first call
+      // gets admin" (that was the previous, always-true assertion here) -
+      // instead it reads the same precondition the controller itself uses
+      // (MongodbDatasource.isAdmin(), i.e. "is the users collection empty
+      // right now?") and asserts the registration matches that precondition.
+      val db = app.injector.instanceOf[datasources.MongodbDatasource]
+      val expectedType = if (db.isAdmin()) "admin" else "user"
+
       val tag = uniqueTag()
       val firstUserPayload = Json.obj(
         "name" -> s"Test Admin $tag",
@@ -41,17 +50,10 @@ class DatabaseBaselineSpec extends PlaySpecification {
         "password" -> "AdminPassword123!"
       )
       val regReq = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(firstUserPayload)).get
-      val statusCode = status(regReq)
+      status(regReq) must equalTo(OK)
       val json = extractJson(regReq)
-      // If email already taken (existing admin from prior run) the type will be "user" not "admin"
-      // We must check that the FIRST user on an empty DB gets admin.
-      // If DB has pre-existing users this test can't verify admin; skip by checking the response type
-      // regardless of prior state (registration must succeed, and type must be admin or user)
-      statusCode must equalTo(OK)
       (json \ "status").asOpt[String] must beSome("success")
-      // Only assert admin if this is truly the first user (isAdmin returns true)
-      val userType = (json \ "newUser" \ "type").asOpt[String].getOrElse("")
-      (userType == "admin" || userType == "user") must beTrue
+      (json \ "newUser" \ "type").asOpt[String] must beSome(expectedType)
     }
 
     "assign user role to subsequent user registered after an admin exists" in new WithApplication {
@@ -90,5 +92,11 @@ class DatabaseBaselineSpec extends PlaySpecification {
       (json \ "buildings").asOpt[Seq[JsValue]] must beSome
     }
 
+    // NOTE (R-14 / D-05): the above proves the role-assignment *logic* is
+    // correct. It cannot prove a public attacker didn't win the race for
+    // Administrator on a live empty deployment, because that depends on
+    // network ingress timing, not application code. That guarantee comes
+    // from running database/admin/bootstrap_admin.sh over loopback BEFORE
+    // opening public ingress - see server/database/admin/README.md.
   }
 }

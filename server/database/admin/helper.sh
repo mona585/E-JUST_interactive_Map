@@ -28,22 +28,104 @@ function backupPrepare() {
 function createBackup() {
  backupFolder=$1
  backupName=$(basename $backupFolder)
+ mongoFolder="$backupFolder/mongo"
 
- echo -e "Backup (mongodump) to: $backupFolder"
+ mkdir -p "$mongoFolder"
+ echo -e "Backup (mongodump) to: $mongoFolder"
  mongodump --host $host --port $port \
    --db $database --authenticationDatabase admin \
-   --username $user --password $pass --out $backupFolder >/dev/null 2>&1
- # mkdir $backupFolder # fake testing backup
+   --username $user --password $pass --out $mongoFolder >/dev/null 2>&1
+}
+
+function finalizeBackup() {
+ backupFolder=$1
 
  echo -e "Compressing to:        $backupTar"
- tar -C $backupDir -czf $backupTar $backupName > /dev/null
+ tar -C $backupDir -czf $backupTar $(basename $backupFolder) > /dev/null
  if [ -d $backupFolder ]; then
    rm -rf $backupFolder
  fi
 
-  ln -s $backupTar $backupLatest
+ encryptBundle "$backupTar"
+ if [ -f "$backupTar.gpg" ]; then
+   ln -sf "$backupTar.gpg" $backupLatest
+   copyOffHost "$backupTar.gpg"
+ else
+   ln -sf $backupTar $backupLatest
+   copyOffHost "$backupTar"
+ fi
 }
 
+###
+# COORDINATED FILESYSTEM + MANIFEST METHODS (D-10):
+#
+# A MongoDB-only backup is not a faithful snapshot: floorplan/radiomap
+# metadata lives in MongoDB while the actual images/tiles/fingerprint
+# files live on disk. Both must be captured from the same point in time
+# and travel together, or a restore silently mixes mismatched state.
+###
+
+function backupFilesystemRoots() {
+  fsFolder=$1
+
+  mkdir -p "$fsFolder"
+  for root in "$FLOOR_PLANS_ROOT_DIR" "$RADIOMAP_RAW_DIR" "$RADIOMAP_FROZEN_DIR"; do
+    if [ -z "$root" ]; then
+      continue
+    fi
+    name=$(basename "$root")
+    if [ -d "$root" ]; then
+      echo -e "Copying filesystem root: $root"
+      cp -a "$root" "$fsFolder/$name"
+    else
+      echo -e "[!] Configured root does not exist, skipping: $root"
+    fi
+  done
+}
+
+function writeManifest() {
+  bundleDir=$1
+  manifestFile="$bundleDir/MANIFEST.txt"
+
+  {
+    echo "# Anyplace coordinated backup manifest"
+    echo "timestamp_utc: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    echo "mongodb_database: $database"
+    echo "floorplans_root: $FLOOR_PLANS_ROOT_DIR"
+    echo "radiomap_raw_root: $RADIOMAP_RAW_DIR"
+    echo "radiomap_frozen_root: $RADIOMAP_FROZEN_DIR"
+    echo
+    echo "# SHA-256 checksums of every captured file (verify after restore)"
+  } > "$manifestFile"
+
+  ( cd "$bundleDir" && find . -type f ! -name "MANIFEST.txt" -exec sha256sum {} \; ) >> "$manifestFile"
+}
+
+function encryptBundle() {
+  bundleTar=$1
+
+  if [ -z "$GPG_RECIPIENT" ]; then
+    echo -e "[!] GPG_RECIPIENT not set - skipping encryption (only acceptable for local/disposable testing)."
+    return
+  fi
+  echo -e "Encrypting bundle for: $GPG_RECIPIENT"
+  gpg --yes --batch --trust-model always --recipient "$GPG_RECIPIENT" \
+    --output "$bundleTar.gpg" --encrypt "$bundleTar"
+  rm -f "$bundleTar"
+  echo -e "Encrypted bundle:      $bundleTar.gpg"
+}
+
+function copyOffHost() {
+  bundleFile=$1
+
+  if [ -z "$OFFHOST_COPY_TARGET" ]; then
+    echo -e "[!] OFFHOST_COPY_TARGET not set - bundle stays on the application host only."
+    echo -e "    A single-host backup does not satisfy the D-10 'encrypted off-host' policy."
+    return
+  fi
+  echo -e "Copying off-host to:   $OFFHOST_COPY_TARGET"
+  rsync -a "$bundleFile" "$OFFHOST_COPY_TARGET"
+}
 
 function deleteOldBackups() {
 backupDir=$1
@@ -88,6 +170,24 @@ fi
 }
 
 
+function decryptIfNeeded() {
+  # Callers capture this function's stdout as the resulting path
+  # ($(decryptIfNeeded ...)), so all status text must go to stderr.
+  backup=$1
+
+  case "$backup" in
+    *.gpg)
+      decrypted="${backup%.gpg}"
+      echo "Decrypting: $backup" >&2
+      gpg --yes --batch --output "$decrypted" --decrypt "$backup" >&2
+      echo "$decrypted"
+      ;;
+    *)
+      echo "$backup"
+      ;;
+  esac
+}
+
 function untarBackup() {
   backup=$1
   backupTmp=$2
@@ -104,10 +204,13 @@ function untarBackup() {
 function renameRestoreDatabase() {
   data=$1
   newName=$2
+  mongoDir="$data/mongo"
 
-  # RestorePreparation
-  backedupDatabaseName=$(ls $data)
-  mv $data/$backedupDatabaseName $data/$newName
+  # RestorePreparation: mongodump wrote a folder named after the original
+  # database under mongo/; rename it so mongorestore creates the disposable
+  # restoreToDatabase instead of overwriting a database with the original name.
+  backedupDatabaseName=$(ls $mongoDir)
+  mv $mongoDir/$backedupDatabaseName $mongoDir/$newName
 }
 
 function restoreBackup() {
@@ -116,10 +219,10 @@ backupTmp=$2
 
 # Restore
 # INFO: --drop: drops all previous data..
-echo -e "Restoring (mongorestore) from: $backupData"
+echo -e "Restoring (mongorestore) from: $backupData/mongo"
 mongorestore --host=$host --port=$port \
    --authenticationDatabase admin \
-   --username $user --password $pass $backupData >/dev/null 2>&1
+   --username $user --password $pass "$backupData/mongo" >/dev/null 2>&1
 
 # restoreCleanup
 if [ -d $backupData ]; then
@@ -127,4 +230,34 @@ if [ -d $backupData ]; then
   rm -rf $backupTmp
 fi
 
+}
+
+function restoreFilesystemRoots() {
+  backupData=$1
+  targetDir=$2
+
+  if [ -z "$targetDir" ]; then
+    echo -e "[!] RESTORE_FILESYSTEM_DIR not set - skipping filesystem restore."
+    return
+  fi
+  if [ ! -d "$backupData/filesystem" ]; then
+    echo -e "[!] No filesystem/ directory in this backup bundle - MongoDB-only backup."
+    return
+  fi
+  echo -e "Restoring filesystem roots to: $targetDir"
+  mkdir -p "$targetDir"
+  cp -a "$backupData/filesystem/." "$targetDir/"
+}
+
+function verifyManifest() {
+  backupData=$1
+
+  manifestFile="$backupData/MANIFEST.txt"
+  if [ ! -f "$manifestFile" ]; then
+    echo -e "[!] No MANIFEST.txt in this backup bundle - checksum verification skipped."
+    return
+  fi
+  echo -e "Verifying checksums against MANIFEST.txt ..."
+  # Manifest lines are "sha256sum ./relative/path"; filter the header lines out.
+  ( cd "$backupData" && grep -E '^[0-9a-f]{64}  ' "$manifestFile" | sha256sum -c - )
 }
