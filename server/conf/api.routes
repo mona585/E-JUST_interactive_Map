@@ -310,6 +310,8 @@ POST        /api/auth/mapping/space/add                     controllers.MapSpace
 #      - api_key: []
 ###
 POST        /api/auth/mapping/space/update                  controllers.MapSpaceController.update()
+POST        /api/auth/mapping/space/coowners                controllers.MapSpaceController.spaceUpdateCoOwners()
+POST        /api/auth/mapping/space/access                  controllers.MapSpaceController.userCanAccess()
 
 ###
 #      tags:

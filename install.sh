@@ -187,8 +187,15 @@ fi
 
 APP_SECRET=$(get_conf_val "application.secret")
 
-sed -i "s|server.address=.*|server.address=\"https://map.beout.ai\"|g" "$CONF_FILE"
-sed -i "s|server.port=.*|server.port=\"9000\"|g" "$CONF_FILE"
+if [ -z "${PUBLIC_BASE_URL:-}" ]; then
+    echo -e "  [✗] PUBLIC_BASE_URL is required, for example: https://staging.example.edu"
+    echo -e "      Do not use an illustrative hostname until DNS/TLS are assigned."
+    exit 1
+fi
+
+upsert_conf_val "public.baseUrl" "$PUBLIC_BASE_URL"
+upsert_conf_val "server.address" "$PUBLIC_BASE_URL"
+sed -i "s|server.port=.*|server.port=\"443\"|g" "$CONF_FILE"
 sed -i "s|mongodb.hostname=.*|mongodb.hostname=\"127.0.0.1\"|g" "$CONF_FILE"
 sed -i "s|mongodb.port=.*|mongodb.port=27017|g" "$CONF_FILE"
 sed -i "s|mongodb.database=.*|mongodb.database=\"anyplace\"|g" "$CONF_FILE"
@@ -472,7 +479,7 @@ get_conf_val() {
     grep -E "^[[:space:]]*$1[[:space:]]*=" "$CONF_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | xargs || echo "$2"
 }
 
-DISP_SERVER_ADDR=$(get_conf_val "server.address" "http://localhost")
+DISP_SERVER_ADDR=$(get_conf_val "public.baseUrl" "$(get_conf_val "server.address" "http://localhost")")
 DISP_SERVER_PORT=$(get_conf_val "server.port" "9000")
 DISP_MONGO_HOST=$(get_conf_val "mongodb.hostname" "127.0.0.1")
 DISP_MONGO_PORT=$(get_conf_val "mongodb.port" "27017")

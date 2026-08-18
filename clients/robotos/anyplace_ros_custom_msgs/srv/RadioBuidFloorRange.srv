@@ -1,8 +1,0 @@
-string buid
-string floor
-string coordinates_lat
-string coordinates_lon
-string range
----
-bool success
-string response

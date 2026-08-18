@@ -324,6 +324,34 @@ class MapSpaceController @Inject()(cc: ControllerComponents,
       inner(request)
   }
 
+  def userCanAccess(): Action[AnyContent] = Action {
+    implicit request =>
+      def inner(request: Request[AnyContent]): Result = {
+        val anyReq = new OAuth2Request(request)
+        val apiKey = anyReq.getAccessToken()
+        if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
+        if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
+        val json = anyReq.getJsonBody()
+        LOG.D2("userCanAccess: " + Utils.stripJsValueStr(json))
+        val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid)
+        if (checkRequirements != null) return checkRequirements
+
+        val owner_id = user.authorize(apiKey)
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
+        val buid = (json \ SCHEMA.fBuid).as[String]
+        try {
+          val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
+          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          val res = Json.obj("access" -> user.canAccessSpace(storedSpace, owner_id))
+          return RESPONSE.OK(res, "Retrieved user space access.")
+        } catch {
+          case e: DatasourceException => return RESPONSE.ERROR(e)
+        }
+      }
+
+      inner(request)
+  }
+
   def userOwned(): Action[AnyContent] = Action {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {

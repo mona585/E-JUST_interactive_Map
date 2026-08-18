@@ -1,4 +1,4 @@
-# E-JUST Anyplace — Recovery Phases Completed
+# E-JUST Anyplace — Simulated Recovery Phases unCompleted 
 
 **Date completed:** 2026-08-11  
 **Final HEAD commit:** `acaadeb`  
@@ -9,21 +9,6 @@
 
 ## Status at a Glance
 
-| Phase | Title                                    | Status                                           | Primary commits      |
-| ----- | ---------------------------------------- | ------------------------------------------------ | -------------------- |
-| 0     | Contain Secrets & Freeze Baseline        | ✅ DONE                                           | `e00b496`, `172a0b4` |
-| 1     | Pin Linux/Ubuntu Toolchains              | ✅ DONE                                           | `1971e3f`, `2ba13a8` |
-| 2     | Backend Startup & MongoDB Connectivity   | ✅ DONE                                           | `279c19c`, `2d1a0e8` |
-| 3     | Backend Test & Core API Baseline         | ✅ DONE                                           | `ecfbe6b`, `0ef265f` |
-| 4     | Web Assets & Developer API               | ✅ DONE                                           | `a0508e2`, `cbb9015` |
-| 5     | Empty Data Baseline & Hydration Contract | ✅ DONE                                           | `64fe617`, `549a01a` |
-| 6     | Floorplan / Tiler Pipeline               | ✅ DONE                                           | `73ed02a`, `d1af442` |
-| 7     | Android Logger & Navigator               | ✅ DONE                                           | `c544857`, `611775c` |
-| 8     | Detach from Legacy Domains               | ✅ DONE                                           | `f11f095`, `f7d17b0` |
-| 9     | Security & End-to-End Regression Gate    | ✅ DONE                                           | `29153c6`, `acaadeb` |
-| 10    | Deferred Cleanup & Modernization         | ⏸ NOT STARTED — requires explicit owner approval |                      |
-
----
 
 ## What Each Phase Did
 

@@ -1,8 +1,0 @@
-# Ignore for silversearch `ag`
-
-node_modules/
-bower_components/
-libs/
-build/
-rrss.css
-

@@ -36,12 +36,6 @@ Demo bash script for Linux.
 ## [windows](windows)
 PowerShell script for Windows (placeholder).
 
-## [web](web)
-Web clients:
-- architect
-- viewer
-- viewer campus
-
 ---
 ## [_deprecated](deprecated)
 Clients that won't be further developed.
