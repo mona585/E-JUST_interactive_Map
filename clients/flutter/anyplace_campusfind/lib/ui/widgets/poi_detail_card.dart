@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../config/theme.dart';
 import '../../data/models/poi_model.dart';
+import '../../data/models/quick_access_item.dart';
+import '../../widgets/quick_access_toggle_button.dart';
 
 /// Floating detail card displayed when an indoor POI is selected.
 class PoiDetailCard extends StatelessWidget {
@@ -16,6 +18,7 @@ class PoiDetailCard extends StatelessWidget {
   final bool isNavigating;
   final String? routeMessage;
   final bool isRouteUnsupported;
+  final QuickAccessItem Function()? quickAccessItemBuilder;
 
   const PoiDetailCard({
     super.key,
@@ -30,6 +33,7 @@ class PoiDetailCard extends StatelessWidget {
     this.isNavigating = false,
     this.routeMessage,
     this.isRouteUnsupported = false,
+    this.quickAccessItemBuilder,
   });
 
   @override
@@ -125,6 +129,12 @@ class PoiDetailCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                   splashRadius: 20,
                 ),
+                if (quickAccessItemBuilder != null) ...[
+                  const SizedBox(width: 4),
+                  QuickAccessToggleButton(
+                    itemBuilder: quickAccessItemBuilder!,
+                  ),
+                ],
               ],
             ),
             if (poi.description != null && poi.description!.isNotEmpty) ...[

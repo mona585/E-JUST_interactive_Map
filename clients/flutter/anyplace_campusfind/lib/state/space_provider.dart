@@ -4,12 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../config/constants.dart';
 import '../data/datasources/anyplace_api_client.dart';
 import '../data/datasources/native_positioning_service.dart';
 import '../data/models/floor_model.dart';
 import '../data/models/floorplan_model.dart';
 import '../data/models/navigation_route_model.dart';
 import '../data/models/poi_model.dart';
+import '../data/models/quick_access_item.dart';
 import '../data/models/space_model.dart';
 import '../data/repositories/floorplan_repository.dart';
 import '../data/repositories/navigation_repository.dart';
@@ -21,6 +23,7 @@ import '../data/repositories/custom_route_repository.dart';
 import '../data/models/user_location.dart';
 import '../services/search_service.dart';
 import '../services/cache_service.dart';
+import '../utils/category_deriver.dart';
 import 'location_provider.dart';
 
 /// Status of RadioMap acquisition and native engine readiness for the selected floor.
@@ -34,6 +37,42 @@ enum PoiStatus { idle, loading, ready, error }
 
 /// Status of an Anyplace navigation route request.
 enum NavigationRouteStatus { idle, loading, ready, unsupported, error }
+
+/// Outcome of resolving one predefined Quick Access default during seeding.
+///
+/// Records whether the requested default resolved to its exact verified E-JUST
+/// entity in the loaded dataset, and if not, which similarly named candidates
+/// were present. A resolved entry always carries the real API entity name and
+/// buid; an unresolved entry is never silently substituted.
+class QuickAccessSeedReport {
+  const QuickAccessSeedReport.resolved({
+    required this.requested,
+    required this.resolvedName,
+    required this.buid,
+  })  : candidates = const [],
+        isResolved = true;
+
+  const QuickAccessSeedReport.unresolved({
+    required this.requested,
+    required this.candidates,
+  })  : resolvedName = null,
+        buid = null,
+        isResolved = false;
+
+  final DefaultQuickAccessLocation requested;
+
+  /// True when the exact buid was found in the loaded dataset.
+  final bool isResolved;
+
+  /// The actual entity name in the loaded dataset (when resolved).
+  final String? resolvedName;
+
+  /// The exact buid resolved against the loaded dataset (when resolved).
+  final String? buid;
+
+  /// Similarly named entities found in the loaded dataset (when unresolved).
+  final List<String> candidates;
+}
 
 /// Provider managing state for Anyplace buildings, floors, RadioMaps, indoor Floorplans, and POIs.
 class SpaceProvider extends ChangeNotifier {
@@ -284,6 +323,101 @@ class SpaceProvider extends ChangeNotifier {
     }
   }
 
+  /// One-time Quick Access initialization: seeds the predefined default
+  /// locations and migrates any legacy `saved_pois` into the unified format.
+  ///
+  /// Runs only when the Quick Access preference key has never been written.
+  /// Once the key exists (even as an empty list) seeding and migration are
+  /// permanently skipped, so user customizations and "Clear Quick Access" are
+  /// never overwritten on later launches.
+  ///
+  /// Returns a per-default report describing how each requested default was
+  /// resolved (real `buid` + entity name) or why it was skipped, so the audit
+  /// can verify no default was ever substituted with a different location.
+  Future<List<QuickAccessSeedReport>> ensureQuickAccessInitialized(
+      SearchService searchService) async {
+    final cache = _cacheService;
+    if (cache == null) {
+      debugPrint('[SpaceProvider] ensureQuickAccessInitialized: no cache service');
+      return const [];
+    }
+    if (await cache.hasQuickAccessKey()) {
+      debugPrint('[SpaceProvider] ensureQuickAccessInitialized: already initialized');
+      return const [];
+    }
+
+    final items = <QuickAccessItem>[];
+    var addedAt = DateTime.now().millisecondsSinceEpoch;
+    final usedBuids = <String>{};
+    final report = <QuickAccessSeedReport>[];
+
+    // 1. Seed predefined defaults (in defined order) by their VERIFIED buid.
+    //    A default is seeded ONLY when its exact buid exists in the loaded
+    //    dataset (resolved from the live SpaceModel). When the entity is not
+    //    loaded, it is reported as unresolved with the matching-name candidates
+    //    found in the dataset — it is NEVER substituted with another location.
+    for (final defaultLoc in AppConstants.kDefaultQuickAccessLocations) {
+      final match = _spaces
+          .where((s) =>
+              !usedBuids.contains(s.buid) && s.buid == defaultLoc.buid)
+          .firstOrNull;
+      if (match == null) {
+        final candidates = _spaces
+            .where((s) => s.name
+                .toLowerCase()
+                .contains(defaultLoc.name.toLowerCase()))
+            .map((s) => '${s.name} (buid: ${s.buid})')
+            .toList();
+        report.add(QuickAccessSeedReport.unresolved(
+          requested: defaultLoc,
+          candidates: candidates,
+        ));
+        debugPrint(
+          '[SpaceProvider] ensureQuickAccessInitialized: default "${defaultLoc.label}" '
+          'UNRESOLVED (buid ${defaultLoc.buid} not in loaded dataset). '
+          'Candidate entities found: ${candidates.isEmpty ? "none" : candidates.join("; ")}',
+        );
+        continue;
+      }
+      usedBuids.add(match.buid);
+      items.add(QuickAccessItem.fromSpace(
+        match,
+        addedAt: addedAt++,
+        category: CategoryDeriver.fromSpaceType(match.spaceType).name,
+      ));
+      report.add(QuickAccessSeedReport.resolved(
+        requested: defaultLoc,
+        resolvedName: match.name,
+        buid: match.buid,
+      ));
+    }
+
+    // 2. Migrate legacy saved POIs (preserved even when unresolvable now).
+    final savedPuids = await cache.getSavedPois();
+    for (final puid in savedPuids) {
+      final resolved = searchService.findPoiByPuid(puid);
+      if (resolved != null) {
+        items.add(QuickAccessItem.fromPoi(
+          resolved,
+          addedAt: addedAt++,
+          category: CategoryDeriver.fromPoiType(resolved.poisType).name,
+        ));
+      } else {
+        items.add(QuickAccessItem.minimalPoi(puid, addedAt: addedAt++));
+      }
+    }
+
+    // 3. Persist once, then consume the legacy key.
+    await cache.setQuickAccessItems(items);
+    if (savedPuids.isNotEmpty) {
+      await cache.removeSavedPoisKey();
+    }
+    debugPrint(
+      '[SpaceProvider] ensureQuickAccessInitialized: seeded ${items.length} item(s)',
+    );
+    return report;
+  }
+
   /// Selects a space, clears previous floor & POI selections, and automatically loads available floors.
   void selectSpace(SpaceModel space) {
     if (_selectedSpace?.buid != space.buid) {
@@ -407,10 +541,64 @@ class SpaceProvider extends ChangeNotifier {
   /// Orchestrates selectSpace -> selectFloor -> selectPoi from a [PoiModel].
   /// Used by cross-tab navigation (search results, recent waypoints).
   Future<bool> navigateToPoi(PoiModel targetPoi) async {
+    return _navigateToIdentifier(
+      buid: targetPoi.buid,
+      floorNumber: targetPoi.floorNumber,
+      puid: targetPoi.puid,
+    );
+  }
+
+  /// Navigates to a Quick Access item (building or POI).
+  ///
+  /// Buildings resolve their `buid` and select the space on the map. POIs
+  /// navigate through the full space -> floor -> poi chain using their stored
+  /// `buid`/`floorNumber`/`puid`, resolving the space and floor regardless of
+  /// the currently selected building/floor. Migrated POI items lacking
+  /// navigation metadata are resolved through [searchService] by puid when
+  /// provided.
+  Future<bool> navigateToQuickAccessItem(
+    QuickAccessItem item, {
+    SearchService? searchService,
+  }) async {
+    if (item.isBuilding) {
+      return _navigateToBuilding(item.id);
+    }
+    if (item.isPoi) {
+      var buid = item.buid;
+      var floorNumber = item.floorNumber;
+      if (!item.hasPoiNavigationIds && searchService != null) {
+        final resolved = searchService.findPoiByPuid(item.id);
+        if (resolved != null) {
+          buid = resolved.buid;
+          floorNumber = resolved.floorNumber;
+        }
+      }
+      if (buid == null || floorNumber == null) {
+        debugPrint(
+          '[SpaceProvider] Cannot navigate to POI ${item.id}: missing buid/floorNumber and unresolved by index',
+        );
+        return false;
+      }
+      return _navigateToIdentifier(
+        buid: buid,
+        floorNumber: floorNumber,
+        puid: item.id,
+      );
+    }
+    return false;
+  }
+
+  /// Shared space -> floor -> poi orchestration keyed by stable identifiers.
+  /// Does not depend on the POI being present in the currently loaded list.
+  Future<bool> _navigateToIdentifier({
+    required String buid,
+    required String floorNumber,
+    required String puid,
+  }) async {
     // 1. Find the SpaceModel matching the POI's buid
     final space = _spaces.firstWhere(
-      (s) => s.buid == targetPoi.buid,
-      orElse: () => throw StateError('Space ${targetPoi.buid} not found'),
+      (s) => s.buid == buid,
+      orElse: () => throw StateError('Space $buid not found'),
     );
 
     // 2. Select the space (clears everything, starts async floor load)
@@ -421,8 +609,8 @@ class SpaceProvider extends ChangeNotifier {
 
     // 4. Find the FloorModel
     final floor = _floors.firstWhere(
-      (f) => f.floorNumber == targetPoi.floorNumber,
-      orElse: () => throw StateError('Floor ${targetPoi.floorNumber} not found'),
+      (f) => f.floorNumber == floorNumber,
+      orElse: () => throw StateError('Floor $floorNumber not found'),
     );
 
     // 5. Select the floor (starts async POI load)
@@ -433,10 +621,26 @@ class SpaceProvider extends ChangeNotifier {
 
     // 7. Find the POI in the loaded list and select it
     final poi = _pois.firstWhere(
-      (p) => p.puid == targetPoi.puid,
-      orElse: () => targetPoi,
+      (p) => p.puid == puid,
+      orElse: () => throw StateError('POI $puid not found in loaded POIs'),
     );
     selectPoi(poi);
+    return true;
+  }
+
+  /// Selects a building by `buid` on the map, reloading the space list first
+  /// if the building is not currently known. Returns false when the building
+  /// is unknown even after reloading.
+  Future<bool> _navigateToBuilding(String buid) async {
+    if (_spaces.isEmpty) {
+      await loadSpaces();
+    }
+    final space = _spaces.where((s) => s.buid == buid).firstOrNull;
+    if (space == null) {
+      debugPrint('[SpaceProvider] Cannot navigate to building $buid: not found');
+      return false;
+    }
+    selectSpace(space);
     return true;
   }
 

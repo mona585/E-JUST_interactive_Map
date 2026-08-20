@@ -4,22 +4,26 @@ import 'package:provider/provider.dart';
 
 import '../../config/theme.dart';
 import '../../data/models/floor_model.dart';
+import '../../data/models/quick_access_item.dart';
 import '../../data/models/space_model.dart';
 import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
 import '../../utils/poi_classification.dart';
+import '../../widgets/quick_access_toggle_button.dart';
 
 /// Card showing detailed metadata, interactive floor selector, and RadioMap status for a selected building.
 class BuildingDetailCard extends StatelessWidget {
   final SpaceModel space;
   final VoidCallback onClose;
   final VoidCallback onFocus;
+  final QuickAccessItem Function()? quickAccessItemBuilder;
 
   const BuildingDetailCard({
     super.key,
     required this.space,
     required this.onClose,
     required this.onFocus,
+    this.quickAccessItemBuilder,
   });
 
   void _copyBuidToClipboard(BuildContext context) {
@@ -157,6 +161,10 @@ class BuildingDetailCard extends StatelessWidget {
                           tooltip: 'Dismiss',
                           splashRadius: 20,
                         ),
+                        if (quickAccessItemBuilder != null)
+                          QuickAccessToggleButton(
+                            itemBuilder: quickAccessItemBuilder!,
+                          ),
                       ],
                     ),
 

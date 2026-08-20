@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as provider;
 
+import '../data/models/quick_access_item.dart';
 import '../providers/providers.dart';
 import '../providers/search_provider.dart';
 import '../state/space_provider.dart';
@@ -35,14 +36,24 @@ void openSearchResult(BuildContext context, WidgetRef ref, SearchResult result) 
   }
 }
 
-/// Navigates to a POI by puid (used by saved/recent lists).
-void openPoi(BuildContext context, WidgetRef ref, String puid) async {
+/// Navigates to a Quick Access item by switching to the Map tab and resolving
+/// its stored building/POI identifiers, regardless of the current selection.
+void openQuickAccessItem(
+  BuildContext context,
+  WidgetRef ref,
+  QuickAccessItem item,
+) async {
   ref.read(shellTabProvider.notifier).state = 1; // Switch to Map tab
 
   final spaceProvider = provider.Provider.of<SpaceProvider>(context, listen: false);
-  final poi = spaceProvider.pois.firstWhere(
-    (p) => p.puid == puid,
-    orElse: () => throw StateError('POI $puid not found in loaded POIs'),
+  final searchService = ref.read(searchServiceProvider);
+  final ok = await spaceProvider.navigateToQuickAccessItem(
+    item,
+    searchService: searchService,
   );
-  await spaceProvider.navigateToPoi(poi);
+  if (!ok && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('This location could not be opened.')),
+    );
+  }
 }

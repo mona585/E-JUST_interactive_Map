@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import '../config/theme.dart';
-import '../providers/search_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class SearchResultCard extends StatelessWidget {
+import '../config/theme.dart';
+import '../data/models/quick_access_item.dart';
+import '../providers/search_provider.dart';
+import '../widgets/quick_access_toggle_button.dart';
+
+class SearchResultCard extends ConsumerWidget {
   const SearchResultCard({
     super.key,
     required this.result,
@@ -40,8 +44,31 @@ class SearchResultCard extends StatelessWidget {
     }
   }
 
+  /// Builds a Quick Access item for savable entities (building or POI).
+  /// Returns null for floors and other unsupported types.
+  QuickAccessItem? _buildItem() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (result.entityType == 'space' && result.space != null) {
+      return QuickAccessItem.fromSpace(
+        result.space!,
+        addedAt: now,
+        category: result.category.name,
+      );
+    }
+    if (result.entityType == 'poi' && result.poi != null) {
+      return QuickAccessItem.fromPoi(
+        result.poi!,
+        addedAt: now,
+        category: result.category.name,
+      );
+    }
+    return null;
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final item = _buildItem();
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -88,8 +115,13 @@ class SearchResultCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.arrow_outward,
-                  size: 16, color: AppTheme.primary.withValues(alpha: 0.6)),
+              if (item != null)
+                QuickAccessToggleButton(
+                  itemBuilder: () => _buildItem()!,
+                )
+              else
+                Icon(Icons.arrow_outward,
+                    size: 16, color: AppTheme.primary.withValues(alpha: 0.6)),
             ],
           ),
         ),

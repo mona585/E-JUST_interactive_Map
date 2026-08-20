@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as provider;
 
 import '../../config/theme.dart';
+import '../../data/models/quick_access_item.dart';
 import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
 import '../../utils/category_deriver.dart';
@@ -16,16 +18,16 @@ import '../widgets/poi_detail_card.dart';
 /// - **Full** (85%): full details including status badges
 ///
 /// Drag gesture is on the handle/header only so the body ListView scrolls freely.
-class MapBottomSheet extends StatefulWidget {
+class MapBottomSheet extends ConsumerStatefulWidget {
   final void Function(SpaceProvider)? onFitRouteBounds;
 
   const MapBottomSheet({super.key, this.onFitRouteBounds});
 
   @override
-  State<MapBottomSheet> createState() => _MapBottomSheetState();
+  ConsumerState<MapBottomSheet> createState() => _MapBottomSheetState();
 }
 
-class _MapBottomSheetState extends State<MapBottomSheet>
+class _MapBottomSheetState extends ConsumerState<MapBottomSheet>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   Animation<double>? _animation;
@@ -224,12 +226,24 @@ class _MapBottomSheetState extends State<MapBottomSheet>
                     routeMessage: spaceProvider.hasActiveNavigationRoute
                         ? 'Route ready on floor ${spaceProvider.selectedFloor?.floorNumber ?? '-'}'
                         : spaceProvider.navigationRouteErrorMessage,
+                    quickAccessItemBuilder: () => QuickAccessItem.fromPoi(
+                      selectedPoi,
+                      addedAt: DateTime.now().millisecondsSinceEpoch,
+                      category:
+                          CategoryDeriver.fromPoiType(selectedPoi.poisType).name,
+                    ),
                   ),
                 if (selectedSpace != null)
                   BuildingDetailCard(
                     space: selectedSpace,
                     onClose: () => spaceProvider.clearSelection(),
                     onFocus: () {},
+                    quickAccessItemBuilder: () => QuickAccessItem.fromSpace(
+                      selectedSpace,
+                      addedAt: DateTime.now().millisecondsSinceEpoch,
+                      category:
+                          CategoryDeriver.fromSpaceType(selectedSpace.spaceType).name,
+                    ),
                   ),
               ],
             ),

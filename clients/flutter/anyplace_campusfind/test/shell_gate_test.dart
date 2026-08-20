@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
 import 'package:anyplace_campusfind/providers/providers.dart';
 import 'package:anyplace_campusfind/screens/main_shell.dart';
+import 'package:anyplace_campusfind/screens/profile_screen.dart';
+import 'package:anyplace_campusfind/screens/search_screen.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
 import 'package:anyplace_campusfind/state/space_provider.dart';
@@ -75,8 +77,7 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
   });
 
-  testWidgets('bottom nav switches between Home, Map, Search, Saved',
-      (tester) async {
+  testWidgets('bottom nav contains exactly Home and Map', (tester) async {
     container = ProviderContainer(overrides: [
       loaderOverride(() async => const BulkLoadResult()),
       cacheServiceProvider.overrideWithValue(cache),
@@ -86,13 +87,73 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    expect(find.text('Home'), findsOneWidget);
+    final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(nav.destinations.length, 2);
 
-    await tester.tap(find.text('Search'));
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Home'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Map'),
+      ),
+      findsOneWidget,
+    );
+
+    // Search and Profile are NOT bottom-navigation destinations.
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Search'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Profile'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Home search bar opens the Search screen', (tester) async {
+    container = ProviderContainer(overrides: [
+      loaderOverride(() async => const BulkLoadResult()),
+      cacheServiceProvider.overrideWithValue(cache),
+    ]);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Saved'));
+    await tester.tap(find.text('Search professors, rooms, halls...'));
     await tester.pumpAndSettle();
+
+    expect(find.byType(SearchScreen), findsOneWidget);
+    expect(find.text('Search Directory'), findsOneWidget);
+  });
+
+  testWidgets('Home profile button opens the Profile screen', (tester) async {
+    container = ProviderContainer(overrides: [
+      loaderOverride(() async => const BulkLoadResult()),
+      cacheServiceProvider.overrideWithValue(cache),
+    ]);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.person_outline));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ProfileScreen), findsOneWidget);
+    expect(find.text('Clear Quick Access'), findsOneWidget);
   });
 }
 

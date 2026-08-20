@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/api_config.dart';
 import '../config/theme.dart';
+import '../providers/providers.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -61,8 +62,8 @@ class ProfileScreen extends ConsumerWidget {
           ),
           _SettingsTile(
             icon: Icons.delete_outline,
-            title: 'Clear Saved Places',
-            onTap: () => _showClearSavedDialog(context, ref),
+            title: 'Clear Quick Access',
+            onTap: () => _showClearQuickAccessDialog(context, ref),
           ),
         ],
       ),
@@ -123,12 +124,12 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  void _showClearSavedDialog(BuildContext context, WidgetRef ref) {
+  void _showClearQuickAccessDialog(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear Saved Places'),
-        content: const Text('Remove all saved places? This cannot be undone.'),
+        title: const Text('Clear Quick Access'),
+        content: const Text('Remove all Quick Access locations? This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -136,13 +137,12 @@ class ProfileScreen extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () async {
-              // TODO: implement clear all saved when needed
+              await ref.read(cacheServiceProvider).clearQuickAccessItems();
+              if (!context.mounted) return;
               Navigator.pop(context);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Saved places cleared')),
-                );
-              }
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Quick Access cleared')),
+              );
             },
             child: const Text('Clear', style: TextStyle(color: Colors.red)),
           ),

@@ -10,9 +10,6 @@ import '../state/navigation_controller.dart';
 import '../state/space_provider.dart';
 import '../ui/screens/map_screen.dart';
 import 'home_screen.dart';
-import 'profile_screen.dart';
-import 'saved_screen.dart';
-import 'search_screen.dart';
 
 const int _kMapTabIndex = 1;
 
@@ -62,6 +59,8 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     // Index spaces immediately
     searchService.addSpaces(spaceProvider.spaces);
+    // One-time Quick Access seeding + legacy Saved migration
+    await spaceProvider.ensureQuickAccessInitialized(searchService);
     // Start progressive background sync for floors + POIs
     spaceProvider.loadAllFloorsAndPois(searchService);
 
@@ -115,16 +114,13 @@ class _MainShellState extends ConsumerState<MainShell> {
               children: const [
                 HomeScreen(),
                 MapScreen(),
-                SearchScreen(),
-                SavedScreen(),
-                ProfileScreen(),
               ],
             ),
           ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: index.clamp(0, 3),
+        selectedIndex: index.clamp(0, 1),
         onDestinationSelected: (i) =>
             ref.read(shellTabProvider.notifier).state = i,
         destinations: const [
@@ -137,16 +133,6 @@ class _MainShellState extends ConsumerState<MainShell> {
             icon: Icon(Icons.map_outlined, color: AppTheme.textTertiary),
             selectedIcon: Icon(Icons.map, color: AppTheme.primary),
             label: 'Map',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.search_outlined, color: AppTheme.textTertiary),
-            selectedIcon: Icon(Icons.search, color: AppTheme.primary),
-            label: 'Search',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bookmark_outline, color: AppTheme.textTertiary),
-            selectedIcon: Icon(Icons.bookmark, color: AppTheme.primary),
-            label: 'Saved',
           ),
         ],
       ),

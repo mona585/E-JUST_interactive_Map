@@ -210,6 +210,20 @@ class SearchService extends ChangeNotifier {
     return results;
   }
 
+  /// Resolves a full [PoiModel] by its `puid` from the search index.
+  ///
+  /// Used to enrich/navigate Quick Access POI items whose building/floor may
+  /// not be currently loaded. Returns null when the POI has not been indexed
+  /// yet (e.g. its building/floor sync is still pending).
+  PoiModel? findPoiByPuid(String puid) {
+    for (final item in _items) {
+      if (item.entityType == 'poi' && item.poi?.puid == puid) {
+        return item.poi;
+      }
+    }
+    return null;
+  }
+
   /// Discovers all unique building buid+name pairs currently indexed.
   ///
   /// Returns a sorted list of `(buid, displayName)` tuples.
