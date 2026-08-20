@@ -18,10 +18,14 @@ final searchQueryProvider = StateProvider<String>((ref) => '');
 /// Active category filter (null = all).
 final searchCategoryFilterProvider = StateProvider<EntityCategory?>((ref) => null);
 
-/// Derived: executes search whenever query or category changes.
+/// Active building filter — buid string or null for all buildings.
+final searchBuildingFilterProvider = StateProvider<String?>((ref) => null);
+
+/// Derived: executes search whenever query, category, or building changes.
 final searchResultsProvider = Provider<List<SearchResult>>((ref) {
   final service = ref.watch(searchServiceProvider);
   final query = ref.watch(searchQueryProvider);
   final category = ref.watch(searchCategoryFilterProvider);
-  return service.query(query, category: category);
+  final buid = ref.watch(searchBuildingFilterProvider);
+  return service.query(query, category: category, buid: buid);
 });

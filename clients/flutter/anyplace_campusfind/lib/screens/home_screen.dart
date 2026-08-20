@@ -124,19 +124,6 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
         ],
       ),
-      actions: [
-        Container(
-          margin: const EdgeInsets.only(right: 16),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF5F5F5),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.notifications_none, color: AppTheme.textSecondary, size: 22),
-            onPressed: () {},
-          ),
-        ),
-      ],
     );
   }
 }

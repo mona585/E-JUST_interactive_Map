@@ -40,6 +40,7 @@ class _SearchableItem {
     this.address,
     required this.entityType,
     required this.category,
+    this.buid,
     this.space,
     this.floor,
     this.poi,
@@ -52,6 +53,7 @@ class _SearchableItem {
   final String? address;
   final String entityType;
   final EntityCategory category;
+  final String? buid;
   final SpaceModel? space;
   final FloorModel? floor;
   final PoiModel? poi;
@@ -88,6 +90,7 @@ class SearchService extends ChangeNotifier {
         address: space.address,
         entityType: 'space',
         category: CategoryDeriver.fromSpaceType(space.spaceType),
+        buid: space.buid,
         space: space,
       ));
     }
@@ -109,6 +112,7 @@ class SearchService extends ChangeNotifier {
         subtitle: 'Floor ${floor.floorNumber}',
         entityType: 'floor',
         category: EntityCategory.floor,
+        buid: buid,
         floor: floor,
       ));
     }
@@ -129,6 +133,7 @@ class SearchService extends ChangeNotifier {
         subtitle: poi.poisType,
         entityType: 'poi',
         category: CategoryDeriver.fromPoiType(poi.poisType),
+        buid: poi.buid,
         poi: poi,
       ));
     }
@@ -155,23 +160,30 @@ class SearchService extends ChangeNotifier {
   // ---- Query ----
 
   /// Searches the index with multi-field matching and relevance ranking.
-  List<SearchResult> query(String rawQuery, {EntityCategory? category, int limit = 15}) {
+  ///
+  /// Only POI results are returned — buildings and floors are excluded.
+  ///
+  /// [buid] — when non-null, restricts results to POIs belonging to this building.
+  /// [category] — when non-null, restricts results to POIs matching this category.
+  /// Both filters are applied with AND logic.
+  List<SearchResult> query(
+    String rawQuery, {
+    EntityCategory? category,
+    String? buid,
+    int limit = 15,
+  }) {
     final q = rawQuery.toLowerCase().trim();
     final scored = <(_SearchableItem, int)>[];
 
     for (final item in _items) {
+      if (item.entityType != 'poi') continue;
       final score = _scoreItem(item, q);
       if (score > 0) {
         scored.add((item, score));
       }
     }
 
-    // Sort by score descending, then by type priority (spaces first)
-    scored.sort((a, b) {
-      final cmp = b.$2.compareTo(a.$2);
-      if (cmp != 0) return cmp;
-      return _typePriority(a.$1.entityType).compareTo(_typePriority(b.$1.entityType));
-    });
+    scored.sort((a, b) => b.$2.compareTo(a.$2));
 
     var results = scored
         .take(limit)
@@ -191,7 +203,45 @@ class SearchService extends ChangeNotifier {
       results = results.where((r) => r.category == category).toList();
     }
 
+    if (buid != null) {
+      results = results.where((r) => r.poi?.buid == buid).toList();
+    }
+
     return results;
+  }
+
+  /// Discovers all unique building buid+name pairs currently indexed.
+  ///
+  /// Returns a sorted list of `(buid, displayName)` tuples.
+  /// Buildings are keyed by buid; duplicate buids are deduplicated.
+  List<({String buid, String name})> discoverBuids() {
+    final seen = <String, String>{};
+    for (final item in _items) {
+      if (item.space != null) {
+        final s = item.space!;
+        seen.putIfAbsent(s.buid, () => s.name);
+      } else if (item.buid != null && item.buid!.isNotEmpty) {
+        seen.putIfAbsent(item.buid!, () => item.name);
+      }
+    }
+    final entries = seen.entries.map((e) => (buid: e.key, name: e.value)).toList();
+    entries.sort((a, b) => a.name.compareTo(b.name));
+    return entries;
+  }
+
+  /// Discovers all unique POI categories currently indexed.
+  List<EntityCategory> discoverCategoriesFromIndex() {
+    final seen = <EntityCategory>{};
+    for (final item in _items) {
+      if (item.entityType == 'poi') {
+        seen.add(item.category);
+      }
+    }
+    seen.remove(EntityCategory.other);
+    seen.remove(EntityCategory.floor);
+    final list = seen.toList();
+    list.sort((a, b) => a.label.compareTo(b.label));
+    return list;
   }
 
   /// Scores a single item against the query. Returns 0 if no match.
@@ -256,18 +306,5 @@ class SearchService extends ChangeNotifier {
       // Show parent building context if available
     }
     return parts.isNotEmpty ? parts.join(' · ') : 'Tap for details';
-  }
-
-  int _typePriority(String entityType) {
-    switch (entityType) {
-      case 'space':
-        return 0;
-      case 'floor':
-        return 1;
-      case 'poi':
-        return 2;
-      default:
-        return 3;
-    }
   }
 }
