@@ -15,6 +15,11 @@ class PoiModel {
   final bool isDoor;
   final bool isPublished;
   final String? imageUrl;
+  
+  /// Optional last-modified timestamp from the Anyplace backend (ISO 8601 string).
+  /// Used for cache validation / revalidation. When present, the value is
+  /// provided by the backend and should not be hardcoded or fabricated.
+  final String? lastModified;
 
   const PoiModel({
     required this.puid,
@@ -30,6 +35,7 @@ class PoiModel {
     this.isDoor = false,
     this.isPublished = true,
     this.imageUrl,
+    this.lastModified,
   });
 
   /// [LatLng] coordinates for positioning on FlutterMap.
@@ -73,6 +79,9 @@ class PoiModel {
       isDoor: parseBool(json['is_door']),
       isPublished: parseBool(json['is_published'], true),
       imageUrl: json['image']?.toString().trim(),
+      lastModified: json['last_modified'] != null && json['last_modified'].toString().trim().isNotEmpty
+          ? json['last_modified'].toString().trim()
+          : null,
     );
   }
 
@@ -91,6 +100,7 @@ class PoiModel {
         'is_door': isDoor ? 'true' : 'false',
         'is_published': isPublished ? 'true' : 'false',
         if (imageUrl != null) 'image': imageUrl,
+        if (lastModified != null) 'last_modified': lastModified,
       };
 
   @override
@@ -98,10 +108,14 @@ class PoiModel {
       identical(this, other) ||
       other is PoiModel &&
           runtimeType == other.runtimeType &&
-          puid == other.puid;
+          puid == other.puid &&
+          lastModified == other.lastModified;
 
   @override
-  int get hashCode => puid.hashCode;
+  int get hashCode {
+    final code = lastModified?.hashCode ?? 0;
+    return puid.hashCode ^ code;
+  }
 
   @override
   String toString() =>

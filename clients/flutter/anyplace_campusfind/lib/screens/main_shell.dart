@@ -6,12 +6,15 @@ import '../config/theme.dart';
 import '../providers/bulk_load_provider.dart';
 import '../providers/providers.dart';
 import '../providers/search_provider.dart';
+import '../state/navigation_controller.dart';
 import '../state/space_provider.dart';
 import '../ui/screens/map_screen.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';
 import 'saved_screen.dart';
 import 'search_screen.dart';
+
+const int _kMapTabIndex = 1;
 
 class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
@@ -22,6 +25,7 @@ class MainShell extends ConsumerStatefulWidget {
 
 class _MainShellState extends ConsumerState<MainShell> {
   bool _syncStarted = false;
+  int _previousTabIndex = 0;
 
   @override
   void initState() {
@@ -29,6 +33,20 @@ class _MainShellState extends ConsumerState<MainShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startDataLoading();
     });
+  }
+
+  void _stopNavigationOnTabLeave() {
+    if (!mounted) return;
+    final navController =
+        provider.Provider.of<NavigationController>(context, listen: false);
+    final spaceProvider =
+        provider.Provider.of<SpaceProvider>(context, listen: false);
+
+    if (navController.isActive || navController.isPreview) {
+      debugPrint('[MainShell] Leaving Map tab — stopping navigation');
+      navController.endNavigation();
+      spaceProvider.clearNavigationRoute();
+    }
   }
 
   Future<void> _startDataLoading() async {
@@ -46,6 +64,11 @@ class _MainShellState extends ConsumerState<MainShell> {
     searchService.addSpaces(spaceProvider.spaces);
     // Start progressive background sync for floors + POIs
     spaceProvider.loadAllFloorsAndPois(searchService);
+
+    // Load custom KMZ routes for outdoor navigation
+    debugPrint('[MainShell] _startDataLoading: calling loadCustomRoutes');
+    await spaceProvider.loadCustomRoutes();
+    debugPrint('[MainShell] _startDataLoading: loadCustomRoutes completed');
   }
 
   @override
@@ -53,6 +76,11 @@ class _MainShellState extends ConsumerState<MainShell> {
     final index = ref.watch(shellTabProvider);
     final bulkLoad = ref.watch(bulkLoadProvider);
     wireCacheNotifications(ref);
+
+    if (_previousTabIndex == _kMapTabIndex && index != _kMapTabIndex) {
+      _stopNavigationOnTabLeave();
+    }
+    _previousTabIndex = index;
 
     return Scaffold(
       body: Column(
@@ -96,7 +124,7 @@ class _MainShellState extends ConsumerState<MainShell> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
+        selectedIndex: index.clamp(0, 3),
         onDestinationSelected: (i) =>
             ref.read(shellTabProvider.notifier).state = i,
         destinations: const [
@@ -119,11 +147,6 @@ class _MainShellState extends ConsumerState<MainShell> {
             icon: Icon(Icons.bookmark_outline, color: AppTheme.textTertiary),
             selectedIcon: Icon(Icons.bookmark, color: AppTheme.primary),
             label: 'Saved',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline, color: AppTheme.textTertiary),
-            selectedIcon: Icon(Icons.person, color: AppTheme.primary),
-            label: 'Profile',
           ),
         ],
       ),

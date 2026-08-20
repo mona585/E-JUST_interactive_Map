@@ -51,6 +51,7 @@ class CacheService {
       AppConstants.prefRecentWaypoints,
       list.take(10).toList(),
     );
+    onDataChanged?.call();
   }
 
   // ---- Saved POIs (favorites) ----

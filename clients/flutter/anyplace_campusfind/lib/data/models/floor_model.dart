@@ -18,6 +18,11 @@ class FloorModel implements Comparable<FloorModel> {
   /// Whether the floor has been published in the Anyplace backend.
   final bool isPublished;
 
+  /// Optional last-modified timestamp from the Anyplace backend (ISO 8601 string).
+  /// Used for cache validation / revalidation. When present, the value is
+  /// provided by the backend and should not be hardcoded or fabricated.
+  final String? lastModified;
+
   /// Latitude of bottom-left corner of the floorplan, if available.
   final double? bottomLeftLat;
 
@@ -37,6 +42,7 @@ class FloorModel implements Comparable<FloorModel> {
     this.description = '',
     this.fuid = '',
     this.isPublished = true,
+    this.lastModified,
     this.bottomLeftLat,
     this.bottomLeftLng,
     this.topRightLat,
@@ -84,6 +90,13 @@ class FloorModel implements Comparable<FloorModel> {
       published = rawPublished.toLowerCase() == 'true';
     }
 
+    final String? lastModifiedRaw = json['last_modified'];
+    final String? lastModified = lastModifiedRaw != null
+        ? lastModifiedRaw.toString().trim().isNotEmpty
+            ? lastModifiedRaw.toString().trim()
+            : null
+        : null;
+
     return FloorModel(
       buid: rawBuid,
       floorNumber: floorNumStr,
@@ -91,6 +104,7 @@ class FloorModel implements Comparable<FloorModel> {
       description: rawDesc,
       fuid: rawFuid.isNotEmpty ? rawFuid : '${rawBuid}_$floorNumStr',
       isPublished: published,
+      lastModified: lastModified,
       bottomLeftLat: _parseDouble(json['bottom_left_lat']),
       bottomLeftLng: _parseDouble(json['bottom_left_lng']),
       topRightLat: _parseDouble(json['top_right_lat']),
@@ -107,6 +121,7 @@ class FloorModel implements Comparable<FloorModel> {
       'description': description,
       'fuid': fuid,
       'is_published': isPublished.toString(),
+      if (lastModified != null) 'last_modified': lastModified,
       if (bottomLeftLat != null) 'bottom_left_lat': bottomLeftLat.toString(),
       if (bottomLeftLng != null) 'bottom_left_lng': bottomLeftLng.toString(),
       if (topRightLat != null) 'top_right_lat': topRightLat.toString(),

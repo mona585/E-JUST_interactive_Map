@@ -17,8 +17,10 @@ import '../data/repositories/poi_repository.dart';
 import '../data/repositories/radiomap_repository.dart';
 import '../data/repositories/space_repository.dart';
 import '../data/repositories/cross_building_router.dart';
+import '../data/repositories/custom_route_repository.dart';
 import '../data/models/user_location.dart';
 import '../services/search_service.dart';
+import '../services/cache_service.dart';
 import 'location_provider.dart';
 
 /// Status of RadioMap acquisition and native engine readiness for the selected floor.
@@ -42,6 +44,8 @@ class SpaceProvider extends ChangeNotifier {
   final NavigationRepository _navigationRepository;
   final NativePositioningService _nativePositioningService;
   late final CrossBuildingRouter _crossBuildingRouter;
+  final CustomRouteRepository _customRouteRepository = CustomRouteRepository();
+  CacheService? _cacheService;
 
   List<SpaceModel> _spaces = const [];
   SpaceModel? _selectedSpace;
@@ -97,6 +101,7 @@ class SpaceProvider extends ChangeNotifier {
     NavigationRepository? navigationRepository,
     NativePositioningService? nativePositioningService,
     this._locationProvider,
+    CacheService? cacheService,
   }) : _repository = repository ?? AnyplaceSpaceRepository(),
        _radioMapRepository = radioMapRepository ?? AnyplaceRadioMapRepository(),
        _floorplanRepository =
@@ -105,7 +110,8 @@ class SpaceProvider extends ChangeNotifier {
        _navigationRepository =
            navigationRepository ?? AnyplaceNavigationRepository(),
        _nativePositioningService =
-           nativePositioningService ?? MethodChannelNativePositioningService() {
+           nativePositioningService ?? MethodChannelNativePositioningService(),
+       _cacheService = cacheService {
     _crossBuildingRouter = CrossBuildingRouter(
       isPositionInBuilding: (position, buildingBuid) {
         return _isPositionInBuilding(position, buildingBuid);
@@ -129,6 +135,7 @@ class SpaceProvider extends ChangeNotifier {
           return <String>[];
         }
       },
+      customRouteRepository: _customRouteRepository,
     );
   }
 
@@ -136,6 +143,21 @@ class SpaceProvider extends ChangeNotifier {
   void setLocationProvider(LocationProvider? locationProvider) {
     _locationProvider = locationProvider;
     _syncLocationProvider();
+  }
+
+  /// Access to the custom route repository for map rendering and queries.
+  CustomRouteRepository get customRouteRepository => _customRouteRepository;
+
+  /// Loads custom KMZ routes from bundled assets.
+  ///
+  /// Should be called once during app startup, after spaces are loaded.
+  /// Safe to call multiple times (no-op if already loaded).
+  Future<void> loadCustomRoutes() async {
+    debugPrint('[SpaceProvider] loadCustomRoutes: starting (isLoaded=${_customRouteRepository.isLoaded})');
+    if (_customRouteRepository.isLoaded) return;
+    await _customRouteRepository.loadRoutes();
+    debugPrint('[SpaceProvider] loadCustomRoutes: loaded=${_customRouteRepository.isLoaded}, routes=${_customRouteRepository.routes.length}');
+    notifyListeners();
   }
 
   void _syncLocationProvider() {
@@ -455,6 +477,9 @@ class SpaceProvider extends ChangeNotifier {
     _navigationDestinationPuid = poi.puid;
     notifyListeners();
 
+    // Save to recent waypoints
+    _cacheService?.addRecentWaypoint(poi.puid);
+
     // ── Cross-building / Outdoor→Indoor detection for POI navigation ──
     final userBuilding = _detectBuildingFromPolygon(currentLocation);
     final targetPoiBuilding = _spaces.where((s) => s.buid == poi.buid).firstOrNull;
@@ -604,18 +629,75 @@ class SpaceProvider extends ChangeNotifier {
     // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 3: OSRM outdoor walking path to POI + indoor segment (ALWAYS works) Ã¢â€â‚¬Ã¢â€â‚¬
     if (requestId != _navigationRouteRequestId) return;
 
-    debugPrint('[SpaceProvider] Strategy 3 (hybrid): OSRM outdoor to POI...');
+    debugPrint('[SpaceProvider] Strategy 3 (hybrid): outdoor route to POI...');
 
-    final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
-      fromLat: currentLocation.latitude,
-      fromLon: currentLocation.longitude,
-      toLat: destLatLng.latitude,
-      toLon: destLatLng.longitude,
-    );
+    // Try custom KMZ routes first
+    List<LatLng>? outdoorPath;
+    if (_customRouteRepository.isLoaded) {
+      // Step 1: Try pure custom graph routing
+      final customPath = _customRouteRepository.findRoute(
+        currentLocation.latLng,
+        destLatLng,
+      );
+      if (customPath.length >= 2) {
+        outdoorPath = customPath;
+        debugPrint('[SpaceProvider] Strategy 3: using custom KMZ route (${outdoorPath.length} points)');
+      } else {
+      // Step 2: Try hybrid routing (edge-based snap)
+        final hybridPath = _customRouteRepository.findHybridRoute(
+          currentLocation.latLng,
+          destLatLng,
+          snapThreshold: 150.0,
+        );
+        if (hybridPath != null && hybridPath.length >= 2) {
+          outdoorPath = hybridPath;
+          debugPrint('[SpaceProvider] Strategy 3: using hybrid custom route (${outdoorPath.length} points)');
+        }
+      }
+    }
+
+    // Step 3: Try OSRM to nearest custom vertex + custom to destination
+    if (outdoorPath == null && _customRouteRepository.isLoaded) {
+      final osrmToCustomPath = await _buildOsrmToCustomRoute(
+        currentLocation.latLng,
+        destLatLng,
+      );
+      if (osrmToCustomPath != null && osrmToCustomPath.length >= 2) {
+        outdoorPath = osrmToCustomPath;
+        debugPrint('[SpaceProvider] Strategy 3: using OSRM->Custom route (${outdoorPath.length} points)');
+      }
+    }
+
+    // Step 4: Fallback to OSRM if custom routes didn't produce a path
+    if (outdoorPath == null) {
+      final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
+        fromLat: currentLocation.latitude,
+        fromLon: currentLocation.longitude,
+        toLat: destLatLng.latitude,
+        toLon: destLatLng.longitude,
+      );
+
+      if (osrmPath.length >= 2 && _customRouteRepository.isLoaded) {
+        // Try OSRM + Custom tail splice
+        final splicedPath = _customRouteRepository.spliceCustomTail(
+          osrmPath,
+          destLatLng,
+          connectionThreshold: 150.0,
+        );
+        if (splicedPath != null) {
+          outdoorPath = splicedPath;
+          debugPrint('[SpaceProvider] Strategy 3: using OSRM+Custom splice (${outdoorPath.length} points)');
+        } else {
+          outdoorPath = osrmPath;
+        }
+      } else {
+        outdoorPath = osrmPath;
+      }
+    }
 
     final outdoorPoints = <NavigationRoutePoint>[];
-    if (osrmPath.length >= 2) {
-      for (final pt in osrmPath) {
+    if (outdoorPath.length >= 2) {
+      for (final pt in outdoorPath) {
         outdoorPoints.add(NavigationRoutePoint.outdoor(
           latitude: pt.latitude,
           longitude: pt.longitude,
@@ -643,20 +725,337 @@ class SpaceProvider extends ChangeNotifier {
       ]);
     }
 
+    // Try to get indoor route from entrance to target POI via connectors
+    NavigationRouteModel? indoorRoute;
+    if (_pois.isNotEmpty) {
+      // Find entrance POI nearest to the destination
+      final entrancePoi = _pois.where((p) =>
+          p.buid == poi.buid &&
+          (p.isBuildingEntrance || p.poisType.toLowerCase().contains('entrance'))
+      ).firstOrNull;
+
+      if (entrancePoi != null && entrancePoi.puid.isNotEmpty) {
+        // Attempt 1: Direct entrance→target via server API
+        try {
+          debugPrint(
+            '[SpaceProvider] Strategy 3: indoor route ${entrancePoi.puid} → ${poi.puid}',
+          );
+          indoorRoute = await _navigationRepository.getRouteBetweenPois(
+            fromPuid: entrancePoi.puid,
+            toPuid: poi.puid,
+          );
+          if (indoorRoute.hasRenderablePath) {
+            debugPrint('[SpaceProvider] Strategy 3: indoor route succeeded (${indoorRoute.points.length} points)');
+          } else {
+            debugPrint('[SpaceProvider] Strategy 3: direct indoor route no renderable path — trying connector fallback');
+            indoorRoute = null;
+          }
+        } catch (e) {
+          debugPrint('[SpaceProvider] Strategy 3: direct indoor route failed: $e');
+          indoorRoute = null;
+        }
+
+        // Attempt 2: Route through intermediate connector POIs
+        // Server requires edges between POIs. Room/entrance POIs often lack edges,
+        // but connector POIs (pois_type == "None") have edges between them.
+        if (indoorRoute == null) {
+          try {
+            indoorRoute = await _routeIndoorViaConnectors(
+              entrancePoi: entrancePoi,
+              targetPoi: poi,
+            );
+          } catch (e) {
+            debugPrint('[SpaceProvider] Strategy 3: connector-based indoor route failed: $e');
+          }
+        }
+      }
+    }
+
     final hybridRoute = NavigationRouteModel.hybrid(
       outdoorPoints: outdoorPoints,
-      indoorRoute: null,
+      indoorRoute: indoorRoute,
     );
 
     debugPrint(
       '[SpaceProvider] Strategy 3 (hybrid): ${hybridRoute.points.length} points '
-      '(outdoor: ${outdoorPoints.length})',
+      '(outdoor: ${outdoorPoints.length}, indoor: ${indoorRoute?.points.length ?? 0})',
     );
 
     _navigationRouteStatus = NavigationRouteStatus.ready;
     _activeNavigationRoute = hybridRoute;
     _navigationRouteErrorMessage = null;
     notifyListeners();
+  }
+
+  /// Routes from entrance to target POI through intermediate connector POIs.
+  ///
+  /// The server requires edges between POIs for routing. Room/entrance POIs
+  /// often lack edges, but connector POIs (pois_type == "None") have edges
+  /// between them in the hallway.
+  Future<NavigationRouteModel?> _routeIndoorViaConnectors({
+    required PoiModel entrancePoi,
+    required PoiModel targetPoi,
+  }) async {
+    // Find all connector POIs for the target building on the same floor
+    final connectors = _pois
+        .where((p) =>
+            p.buid == targetPoi.buid &&
+            p.puid.isNotEmpty &&
+            p.poisType == 'None')
+        .toList();
+    if (connectors.isEmpty) {
+      debugPrint('[SpaceProvider] No connector POIs found for building');
+      return null;
+    }
+    debugPrint('[SpaceProvider] Found ${connectors.length} connectors for building');
+
+    // Find nearest connector to entrance
+    PoiModel? nearestToEntrance;
+    double minDistEntrance = double.infinity;
+    for (final c in connectors) {
+      final dist = Geolocator.distanceBetween(
+        entrancePoi.latitude, entrancePoi.longitude,
+        c.latitude, c.longitude,
+      );
+      if (dist < minDistEntrance) {
+        minDistEntrance = dist;
+        nearestToEntrance = c;
+      }
+    }
+
+    // Find nearest connector to target
+    PoiModel? nearestToTarget;
+    double minDistTarget = double.infinity;
+    for (final c in connectors) {
+      final dist = Geolocator.distanceBetween(
+        targetPoi.latitude, targetPoi.longitude,
+        c.latitude, c.longitude,
+      );
+      if (dist < minDistTarget) {
+        minDistTarget = dist;
+        nearestToTarget = c;
+      }
+    }
+
+    if (nearestToEntrance == null || nearestToTarget == null) return null;
+
+    debugPrint(
+      '[SpaceProvider] Nearest connector to entrance: ${nearestToEntrance.name} '
+      '(${minDistEntrance.toStringAsFixed(0)}m)',
+    );
+    debugPrint(
+      '[SpaceProvider] Nearest connector to target: ${nearestToTarget.name} '
+      '(${minDistTarget.toStringAsFixed(0)}m)',
+    );
+
+    // If both connectors are the same, return a simple 3-point path
+    if (nearestToEntrance.puid == nearestToTarget.puid) {
+      debugPrint('[SpaceProvider] Same connector — straight through');
+      return NavigationRouteModel.hybrid(
+        outdoorPoints: [],
+        indoorRoute: NavigationRouteModel(
+          points: [
+            _poiToRoutePoint(entrancePoi),
+            _poiToRoutePoint(nearestToEntrance),
+            _poiToRoutePoint(targetPoi),
+          ],
+        ),
+      );
+    }
+
+    // Route between the two connectors via the server API
+    try {
+      debugPrint(
+        '[SpaceProvider] Connector→connector route: ${nearestToEntrance.puid} → ${nearestToTarget.puid}',
+      );
+      final connectorRoute = await _navigationRepository.getRouteBetweenPois(
+        fromPuid: nearestToEntrance.puid,
+        toPuid: nearestToTarget.puid,
+      );
+
+      if (connectorRoute.hasRenderablePath && connectorRoute.points.length >= 2) {
+        debugPrint('[SpaceProvider] Connector route succeeded (${connectorRoute.points.length} points)');
+        // Build full path: entrance → connector_start + route + connector_end → target
+        final fullPath = <NavigationRoutePoint>[
+          NavigationRoutePoint(
+            latitude: entrancePoi.latitude,
+            longitude: entrancePoi.longitude,
+            puid: entrancePoi.puid,
+            buid: entrancePoi.buid,
+            floorNumber: entrancePoi.floorNumber,
+            poisType: entrancePoi.poisType,
+          ),
+          NavigationRoutePoint(
+            latitude: nearestToEntrance.latitude,
+            longitude: nearestToEntrance.longitude,
+            puid: nearestToEntrance.puid,
+            buid: nearestToEntrance.buid,
+            floorNumber: nearestToEntrance.floorNumber,
+            poisType: nearestToEntrance.poisType,
+          ),
+          ...connectorRoute.points,
+          NavigationRoutePoint(
+            latitude: nearestToTarget.latitude,
+            longitude: nearestToTarget.longitude,
+            puid: nearestToTarget.puid,
+            buid: nearestToTarget.buid,
+            floorNumber: nearestToTarget.floorNumber,
+            poisType: nearestToTarget.poisType,
+          ),
+          NavigationRoutePoint(
+            latitude: targetPoi.latitude,
+            longitude: targetPoi.longitude,
+            puid: targetPoi.puid,
+            buid: targetPoi.buid,
+            floorNumber: targetPoi.floorNumber,
+            poisType: targetPoi.poisType,
+          ),
+        ];
+
+        return NavigationRouteModel.hybrid(
+          outdoorPoints: [],
+          indoorRoute: NavigationRouteModel(
+            points: fullPath,
+          ),
+        );
+      } else {
+        debugPrint('[SpaceProvider] Connector route returned ${connectorRoute.points.length} points');
+      }
+    } catch (e) {
+      debugPrint('[SpaceProvider] Connector→connector route failed: $e');
+    }
+
+    // Last resort: straight lines through the nearest connectors
+    debugPrint('[SpaceProvider] Falling back to straight-line through connectors');
+    return NavigationRouteModel.hybrid(
+      outdoorPoints: [],
+      indoorRoute: NavigationRouteModel(
+        points: [
+          _poiToRoutePoint(entrancePoi),
+          _poiToRoutePoint(nearestToEntrance),
+          _poiToRoutePoint(nearestToTarget),
+          _poiToRoutePoint(targetPoi),
+        ],
+      ),
+    );
+  }
+
+  NavigationRoutePoint _poiToRoutePoint(PoiModel poi) {
+    return NavigationRoutePoint(
+      latitude: poi.latitude,
+      longitude: poi.longitude,
+      puid: poi.puid,
+      buid: poi.buid,
+      floorNumber: poi.floorNumber,
+      poisType: poi.poisType,
+    );
+  }
+
+  /// Builds a combined route: OSRM from user to nearest custom vertex,
+  /// then custom route from there to the destination.
+  Future<List<LatLng>?> _buildOsrmToCustomRoute(
+    LatLng userLocation,
+    LatLng destination,
+  ) async {
+    final customRepo = _customRouteRepository;
+    if (!customRepo.isLoaded) return null;
+
+    final destVertex = customRepo.graph.nearestVertex(
+      destination,
+      maxDistance: 500.0,
+    );
+    if (destVertex == null) {
+      debugPrint('[SpaceProvider] osrm→custom: no vertex within 500m of dest');
+      return null;
+    }
+    final destVertexIdx = destVertex.$1;
+
+    debugPrint(
+      '[SpaceProvider] osrm→custom: dest vertex=$destVertexIdx, '
+      '${destVertex.$2.toStringAsFixed(0)}m from destination',
+    );
+
+    // Step 1: Get route endpoints (campus road entrances on public roads)
+    final endpoints = customRepo.graph.getRouteEndpoints();
+    debugPrint('[SpaceProvider] osrm→custom: ${endpoints.length} route endpoints');
+
+    if (endpoints.isEmpty) {
+      debugPrint('[SpaceProvider] osrm→custom: no route endpoints');
+      return null;
+    }
+
+    // Step 2: Among endpoints connected to destVertex, find closest to user
+    int? bestEntryIdx;
+    double bestEntryDist = double.infinity;
+
+    for (final (epIdx, epPos) in endpoints) {
+      final path = customRepo.graph.shortestPath(epIdx, destVertexIdx);
+      if (path.isEmpty) continue;
+
+      final dist = Geolocator.distanceBetween(
+        userLocation.latitude,
+        userLocation.longitude,
+        epPos.latitude,
+        epPos.longitude,
+      );
+
+      debugPrint(
+        '[SpaceProvider] osrm→custom: endpoint $epIdx, '
+        '${dist.toStringAsFixed(0)}m from user, '
+        'path to dest: ${path.length} vertices',
+      );
+
+      if (dist < bestEntryDist) {
+        bestEntryDist = dist;
+        bestEntryIdx = epIdx;
+      }
+    }
+
+    if (bestEntryIdx == null) {
+      debugPrint('[SpaceProvider] osrm→custom: no endpoint connected to dest');
+      return null;
+    }
+
+    final entryPos = customRepo.graph.getVertexPosition(bestEntryIdx);
+    debugPrint(
+      '[SpaceProvider] osrm→custom: best entry=$bestEntryIdx, '
+      '${bestEntryDist.toStringAsFixed(0)}m from user',
+    );
+
+    // Step 3: OSRM from user to the campus entrance endpoint
+    final osrmResult = await AnyplaceApiClient.fetchOutdoorWalkingRouteWithMetadata(
+      fromLat: userLocation.latitude,
+      fromLon: userLocation.longitude,
+      toLat: entryPos.latitude,
+      toLon: entryPos.longitude,
+    );
+
+    if (osrmResult == null || osrmResult.points.length < 2) {
+      debugPrint('[SpaceProvider] osrm→custom: OSRM failed');
+      return null;
+    }
+
+    final osrmPath = osrmResult.points;
+
+    // Step 4: Route through custom graph from endpoint to destination
+    final customPath = customRepo.graph.shortestPath(bestEntryIdx, destVertexIdx);
+
+    if (customPath.isEmpty) {
+      debugPrint('[SpaceProvider] osrm→custom: no graph path $bestEntryIdx → $destVertexIdx');
+      return [...osrmPath, destination];
+    }
+
+    final combined = <LatLng>[
+      ...osrmPath,
+      for (final idx in customPath) customRepo.graph.getVertexPosition(idx),
+      destination,
+    ];
+
+    debugPrint(
+      '[SpaceProvider] osrm→custom: ${osrmPath.length} OSRM + '
+      '${customPath.length} custom = ${combined.length} total',
+    );
+    return combined;
   }
 
   /// Clears the currently displayed navigation route.
@@ -828,18 +1227,74 @@ class SpaceProvider extends ChangeNotifier {
     // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 3: OSRM outdoor walking path + indoor route (ALWAYS produces a route) Ã¢â€â‚¬Ã¢â€â‚¬
     if (requestId != _navigationRouteRequestId) return;
 
-    // Get real walking path from OSRM
-    final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
-      fromLat: currentLocation.latitude,
-      fromLon: currentLocation.longitude,
-      toLat: destLatLng.latitude,
-      toLon: destLatLng.longitude,
-    );
+    // Try custom KMZ routes first
+    List<LatLng>? outdoorPath;
+    if (_customRouteRepository.isLoaded) {
+      // Step 1: Try pure custom graph routing
+      final customPath = _customRouteRepository.findRoute(
+        currentLocation.latLng,
+        destLatLng,
+      );
+      if (customPath.length >= 2) {
+        outdoorPath = customPath;
+        debugPrint('[SpaceProvider] Strategy 3: using custom KMZ route (${outdoorPath.length} points)');
+      } else {
+        // Step 2: Try hybrid routing (edge-based snap)
+        final hybridPath = _customRouteRepository.findHybridRoute(
+          currentLocation.latLng,
+          destLatLng,
+          snapThreshold: 150.0,
+        );
+        if (hybridPath != null && hybridPath.length >= 2) {
+          outdoorPath = hybridPath;
+          debugPrint('[SpaceProvider] Strategy 3: using hybrid custom route (${outdoorPath.length} points)');
+        }
+      }
+    }
 
-    // Convert OSRM path to NavigationRoutePoints (marked as outdoor)
+    // Step 3: Try OSRM to nearest custom vertex + custom to destination
+    if (outdoorPath == null && _customRouteRepository.isLoaded) {
+      final osrmToCustomPath = await _buildOsrmToCustomRoute(
+        currentLocation.latLng,
+        destLatLng,
+      );
+      if (osrmToCustomPath != null && osrmToCustomPath.length >= 2) {
+        outdoorPath = osrmToCustomPath;
+        debugPrint('[SpaceProvider] Strategy 3: using OSRM->Custom route (${outdoorPath.length} points)');
+      }
+    }
+
+    // Step 4: Fallback to OSRM if custom routes didn't produce a path
+    if (outdoorPath == null) {
+      final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
+        fromLat: currentLocation.latitude,
+        fromLon: currentLocation.longitude,
+        toLat: destLatLng.latitude,
+        toLon: destLatLng.longitude,
+      );
+
+      if (osrmPath.length >= 2 && _customRouteRepository.isLoaded) {
+        // Try OSRM + Custom tail splice
+        final splicedPath = _customRouteRepository.spliceCustomTail(
+          osrmPath,
+          destLatLng,
+          connectionThreshold: 150.0,
+        );
+        if (splicedPath != null) {
+          outdoorPath = splicedPath;
+          debugPrint('[SpaceProvider] Strategy 3: using OSRM+Custom splice (${outdoorPath.length} points)');
+        } else {
+          outdoorPath = osrmPath;
+        }
+      } else {
+        outdoorPath = osrmPath;
+      }
+    }
+
+    // Convert path to NavigationRoutePoints (marked as outdoor)
     final outdoorPoints = <NavigationRoutePoint>[];
-    if (osrmPath.length >= 2) {
-      for (final pt in osrmPath) {
+    if (outdoorPath.length >= 2) {
+      for (final pt in outdoorPath) {
         outdoorPoints.add(NavigationRoutePoint.outdoor(
           latitude: pt.latitude,
           longitude: pt.longitude,
@@ -1086,18 +1541,36 @@ class SpaceProvider extends ChangeNotifier {
         return;
       }
 
-      if (floorplan != null) {
-        _activeFloorplan = floorplan;
-        _floorplanStatus = FloorplanStatus.ready;
-        _floorplanErrorMessage = null;
-        debugPrint(
-          '[SpaceProvider] Floorplan successfully ready for $targetBuid / Floor $targetFloor (${floorplan.imageSizeBytes} bytes)',
-        );
-      } else {
-        _activeFloorplan = null;
-        _floorplanStatus = FloorplanStatus.unsupported;
-        _floorplanErrorMessage = 'No floorplan image available for this floor.';
-      }
+if (floorplan != null) {
+      // If floorplan has invalid bounds (e.g. 0.0 from missing API data),
+      // use the building's location as fallback center with a small offset
+      // so the floor map renders on the map even when the backend does not
+      // provide explicit geographic bounds.
+      final hasValid = floorplan.hasValidBounds;
+      final buildingLat = _selectedSpace?.latitude ?? 0.0;
+      final buildingLng = _selectedSpace?.longitude ?? 0.0;
+      final epsilon = 0.01; // ~1.1km at equator, reasonable default floor map size when API does not provide bounds
+      final floorplanWithValidBounds = hasValid
+          ? floorplan
+          : floorplan.copyWith(
+              bottomLeftLat: buildingLat - epsilon,
+              bottomLeftLng: buildingLng - epsilon,
+              topRightLat: buildingLat + epsilon,
+              topRightLng: buildingLng + epsilon,
+            );
+
+      _activeFloorplan = floorplanWithValidBounds;
+      _floorplanStatus = FloorplanStatus.ready;
+      _floorplanErrorMessage = null;
+      debugPrint(
+        '[SpaceProvider] Floorplan ready for $targetBuid / Floor $targetFloor '
+        '(${floorplan.imageSizeBytes} bytes, bounds ${hasValid ? 'from API' : 'fallback applied'}',
+      );
+    } else {
+      _activeFloorplan = null;
+      _floorplanStatus = FloorplanStatus.unsupported;
+      _floorplanErrorMessage = 'No floorplan image available for this floor.';
+    }
     } on ApiException catch (e) {
       if (requestId != _floorplanRequestId) return;
 

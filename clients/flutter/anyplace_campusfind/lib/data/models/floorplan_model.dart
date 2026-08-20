@@ -13,6 +13,9 @@ class FloorplanModel {
   final double topRightLng;
   final bool isCached;
   final int imageSizeBytes;
+  /// Optional last-modified timestamp from the cache (ISO 8601 string).
+  /// Used for cache validation / revalidation.
+  final String? lastModified;
 
   const FloorplanModel({
     required this.buid,
@@ -25,7 +28,36 @@ class FloorplanModel {
     required this.topRightLng,
     this.isCached = false,
     this.imageSizeBytes = 0,
+    this.lastModified,
   });
+
+  FloorplanModel copyWith({
+    String? buid,
+    String? floorNumber,
+    String? imagePath,
+    Uint8List? imageBytes,
+    double? bottomLeftLat,
+    double? bottomLeftLng,
+    double? topRightLat,
+    double? topRightLng,
+    bool? isCached,
+    int? imageSizeBytes,
+    String? lastModified,
+  }) {
+    return FloorplanModel(
+      buid: buid ?? this.buid,
+      floorNumber: floorNumber ?? this.floorNumber,
+      imagePath: imagePath ?? this.imagePath,
+      imageBytes: imageBytes ?? this.imageBytes,
+      bottomLeftLat: bottomLeftLat ?? this.bottomLeftLat,
+      bottomLeftLng: bottomLeftLng ?? this.bottomLeftLng,
+      topRightLat: topRightLat ?? this.topRightLat,
+      topRightLng: topRightLng ?? this.topRightLng,
+      isCached: isCached ?? this.isCached,
+      imageSizeBytes: imageSizeBytes ?? this.imageSizeBytes,
+      lastModified: lastModified ?? this.lastModified,
+    );
+  }
 
   /// Geographic bounding box for overlay positioning on FlutterMap.
   LatLngBounds get bounds => LatLngBounds(
@@ -54,11 +86,14 @@ class FloorplanModel {
           runtimeType == other.runtimeType &&
           buid == other.buid &&
           floorNumber == other.floorNumber &&
-          imagePath == other.imagePath;
+          imagePath == other.imagePath &&
+          lastModified == other.lastModified;
 
   @override
-  int get hashCode =>
-      buid.hashCode ^ floorNumber.hashCode ^ imagePath.hashCode;
+  int get hashCode {
+    final code = lastModified?.hashCode ?? 0;
+    return buid.hashCode ^ floorNumber.hashCode ^ imagePath.hashCode ^ code;
+  }
 
   @override
   String toString() =>

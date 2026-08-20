@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart' as provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
 import 'package:anyplace_campusfind/providers/providers.dart';
 import 'package:anyplace_campusfind/screens/main_shell.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
+import 'package:anyplace_campusfind/services/search_service.dart';
+import 'package:anyplace_campusfind/state/space_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +29,10 @@ void main() {
   Widget wrap() {
     return UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: MainShell()),
+      child: provider.ChangeNotifierProvider<SpaceProvider>.value(
+        value: _FakeSpaceProvider(),
+        child: const MaterialApp(home: MainShell()),
+      ),
     );
   }
 
@@ -56,7 +62,8 @@ void main() {
   testWidgets('shows offline banner when data came from snapshot',
       (tester) async {
     container = ProviderContainer(overrides: [
-      loaderOverride(() async => const BulkLoadResult(fromOffline: true)),
+      bulkLoadProvider.overrideWith(
+          (ref) async => const BulkLoadResult(fromOffline: true)),
       cacheServiceProvider.overrideWithValue(cache),
     ]);
     addTearDown(container.dispose);
@@ -68,7 +75,7 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
   });
 
-  testWidgets('bottom nav switches between Home, Search, Saved, Profile',
+  testWidgets('bottom nav switches between Home, Map, Search, Saved',
       (tester) async {
     container = ProviderContainer(overrides: [
       loaderOverride(() async => const BulkLoadResult()),
@@ -86,9 +93,6 @@ void main() {
 
     await tester.tap(find.text('Saved'));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Profile'));
-    await tester.pumpAndSettle();
   });
 }
 
@@ -99,4 +103,15 @@ class _FakeBulkLoader implements BulkLoader {
 
   @override
   Future<BulkLoadResult> load() => loader();
+}
+
+class _FakeSpaceProvider extends SpaceProvider {
+  @override
+  Future<void> loadSpaces({bool forceReload = false}) async {}
+
+  @override
+  Future<void> loadAllFloorsAndPois(SearchService searchService) async {}
+
+  @override
+  Future<void> loadCustomRoutes() async {}
 }

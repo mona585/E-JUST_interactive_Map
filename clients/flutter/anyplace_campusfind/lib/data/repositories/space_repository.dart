@@ -21,6 +21,7 @@ abstract class SpaceRepository {
 class AnyplaceSpaceRepository implements SpaceRepository {
   final AnyplaceApiClient _apiClient;
   List<SpaceModel>? _cachedSpaces;
+  String? _cachedSpacesLastModified;
   final Map<String, List<FloorModel>> _cachedFloors = {};
 
   AnyplaceSpaceRepository({AnyplaceApiClient? apiClient})
@@ -29,11 +30,19 @@ class AnyplaceSpaceRepository implements SpaceRepository {
   @override
   Future<List<SpaceModel>> getPublicSpaces({bool forceReload = false}) async {
     if (!forceReload && _cachedSpaces != null && _cachedSpaces!.isNotEmpty) {
+      // If we have cached data with a lastModified timestamp, we could validate
+      // against the server, but for now return cached data.
+      // TODO: When backend provides lastModified, add validation here.
       return _cachedSpaces!;
     }
 
     final spaces = await _apiClient.fetchPublicSpaces();
     _cachedSpaces = List<SpaceModel>.unmodifiable(spaces);
+    // Extract lastModified from the last space if available
+    if (spaces.isNotEmpty) {
+      final lastSpace = spaces.last;
+      _cachedSpacesLastModified = lastSpace.lastModified;
+    }
     return _cachedSpaces!;
   }
 
@@ -49,6 +58,10 @@ class AnyplaceSpaceRepository implements SpaceRepository {
 
     try {
       final space = await _apiClient.fetchSpaceDetails(buid);
+      // Update cache
+      if (space != null && space.lastModified != null) {
+        _cachedSpacesLastModified = space.lastModified;
+      }
       return space;
     } catch (_) {
       return null;

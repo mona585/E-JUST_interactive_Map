@@ -32,6 +32,11 @@ class SpaceModel {
   /// Type of space (e.g. "building", "vessel").
   final String spaceType;
 
+  /// Optional last-modified timestamp from the Anyplace backend (ISO 8601 string).
+  /// Used for cache validation / revalidation. When present, the value is
+  /// provided by the backend and should not be hardcoded or fabricated.
+  final String? lastModified;
+
   const SpaceModel({
     required this.buid,
     required this.name,
@@ -43,6 +48,7 @@ class SpaceModel {
     this.url,
     this.isPublished = true,
     this.spaceType = 'building',
+    this.lastModified,
   });
 
   /// LatLng coordinate helper for Flutter Map.
@@ -63,8 +69,15 @@ class SpaceModel {
     final bucode = json['bucode']?.toString().trim();
     final address = json['address']?.toString().trim();
     final url = json['url']?.toString().trim();
+    final lastModifiedRaw = json['last_modified'];
 
-    final isPublishedRaw = json['is_published'];
+    final String? lastModified = lastModifiedRaw != null
+        ? lastModifiedRaw.toString().trim().isNotEmpty
+            ? lastModifiedRaw.toString().trim()
+            : null
+        : null;
+
+    final dynamic isPublishedRaw = json['is_published'];
     final bool isPublished = isPublishedRaw == null
         ? true
         : (isPublishedRaw is bool
@@ -84,6 +97,7 @@ class SpaceModel {
       url: url != null && url.isNotEmpty ? url : null,
       isPublished: isPublished,
       spaceType: spaceType.isNotEmpty ? spaceType : 'building',
+      lastModified: lastModified,
     );
   }
 
@@ -98,6 +112,7 @@ class SpaceModel {
       if (bucode != null) 'bucode': bucode,
       if (address != null) 'address': address,
       if (url != null) 'url': url,
+      if (lastModified != null) 'last_modified': lastModified,
       'is_published': isPublished.toString(),
       'space_type': spaceType,
     };
@@ -124,6 +139,7 @@ class SpaceModel {
     String? url,
     bool? isPublished,
     String? spaceType,
+    String? lastModified,
   }) {
     return SpaceModel(
       buid: buid ?? this.buid,
@@ -136,6 +152,7 @@ class SpaceModel {
       url: url ?? this.url,
       isPublished: isPublished ?? this.isPublished,
       spaceType: spaceType ?? this.spaceType,
+      lastModified: lastModified ?? this.lastModified,
     );
   }
 
@@ -148,15 +165,19 @@ class SpaceModel {
           name == other.name &&
           latitude == other.latitude &&
           longitude == other.longitude &&
-          bucode == other.bucode;
+          bucode == other.bucode &&
+          lastModified == other.lastModified;
 
   @override
-  int get hashCode =>
-      buid.hashCode ^
-      name.hashCode ^
-      latitude.hashCode ^
-      longitude.hashCode ^
-      bucode.hashCode;
+  int get hashCode {
+    final code = lastModified?.hashCode ?? 0;
+    return buid.hashCode ^
+        name.hashCode ^
+        latitude.hashCode ^
+        longitude.hashCode ^
+        bucode.hashCode ^
+        code;
+  }
 
   @override
   String toString() {

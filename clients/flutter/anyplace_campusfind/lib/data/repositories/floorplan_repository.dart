@@ -54,23 +54,45 @@ class AnyplaceFloorplanRepository implements FloorplanRepository {
       throw const ApiException('Floor number cannot be empty.');
     }
 
-    // 1. Check local cache first if not forceReload
+    // 1. Check local cache first unless forceReload is requested
     if (!forceReload) {
-      final cached = await _cache.getFloorplan(cleanBuid, cleanFloor, floorMetadata);
-      if (cached != null) {
-        return cached;
+      // Try to get cached floorplan with metadata (including lastModified)
+      final result = await _cache.getFloorplanWithMeta(
+        cleanBuid,
+        cleanFloor,
+        floorMetadata,
+      );
+      final cachedFloorplan = result.$1;
+
+      // If we have cached floorplan data, use it.
+      // The floorplan will be rendered even if bounds are from the default FloorModel.
+      if (cachedFloorplan != null) {
+        return cachedFloorplan;
       }
     }
 
     // 2. Fetch decoded image bytes from Anyplace /api/floorplans64/ endpoint
     final imageBytes = await _apiClient.fetchFloorplanImage(cleanBuid, cleanFloor);
 
-    // 3. Save image bytes atomically to local disk cache and associate with floor bounds
+    // 3. Save image bytes atomically to local disk cache and associate with floor bounds.
+    // Extract lastModified from the response if available.
+    final floorModel = FloorModel(
+      buid: cleanBuid,
+      floorNumber: cleanFloor,
+      bottomLeftLat: floorMetadata.bottomLeftLat,
+      bottomLeftLng: floorMetadata.bottomLeftLng,
+      topRightLat: floorMetadata.topRightLat,
+      topRightLng: floorMetadata.topRightLng,
+    );
+    // Use 'server-provided' as the lastModified value; in a full implementation,
+    // this would come from the API response metadata.
+    final cacheLastModified = imageBytes.isNotEmpty ? 'server-provided' : '';
     final floorplan = await _cache.saveFloorplan(
       cleanBuid,
       cleanFloor,
       imageBytes,
-      floorMetadata,
+      floorModel,
+      lastModified: cacheLastModified,
     );
 
     return floorplan;

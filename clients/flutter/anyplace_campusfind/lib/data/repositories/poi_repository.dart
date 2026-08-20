@@ -53,17 +53,25 @@ class AnyplacePoiRepository implements PoiRepository {
 
     // 1. Check local cache first unless forceReload is requested
     if (!forceReload) {
-      final cached = await _cache.getPois(cleanBuid, cleanFloor);
-      if (cached != null) {
-        return cached;
+      final result = await _cache.getPoisWithMeta(cleanBuid, cleanFloor);
+      final cachedPOIs = result.$1;
+
+      // If we have cached data with a lastModified timestamp, we could validate
+      // against the server to determine if data has changed.
+      // For now, use cached data if available (client-side optimization).
+      // TODO: When backend supports conditional requests (If-None-Match/304),
+      // add validation here to avoid unnecessary downloads.
+      if (cachedPOIs != null) {
+        return cachedPOIs;
       }
     }
 
     // 2. Fetch POIs from backend API
     final pois = await _apiClient.fetchPoisByFloor(cleanBuid, cleanFloor);
 
-    // 3. Save to local cache asynchronously
-    await _cache.savePois(cleanBuid, cleanFloor, pois);
+    // 3. Save to local cache asynchronously with lastModified from the response
+    final lastModifiedObj = pois.isNotEmpty ? pois.last.lastModified : null;
+    await _cache.savePois(cleanBuid, cleanFloor, pois, lastModifiedObj ?? '');
 
     return pois;
   }

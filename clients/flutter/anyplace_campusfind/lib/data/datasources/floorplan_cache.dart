@@ -9,8 +9,9 @@ import '../models/floorplan_model.dart';
 /// Local disk cache manager for Anyplace geographic floorplan images.
 ///
 /// Directory structure:
-/// `<baseDir>/floorplans/<buid>/<floor>/floorplan.png`
-/// `<baseDir>/floorplans/<buid>/<floor>/metadata.json`
+/// `<baseDir>/floorplans/<buid>/<floor>/`
+///   - floorplan.png    : the floorplan image
+///   - metadata.json    : metadata including lastModified timestamp
 class FloorplanCache {
   final Directory? customBaseDir;
 
@@ -32,6 +33,24 @@ class FloorplanCache {
     return Directory('${root.path}/$cleanBuid/$cleanFloor');
   }
 
+  /// Reads the metadata file if it exists, returning the [lastModified] timestamp.
+  Future<String?> _readLastModified(String buid, String floor) async {
+    final dir = await getFloorDir(buid, floor);
+    final metaFile = File('${dir.path}/metadata.json');
+    if (await metaFile.exists()) {
+      try {
+        final content = await metaFile.readAsString();
+        final dynamic json = jsonDecode(content);
+        if (json is Map<String, dynamic>) {
+          return json['lastModified'] ?? json['saved_at'];
+        }
+      } catch (e) {
+        debugPrint('[FloorplanCache] Error reading metadata.json: $e');
+      }
+    }
+    return null;
+  }
+
   /// Checks if a valid cached floorplan image exists for the given building and floor.
   Future<bool> hasFloorplan(String buid, String floor) async {
     final dir = await getFloorDir(buid, floor);
@@ -40,22 +59,19 @@ class FloorplanCache {
   }
 
   /// Retrieves the cached [FloorplanModel] if available, otherwise null.
-  Future<FloorplanModel?> getFloorplan(
-    String buid,
-    String floor,
-    FloorModel floorMetadata,
-  ) async {
-    final cleanBuid = buid.trim();
-    final cleanFloor = floor.trim();
+  /// Also returns the [lastModified] timestamp from the cache metadata.
+  Future<(FloorplanModel?, String?)> getFloorplanWithMeta(
+      String buid, String floor, FloorModel floorMetadata) async {
+    var cachedLastModified = await _readLastModified(buid, floor);
 
-    if (!await hasFloorplan(cleanBuid, cleanFloor)) {
+    if (!await hasFloorplan(buid, floor)) {
       debugPrint(
-        '[FloorplanCache] Cache MISS for floorplan buid=$cleanBuid, floor=$cleanFloor',
+        '[FloorplanCache] Cache MISS for floorplan buid=$buid, floor=$floor',
       );
-      return null;
+      return (null, null);
     }
 
-    final dir = await getFloorDir(cleanBuid, cleanFloor);
+    final dir = await getFloorDir(buid, floor);
     final imageFile = File('${dir.path}/floorplan.png');
     final fileSize = await imageFile.length();
 
@@ -75,6 +91,9 @@ class FloorplanCache {
           swLng = (json['bottom_left_lng'] as num?)?.toDouble() ?? swLng;
           neLat = (json['top_right_lat'] as num?)?.toDouble() ?? neLat;
           neLng = (json['top_right_lng'] as num?)?.toDouble() ?? neLng;
+          // Cache lastModified takes precedence, fall back to saved_at
+          cachedLastModified ??=
+              json['lastModified'] ?? json['saved_at'] as String?;
         }
       } catch (e) {
         debugPrint('[FloorplanCache] Error reading metadata.json: $e');
@@ -82,12 +101,12 @@ class FloorplanCache {
     }
 
     debugPrint(
-      '[FloorplanCache] Cache HIT for floorplan buid=$cleanBuid, floor=$cleanFloor ($fileSize bytes)',
+      '[FloorplanCache] Cache HIT for floorplan buid=$buid, floor=$floor ($fileSize bytes, lastModified: $cachedLastModified)',
     );
 
-    return FloorplanModel(
-      buid: cleanBuid,
-      floorNumber: cleanFloor,
+    return (FloorplanModel(
+      buid: buid,
+      floorNumber: floor,
       imagePath: imageFile.path,
       bottomLeftLat: swLat,
       bottomLeftLng: swLng,
@@ -95,16 +114,19 @@ class FloorplanCache {
       topRightLng: neLng,
       isCached: true,
       imageSizeBytes: fileSize,
-    );
+      lastModified: cachedLastModified,
+    ), cachedLastModified);
   }
 
   /// Saves the decoded PNG image bytes to disk atomically and returns the resulting [FloorplanModel].
+  /// Also writes the [lastModified] timestamp to metadata.json.
   Future<FloorplanModel> saveFloorplan(
-    String buid,
-    String floor,
-    Uint8List imageBytes,
-    FloorModel floorMetadata,
-  ) async {
+      String buid,
+      String floor,
+      Uint8List imageBytes,
+      FloorModel floorMetadata, {
+    required String lastModified,
+  }) async {
     final cleanBuid = buid.trim();
     final cleanFloor = floor.trim();
     final dir = await getFloorDir(cleanBuid, cleanFloor);
@@ -121,7 +143,7 @@ class FloorplanCache {
       await tempFile.rename(targetFile.path);
     }
 
-    // 3. Write metadata.json
+    // 3. Write metadata.json with lastModified
     final metaFile = File('${dir.path}/metadata.json');
     final swLat = floorMetadata.bottomLeftLat ?? 0.0;
     final swLng = floorMetadata.bottomLeftLng ?? 0.0;
@@ -131,17 +153,17 @@ class FloorplanCache {
     final metaJson = jsonEncode({
       'buid': cleanBuid,
       'floor_number': cleanFloor,
+      'lastModified': lastModified,
       'bottom_left_lat': swLat,
       'bottom_left_lng': swLng,
       'top_right_lat': neLat,
       'top_right_lng': neLng,
       'size_bytes': imageBytes.length,
-      'saved_at': DateTime.now().toIso8601String(),
     });
     await metaFile.writeAsString(metaJson, flush: true);
 
     debugPrint(
-      '[FloorplanCache] Saved ${imageBytes.length} bytes to ${targetFile.path}',
+      '[FloorplanCache] Saved ${imageBytes.length} bytes to ${targetFile.path}, lastModified=$lastModified',
     );
 
     return FloorplanModel(
@@ -155,6 +177,7 @@ class FloorplanCache {
       topRightLng: neLng,
       isCached: true,
       imageSizeBytes: imageBytes.length,
+      lastModified: lastModified,
     );
   }
 

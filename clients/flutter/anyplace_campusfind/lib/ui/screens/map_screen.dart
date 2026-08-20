@@ -1,6 +1,10 @@
 import 'dart:io';
-import 'dart:math' show cos, pi;
+import 'dart:math' show cos, pi, sin, atan2;
+import 'dart:typed_data';
+import 'package:geolocator/geolocator.dart';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +13,7 @@ import '../../config/navigation_config.dart';
 import '../../config/theme.dart';
 import '../../data/models/route_segment.dart';
 import '../../data/models/space_model.dart';
+import '../../data/models/user_location.dart';
 import '../../state/location_provider.dart';
 import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
@@ -30,10 +35,22 @@ class _MapScreenState extends State<MapScreen>
   String? _lastCenteredFloorKey;
   bool _lastFollowMode = false;
   bool _hasInitialCentering = false;
+  bool _hasCenteredOnCustomRoutes = false;
+  Uint8List? _cachedResizedFloorplan;
+  String? _cachedResizedFloorplanPath;
 
   // Marker icon caches (generated once from widget screenshots)
   BitmapDescriptor? _buildingIcon;
   BitmapDescriptor? _buildingSelectedIcon;
+
+  // Bearing tracking for Google Maps-style camera rotation
+  double _currentBearing = 0.0;    // Smoothed bearing applied to camera
+  double _lastBearing = 0.0;       // Raw bearing from last position delta
+  LatLng? _lastPositionForBearing; // Previous position for bearing computation
+  DateTime _lastBearingUpdateTime = DateTime.now();
+  DateTime _lastMovingTime = DateTime.now();
+  bool _isUserGesture = false;     // True when user is manually panning
+  bool _isProgrammaticMove = false;
 
   @override
   void initState() {
@@ -91,11 +108,51 @@ class _MapScreenState extends State<MapScreen>
     if (_hasInitialCentering) return;
     final location = context.read<LocationProvider>().currentLocation;
     if (location != null && _mapController != null) {
-      debugPrint('[MapScreen] Auto-centering on ${location.latitude},${location.longitude}');
+      debugPrint('[MapScreen] GPS location: ${location.latitude},${location.longitude}');
       _hasInitialCentering = true;
       context.read<LocationProvider>().removeListener(_checkInitialCentering);
-      _animatedMapMove(location.latLng, MapConfig.defaultZoom);
+      if (!_hasCenteredOnCustomRoutes) {
+        debugPrint('[MapScreen] Auto-centering on GPS ${location.latitude},${location.longitude}');
+        _animatedMapMove(location.latLng, MapConfig.defaultZoom);
+      } else {
+        debugPrint('[MapScreen] Skipping GPS centering — already centered on custom routes');
+      }
     }
+  }
+
+  /// Centers the map on the custom route bounds if no GPS fix has been acquired.
+  /// Called after custom routes finish loading.
+  void _centerOnCustomRoutesIfNeeded() {
+    if (_hasInitialCentering) return;
+    if (_hasCenteredOnCustomRoutes) return;
+    if (_mapController == null) return;
+
+    final spaceProvider = context.read<SpaceProvider>();
+    if (!spaceProvider.customRouteRepository.isLoaded) return;
+
+    final allPoints = <LatLng>[];
+    for (final route in spaceProvider.customRouteRepository.routes) {
+      allPoints.addAll(route.vertices);
+    }
+    if (allPoints.isEmpty) return;
+
+    _hasCenteredOnCustomRoutes = true;
+
+    // Compute bounds
+    double minLat = allPoints.first.latitude;
+    double maxLat = allPoints.first.latitude;
+    double minLng = allPoints.first.longitude;
+    double maxLng = allPoints.first.longitude;
+    for (final pt in allPoints) {
+      if (pt.latitude < minLat) minLat = pt.latitude;
+      if (pt.latitude > maxLat) maxLat = pt.latitude;
+      if (pt.longitude < minLng) minLng = pt.longitude;
+      if (pt.longitude > maxLng) maxLng = pt.longitude;
+    }
+
+    final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+    debugPrint('[MapScreen] Centering on custom routes: $center');
+    _animatedMapMove(center, 17.0);
   }
 
   @override
@@ -110,6 +167,9 @@ class _MapScreenState extends State<MapScreen>
       final navController = context.read<NavigationController>();
       navController.removeListener(_onNavigationChanged);
     } catch (_) {}
+    _currentBearing = 0.0;
+    _lastPositionForBearing = null;
+    _isUserGesture = false;
     super.dispose();
   }
 
@@ -135,19 +195,86 @@ class _MapScreenState extends State<MapScreen>
     final nav = context.read<NavigationController>();
     final locationProvider = context.read<LocationProvider>();
     final location = locationProvider.currentLocation;
+    final now = DateTime.now();
 
-    if (nav.isActive && nav.followMode && location != null) {
-      _followUserPosition(location.latLng, nav.subState);
+    if (!nav.isActive) {
+      _currentBearing = 0.0;
+      _lastPositionForBearing = null;
+      _lastFollowMode = false;
+      return;
+    }
+
+    if (nav.followMode && location != null) {
+      final bearing = _updateBearing(location, now);
+      _followUserPosition(location.latLng, nav.subState, bearing: bearing);
     }
 
     // Detect follow mode turning on (e.g. re-center tap)
     if (nav.followMode && !_lastFollowMode && location != null) {
-      _followUserPosition(location.latLng, nav.subState);
+      final bearing = _updateBearing(location, now);
+      _followUserPosition(location.latLng, nav.subState, bearing: bearing);
     }
     _lastFollowMode = nav.followMode;
   }
 
-  void _followUserPosition(LatLng userPosition, NavigationSubState subState) {
+  double _computeBearing(LatLng from, LatLng to) {
+    final dLon = (to.longitude - from.longitude) * pi / 180;
+    final lat1 = from.latitude * pi / 180;
+    final lat2 = to.latitude * pi / 180;
+    final y = sin(dLon) * cos(lat2);
+    final x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    return (atan2(y, x) * 180 / pi + 360) % 360;
+  }
+
+  double _smoothBearing(double raw, double current) {
+    double diff = raw - current;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    return (current + NavigationConfig.bearingSmoothingFactor * diff + 360) % 360;
+  }
+
+  double _updateBearing(UserLocation location, DateTime now) {
+    final currentPos = location.latLng;
+
+    if (_lastPositionForBearing == null) {
+      _lastPositionForBearing = currentPos;
+      _currentBearing = 0.0;
+      _lastMovingTime = now;
+      return _currentBearing;
+    }
+
+    // Check update interval
+    final elapsed = now.difference(_lastBearingUpdateTime).inMilliseconds;
+    if (elapsed < NavigationConfig.bearingUpdateIntervalMs) {
+      return _currentBearing;
+    }
+
+    final distance = Geolocator.distanceBetween(
+      _lastPositionForBearing!.latitude, _lastPositionForBearing!.longitude,
+      currentPos.latitude, currentPos.longitude,
+    );
+
+    final speed = location.speed;
+
+    // Only update bearing if moving above threshold
+    if (speed > NavigationConfig.bearingSpeedThreshold && distance > 0.5) {
+      _lastBearing = _computeBearing(_lastPositionForBearing!, currentPos);
+      _currentBearing = _smoothBearing(_lastBearing, _currentBearing);
+      _lastMovingTime = now;
+    } else {
+      // Standing still — hold last bearing briefly, then fade to 0
+      final stationaryMs = now.difference(_lastMovingTime).inMilliseconds;
+      if (stationaryMs > NavigationConfig.bearingHoldDurationMs) {
+        _currentBearing = _smoothBearing(0.0, _currentBearing);
+      }
+    }
+
+    _lastPositionForBearing = currentPos;
+    _lastBearingUpdateTime = now;
+    return _currentBearing;
+  }
+
+  void _followUserPosition(LatLng userPosition, NavigationSubState subState, {double bearing = 0.0}) {
     if (!mounted || _mapController == null) return;
     final targetZoom = subState == NavigationSubState.indoor
         ? NavigationConfig.indoorFollowZoom
@@ -160,6 +287,7 @@ class _MapScreenState extends State<MapScreen>
     _animatedMapMove(
       LatLng(userPosition.latitude - latOffset, userPosition.longitude),
       targetZoom,
+      bearing: bearing,
     );
   }
 
@@ -169,16 +297,20 @@ class _MapScreenState extends State<MapScreen>
     _animatedMapMove(space.latLng, 16.5);
   }
 
-  void _animatedMapMove(LatLng destLocation, double destZoom) {
+  void _animatedMapMove(LatLng destLocation, double destZoom, {double bearing = 0.0}) {
     if (_mapController == null) return;
+    _isProgrammaticMove = true;
     _mapController!.animateCamera(
       CameraUpdate.newCameraPosition(
         CameraPosition(
           target: destLocation,
           zoom: destZoom,
+          bearing: bearing,
         ),
       ),
-    );
+    ).then((_) {
+      _isProgrammaticMove = false;
+    });
   }
 
   void _zoomIn() {
@@ -262,9 +394,17 @@ class _MapScreenState extends State<MapScreen>
         _lastCenteredFloorKey = key;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _mapController != null) {
+            final floorplan = spaceProvider.activeFloorplan;
+            // Only center on floorplan if it has valid geographic bounds;
+            // otherwise fall back to the selected space location so the
+            // building remains visible when the backend does not provide
+            // floorplan bounds.
+            final center =
+                floorplan?.hasValidBounds == true
+                    ? floorplan!.center
+                    : spaceProvider.selectedSpace!.latLng;
             _animatedMapMove(
-              spaceProvider.activeFloorplan?.center ??
-                  spaceProvider.selectedSpace!.latLng,
+              center,
               MapConfig.indoorFloorplanZoom,
             );
           }
@@ -375,9 +515,38 @@ class _MapScreenState extends State<MapScreen>
     return markers;
   }
 
-  /// Build polylines for navigation routes
+  /// Build polylines for navigation routes and custom KMZ routes
   Set<Polyline> _buildPolylines(SpaceProvider spaceProvider) {
     final polylines = <Polyline>{};
+
+    debugPrint('[MapScreen] _buildPolylines: customRouteRepository.isLoaded=${spaceProvider.customRouteRepository.isLoaded}, routes=${spaceProvider.customRouteRepository.routes.length}');
+
+    // Custom KMZ routes (shown as green polylines when no active navigation)
+    if (spaceProvider.customRouteRepository.isLoaded) {
+      final customRoutes = spaceProvider.customRouteRepository.getAllRoutePolylinePoints();
+      debugPrint('[MapScreen] _buildPolylines: customRoutes count=${customRoutes.length}');
+      for (var i = 0; i < customRoutes.length; i++) {
+        final routePoints = customRoutes[i];
+        debugPrint('[MapScreen] _buildPolylines: route $i has ${routePoints.length} points, first=${routePoints.first}, last=${routePoints.last}');
+        if (routePoints.length >= 2) {
+          // White outline (wider, behind)
+          polylines.add(Polyline(
+            polylineId: PolylineId('custom_route_${i}_outline'),
+            points: routePoints,
+            width: 12,
+            color: Colors.white,
+          ));
+          // Gray fill (narrower, on top) — Google Maps road style
+          polylines.add(Polyline(
+            polylineId: PolylineId('custom_route_$i'),
+            points: routePoints,
+            width: 6,
+            color: const Color(0xFF9E9E9E),
+          ));
+        }
+      }
+    }
+
     final route = spaceProvider.activeNavigationRoute;
     if (route == null) return polylines;
 
@@ -457,23 +626,97 @@ class _MapScreenState extends State<MapScreen>
   /// Build ground overlays for floorplan images
   Set<GroundOverlay> _buildGroundOverlays(SpaceProvider spaceProvider) {
     final overlays = <GroundOverlay>{};
-    if (!spaceProvider.hasActiveFloorplan || spaceProvider.activeFloorplanImagePath == null) {
+    if (!spaceProvider.hasActiveFloorplan ||
+        spaceProvider.activeFloorplanImagePath == null) {
       return overlays;
     }
 
     final floorplan = spaceProvider.activeFloorplan!;
-    final imageBytes = File(spaceProvider.activeFloorplanImagePath!).readAsBytesSync();
+    final imagePath = spaceProvider.activeFloorplanImagePath!;
+
+    if (_cachedResizedFloorplanPath == imagePath && _cachedResizedFloorplan != null) {
+      debugPrint('[MapScreen] _buildGroundOverlays: using cached resized image (${_cachedResizedFloorplan!.length} bytes)');
+      overlays.add(GroundOverlay.fromBounds(
+        groundOverlayId: GroundOverlayId('floorplan_${floorplan.buid}_${floorplan.floorNumber}'),
+        image: BitmapDescriptor.bytes(_cachedResizedFloorplan!, bitmapScaling: MapBitmapScaling.none),
+        bounds: floorplan.bounds,
+        transparency: 0.0,
+      ));
+      return overlays;
+    }
+
+    final rawBytes = <Uint8List>[];
+    try {
+      rawBytes.add(File(imagePath).readAsBytesSync());
+    } on FileSystemException catch (_) {
+      debugPrint('[MapScreen] _buildGroundOverlays: failed to read floorplan image file at $imagePath');
+      return overlays;
+    } catch (e) {
+      debugPrint('[MapScreen] _buildGroundOverlays: unexpected error reading floorplan: $e');
+      return overlays;
+    }
+
+    if (rawBytes.isEmpty || rawBytes.first.isEmpty) {
+      debugPrint('[MapScreen] _buildGroundOverlays: floorplan image data is empty');
+      return overlays;
+    }
+
+    _resizeFloorplanAsync(rawBytes.first, imagePath);
 
     overlays.add(GroundOverlay.fromBounds(
-      groundOverlayId: GroundOverlayId(
-        'floorplan_${floorplan.buid}_${floorplan.floorNumber}',
-      ),
-      image: BitmapDescriptor.bytes(imageBytes, bitmapScaling: MapBitmapScaling.none),
+      groundOverlayId: GroundOverlayId('floorplan_${floorplan.buid}_${floorplan.floorNumber}'),
+      image: BitmapDescriptor.bytes(rawBytes.first, bitmapScaling: MapBitmapScaling.none),
       bounds: floorplan.bounds,
       transparency: 0.0,
     ));
-
     return overlays;
+  }
+
+  void _resizeFloorplanAsync(Uint8List rawBytes, String imagePath) async {
+    try {
+      final codec = await ui.instantiateImageCodec(rawBytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final width = image.width;
+      final height = image.height;
+      const maxDim = 2048;
+      debugPrint('[MapScreen] _resizeFloorplanAsync: original ${width}x${height}');
+
+      int newWidth = width;
+      int newHeight = height;
+      if (width > maxDim || height > maxDim) {
+        final ratio = width > height ? maxDim / width : maxDim / height;
+        newWidth = (width * ratio).round();
+        newHeight = (height * ratio).round();
+      }
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final paint = Paint()..filterQuality = FilterQuality.medium;
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+        Rect.fromLTWH(0, 0, newWidth.toDouble(), newHeight.toDouble()),
+        paint,
+      );
+      final picture = recorder.endRecording();
+      final resizedImage = await picture.toImage(newWidth, newHeight);
+      image.dispose();
+
+      final byteData = await resizedImage.toByteData(format: ui.ImageByteFormat.png);
+      resizedImage.dispose();
+
+      _cachedResizedFloorplan = byteData?.buffer.asUint8List() ?? rawBytes;
+      _cachedResizedFloorplanPath = imagePath;
+      debugPrint('[MapScreen] _resizeFloorplanAsync: done ${newWidth}x${newHeight}, ${_cachedResizedFloorplan!.length} bytes');
+
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('[MapScreen] _resizeFloorplanAsync FAILED: $e');
+      _cachedResizedFloorplan = rawBytes;
+      _cachedResizedFloorplanPath = imagePath;
+      if (mounted) setState(() {});
+    }
   }
 
   @override
@@ -484,6 +727,11 @@ class _MapScreenState extends State<MapScreen>
         final userLocation = locationProvider.currentLocation;
 
         _checkFloorplanCameraCenter(spaceProvider);
+
+        // If no GPS and no building selected, try to center on custom routes
+        if (!_hasInitialCentering && !_hasCenteredOnCustomRoutes) {
+          _centerOnCustomRoutesIfNeeded();
+        }
 
         // Initial camera position
         final initialTarget = selectedSpace?.latLng ??
@@ -503,6 +751,7 @@ class _MapScreenState extends State<MapScreen>
                   _mapController = controller;
                   // If location was already acquired before map creation, center now
                   _checkInitialCentering();
+                  _centerOnCustomRoutesIfNeeded();
                 },
                 onTap: (LatLng latLng) {
                   if (spaceProvider.selectedPoi != null) {
@@ -513,8 +762,10 @@ class _MapScreenState extends State<MapScreen>
                 },
                 onCameraMove: (CameraPosition position) {
                   final nav = context.read<NavigationController>();
-                  if (nav.isActive && nav.followMode) {
-                    // Don't exit follow mode during programmatic moves
+                  if (nav.isActive && nav.followMode && !_isProgrammaticMove) {
+                    // User is manually panning — exit follow mode
+                    _isUserGesture = true;
+                    nav.exitFollowMode();
                   }
                 },
                 onCameraIdle: () {
@@ -673,6 +924,7 @@ class _MapScreenState extends State<MapScreen>
                         if (nav.isActive) {
                           nav.resumeFollowMode();
                         }
+                        _isUserGesture = false;
                         _onMyLocationTapped();
                       },
                       onZoomIn: _zoomIn,

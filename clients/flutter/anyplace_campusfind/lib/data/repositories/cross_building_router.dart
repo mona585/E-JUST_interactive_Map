@@ -1,6 +1,7 @@
 import 'dart:math' show cos, sin, atan2, pi;
 
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../datasources/anyplace_api_client.dart';
@@ -9,6 +10,7 @@ import '../models/poi_model.dart';
 import '../models/route_segment.dart';
 import '../models/space_model.dart';
 import '../../utils/poi_classification.dart';
+import 'custom_route_repository.dart';
 
 /// Orchestrates cross-building navigation by composing multi-segment routes.
 ///
@@ -29,10 +31,14 @@ class CrossBuildingRouter {
   /// Loads all floors for a building.
   Future<List<String>> Function(String buid) loadFloorNumbers;
 
+  /// Custom route repository for outdoor walking paths (KMZ routes).
+  final CustomRouteRepository? customRouteRepository;
+
   CrossBuildingRouter({
     required this.isPositionInBuilding,
     required this.loadPois,
     required this.loadFloorNumbers,
+    this.customRouteRepository,
   });
 
   /// Composes a cross-building route from [userLocation] to [targetSpace].
@@ -104,6 +110,11 @@ class CrossBuildingRouter {
     final entrancePoi = entranceResult.poi;
     final entrancePoint = entrancePoi?.latLng ?? targetSpace.latLng;
     final isEntranceFallback = entrancePoi == null;
+
+    print(
+      '[ENTRANCE_DEBUG] Step 4: entrancePoi=${entrancePoi?.name}(puid=${entrancePoi?.puid}, floor=${entrancePoi?.floorNumber}), '
+      'isFallback=$isEntranceFallback, entrancePoint=$entrancePoint, targetPuid=$targetPuid',
+    );
 
     debugPrint(
       '[CrossBuildingRouter] Entrance: ${isEntranceFallback ? "centroid fallback" : entrancePoi.name} '
@@ -424,34 +435,357 @@ class CrossBuildingRouter {
   // ──────────────────────────────────────────────────────────────
 
   /// Generates an outdoor walking segment from exit to entrance.
+  ///
+  /// Uses a multi-tier approach:
+  /// 1. Pure custom KMZ route (both endpoints near graph vertices)
+  /// 2. Hybrid custom route (edge-snap both endpoints)
+  /// 3. OSRM to nearest custom vertex + custom route to destination
+  /// 4. OSRM route with custom tail splice
+  /// 5. OSRM-only fallback
   Future<RouteSegment?> _generateOutdoorSegment({
     required LatLng exitPoint,
     required LatLng entrancePoint,
     required String targetBuid,
   }) async {
-    final result = await AnyplaceApiClient.fetchOutdoorWalkingRouteWithMetadata(
+    final customRepo = customRouteRepository;
+
+    // ── Tier 1: Pure custom graph routing ──
+    if (customRepo != null && customRepo.isLoaded) {
+      final customPath = customRepo.findRoute(exitPoint, entrancePoint);
+      if (customPath.length >= 2) {
+        debugPrint(
+          '[CrossBuildingRouter] Outdoor: pure custom route (${customPath.length} points)',
+        );
+        return RouteSegment.outdoor(
+          points: customPath,
+          buildingId: targetBuid,
+          instruction: 'Walk to destination building (campus route)',
+          distance: _computePathDistance(customPath),
+        );
+      }
+    }
+
+    // ── Tier 2: Hybrid custom route (edge-snap) ──
+    if (customRepo != null && customRepo.isLoaded) {
+      final hybridPath = customRepo.findHybridRoute(
+        exitPoint,
+        entrancePoint,
+        snapThreshold: 150.0,
+      );
+      if (hybridPath != null && hybridPath.length >= 2) {
+        debugPrint(
+          '[CrossBuildingRouter] Outdoor: hybrid custom route (${hybridPath.length} points)',
+        );
+        return RouteSegment.outdoor(
+          points: hybridPath,
+          buildingId: targetBuid,
+          instruction: 'Walk to destination building (campus route)',
+          distance: _computePathDistance(hybridPath),
+        );
+      }
+    }
+
+    // ── Tier 3: OSRM to nearest custom vertex + custom to destination ──
+    // This is the KEY tier for campus navigation:
+    // OSRM handles the public road to the campus edge,
+    // then custom routes handle the campus roads to the building.
+    if (customRepo != null && customRepo.isLoaded) {
+      final combinedPath = await _buildOsrmToCustomRoute(
+        exitPoint,
+        entrancePoint,
+        customRepo,
+      );
+      if (combinedPath != null && combinedPath.length >= 2) {
+        debugPrint(
+          '[CrossBuildingRouter] Outdoor: OSRM→Custom route '
+          '(${combinedPath.length} points)',
+        );
+        return RouteSegment.outdoor(
+          points: combinedPath,
+          buildingId: targetBuid,
+          instruction: 'Walk to destination building (campus route)',
+          distance: _computePathDistance(combinedPath),
+        );
+      }
+    }
+
+    // ── Tier 4: OSRM with custom tail splice ──
+    final osrmResult = await AnyplaceApiClient.fetchOutdoorWalkingRouteWithMetadata(
       fromLat: exitPoint.latitude,
       fromLon: exitPoint.longitude,
       toLat: entrancePoint.latitude,
       toLon: entrancePoint.longitude,
     );
 
-    if (result == null || result.points.length < 2) {
-      // Fallback: straight line
+    if (osrmResult != null && osrmResult.points.length >= 2) {
+      final osrmPath = osrmResult.points;
+      debugPrint(
+        '[CrossBuildingRouter] Outdoor: OSRM returned ${osrmPath.length} points, '
+        '${osrmResult.distanceMeters.toStringAsFixed(0)}m',
+      );
+
+      // Try to splice custom routes into the tail portion of OSRM
+      if (customRepo != null && customRepo.isLoaded) {
+        final combinedPath = _spliceCustomTail(osrmPath, entrancePoint, customRepo);
+        if (combinedPath != null) {
+          debugPrint(
+            '[CrossBuildingRouter] Outdoor: OSRM+Custom splice '
+            '(${combinedPath.length} points total)',
+          );
+          return RouteSegment.outdoor(
+            points: combinedPath,
+            buildingId: targetBuid,
+            instruction: 'Walk to destination building (campus route)',
+            distance: _computePathDistance(combinedPath),
+          );
+        }
+      }
+
+      // ── Tier 5: OSRM-only ──
+      debugPrint('[CrossBuildingRouter] Outdoor: OSRM-only (${osrmPath.length} points)');
       return RouteSegment.outdoor(
-        points: [exitPoint, entrancePoint],
+        points: osrmPath,
         buildingId: targetBuid,
         instruction: 'Walk to destination building',
-        isIncomplete: true,
+        distance: osrmResult.distanceMeters,
       );
     }
 
+    // ── Fallback: straight line ──
     return RouteSegment.outdoor(
-      points: result.points,
+      points: [exitPoint, entrancePoint],
       buildingId: targetBuid,
       instruction: 'Walk to destination building',
-      distance: result.distanceMeters,
+      isIncomplete: true,
     );
+  }
+
+  /// Builds a combined route: OSRM from user to a campus entrance endpoint,
+  /// then custom route through the campus to the destination.
+  ///
+  /// Key insight: OSRM routes to a route ENDPOINT (where campus roads meet
+  /// public roads), NOT to a vertex near the destination. This prevents OSRM
+  /// from following parallel public roads inside the campus.
+  Future<List<LatLng>?> _buildOsrmToCustomRoute(
+    LatLng userLocation,
+    LatLng destination,
+    CustomRouteRepository customRepo,
+  ) async {
+    final destVertex = customRepo.graph.nearestVertex(
+      destination,
+      maxDistance: 500.0,
+    );
+    if (destVertex == null) {
+      debugPrint('[CrossBuildingRouter] osrm→custom: no vertex within 500m of dest');
+      return null;
+    }
+    final destVertexIdx = destVertex.$1;
+
+    debugPrint(
+      '[CrossBuildingRouter] osrm→custom: dest vertex=$destVertexIdx, '
+      '${destVertex.$2.toStringAsFixed(0)}m from destination',
+    );
+
+    // Step 1: Get all route endpoints (where campus roads meet public roads)
+    final endpoints = customRepo.graph.getRouteEndpoints();
+    debugPrint(
+      '[CrossBuildingRouter] osrm→custom: ${endpoints.length} route endpoints',
+    );
+
+    if (endpoints.isEmpty) {
+      debugPrint('[CrossBuildingRouter] osrm→custom: no route endpoints');
+      return null;
+    }
+
+    // Step 2: Among endpoints connected to destVertex, find closest to user
+    int? bestEntryIdx;
+    double bestEntryDist = double.infinity;
+
+    for (final (epIdx, epPos) in endpoints) {
+      final path = customRepo.graph.shortestPath(epIdx, destVertexIdx);
+      if (path.isEmpty) continue;
+
+      final dist = Geolocator.distanceBetween(
+        userLocation.latitude,
+        userLocation.longitude,
+        epPos.latitude,
+        epPos.longitude,
+      );
+
+      debugPrint(
+        '[CrossBuildingRouter] osrm→custom: endpoint $epIdx, '
+        '${dist.toStringAsFixed(0)}m from user, '
+        'path to dest: ${path.length} vertices',
+      );
+
+      if (dist < bestEntryDist) {
+        bestEntryDist = dist;
+        bestEntryIdx = epIdx;
+      }
+    }
+
+    if (bestEntryIdx == null) {
+      debugPrint('[CrossBuildingRouter] osrm→custom: no endpoint connected to dest');
+      return null;
+    }
+
+    final entryPos = customRepo.graph.getVertexPosition(bestEntryIdx);
+    debugPrint(
+      '[CrossBuildingRouter] osrm→custom: best entry=$bestEntryIdx, '
+      '${bestEntryDist.toStringAsFixed(0)}m from user, '
+      'at ${entryPos.latitude},${entryPos.longitude}',
+    );
+
+    // Step 3: OSRM from user to the chosen campus entrance endpoint
+    final osrmResult = await AnyplaceApiClient.fetchOutdoorWalkingRouteWithMetadata(
+      fromLat: userLocation.latitude,
+      fromLon: userLocation.longitude,
+      toLat: entryPos.latitude,
+      toLon: entryPos.longitude,
+    );
+
+    if (osrmResult == null || osrmResult.points.length < 2) {
+      debugPrint('[CrossBuildingRouter] osrm→custom: OSRM failed to endpoint');
+      return null;
+    }
+
+    final osrmPath = osrmResult.points;
+    debugPrint(
+      '[CrossBuildingRouter] osrm→custom: OSRM to endpoint = '
+      '${osrmPath.length} points, ${osrmResult.distanceMeters.toStringAsFixed(0)}m',
+    );
+
+    // Step 4: Route through custom graph from entry endpoint to destination vertex
+    final customPath = customRepo.graph.shortestPath(bestEntryIdx, destVertexIdx);
+
+    if (customPath.isEmpty) {
+      debugPrint(
+        '[CrossBuildingRouter] osrm→custom: no graph path from '
+        '$bestEntryIdx to $destVertexIdx',
+      );
+      return [...osrmPath, destination];
+    }
+
+    debugPrint(
+      '[CrossBuildingRouter] osrm→custom: custom graph path = '
+      '${customPath.length} vertices',
+    );
+
+    // Step 5: Build combined route: OSRM → custom graph → walk to destination
+    final combined = <LatLng>[
+      ...osrmPath,
+      for (final idx in customPath)
+        customRepo.graph.getVertexPosition(idx),
+      destination,
+    ];
+
+    debugPrint(
+      '[CrossBuildingRouter] osrm→custom: combined = '
+      '${osrmPath.length} OSRM + ${customPath.length} custom + 1 dest = '
+      '${combined.length} total',
+    );
+
+    return combined;
+  }
+
+  /// Attempts to replace the tail of the OSRM route with a custom route.
+  ///
+  /// Strategy:
+  /// 1. Search the ENTIRE OSRM path backward for points near the custom graph.
+  /// 2. From the found snap point, route through the custom graph to the vertex
+  ///    nearest the destination.
+  /// 3. Append a straight-line walk from the last custom vertex to the destination.
+  List<LatLng>? _spliceCustomTail(
+    List<LatLng> osrmPath,
+    LatLng destination,
+    CustomRouteRepository customRepo,
+  ) {
+    if (osrmPath.length < 2) return null;
+
+    // Find the nearest custom graph vertex to the destination (allow 500m)
+    final destVertex = customRepo.graph.nearestVertex(
+      destination,
+      maxDistance: 500.0,
+    );
+    if (destVertex == null) {
+      debugPrint('[CrossBuildingRouter] splice: no custom graph vertices within 500m of destination');
+      return null;
+    }
+    final destVertexIdx = destVertex.$1;
+    final distToDest = destVertex.$2;
+
+    debugPrint(
+      '[CrossBuildingRouter] splice: dest vertex index=$destVertexIdx, '
+      'dist=${distToDest.toStringAsFixed(0)}m',
+    );
+
+    // Search the ENTIRE OSRM path backward (closest to destination first)
+    for (var i = osrmPath.length - 1; i >= 0; i--) {
+      final snap = customRepo.snapToRoute(
+        osrmPath[i],
+        maxSnapDistance: 150.0,
+      );
+      if (snap == null) continue;
+
+      debugPrint(
+        '[CrossBuildingRouter] splice: found connection at OSRM[$i], '
+        'snap dist: ${snap.distanceMeters.toStringAsFixed(1)}m',
+      );
+
+      // Get the two vertices of the snapped edge
+      final fromV = customRepo.graph.edgeFromVertex(snap.edgeIndex);
+      final toV = customRepo.graph.edgeToVertex(snap.edgeIndex);
+      if (fromV < 0 || toV < 0) continue;
+
+      // Try both edge vertices as entry points
+      for (final entryIdx in [fromV, toV]) {
+        final path = customRepo.graph.shortestPath(entryIdx, destVertexIdx);
+        if (path.isEmpty) continue;
+
+        // Build: OSRM[0..i] + custom graph path + straight line to destination
+        final combined = <LatLng>[
+          ...osrmPath.sublist(0, i),
+          for (final idx in path) customRepo.graph.getVertexPosition(idx),
+          destination,
+        ];
+
+        final osrmPart = osrmPath.sublist(0, i);
+        final totalDist = _computePathDistance(combined);
+
+        debugPrint(
+          '[CrossBuildingRouter] splice: combined '
+          '${osrmPart.length} OSRM + '
+          '${path.length} custom vertices + '
+          '1 walk = '
+          '${combined.length} points, '
+          '${totalDist.toStringAsFixed(0)}m total',
+        );
+        return combined;
+      }
+
+      debugPrint(
+        '[CrossBuildingRouter] splice: no path from edge ${snap.edgeIndex} '
+        '(vertices $fromV,$toV) to dest vertex $destVertexIdx',
+      );
+      // Continue searching for a better snap point
+    }
+
+    debugPrint('[CrossBuildingRouter] splice: no custom connection found in OSRM path');
+    return null;
+  }
+
+  /// Computes total geodesic distance of a path in meters.
+  static double _computePathDistance(List<LatLng> points) {
+    double total = 0;
+    for (var i = 0; i < points.length - 1; i++) {
+      total += Geolocator.distanceBetween(
+        points[i].latitude,
+        points[i].longitude,
+        points[i + 1].latitude,
+        points[i + 1].longitude,
+      );
+    }
+    return total;
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -466,6 +800,8 @@ class CrossBuildingRouter {
     String? targetPuid,
     required bool isFallback,
   }) async {
+    print('[ENTRANCE_DEBUG] isFallback=$isFallback, entrancePoi=${entrancePoi?.name}(puid=${entrancePoi?.puid}), targetPuid=$targetPuid, targetSpace=${targetSpace.name}(buid=${targetSpace.buid})');
+
     if (isFallback) {
       // Straight line from entrance to building centroid
       return RouteSegment.fallback(
@@ -478,7 +814,33 @@ class CrossBuildingRouter {
 
     // Route from entrance POI to the user's actual target POI
     if (entrancePoi != null && entrancePoi.puid.isNotEmpty && targetPuid != null) {
+      // Try POI-to-POI routing first (uses connector graph from Anyplace Architect)
       try {
+        print('[ENTRANCE_DEBUG] Trying POI-to-POI: ${entrancePoi.puid} → $targetPuid');
+        final result = await AnyplaceApiClient().fetchNavigationRoute(
+          fromPuid: entrancePoi.puid,
+          toPuid: targetPuid,
+        );
+
+        if (result.hasRenderablePath) {
+          print('[ENTRANCE_DEBUG] POI-to-POI SUCCESS: ${result.points.length} points');
+          return RouteSegment.entrance(
+            points: result.polylinePoints,
+            buildingId: targetSpace.buid,
+            floorNumber: entrancePoi.floorNumber,
+            connectorPoiId: entrancePoi.puid,
+            instruction: 'Enter ${targetSpace.name}',
+          );
+        } else {
+          print('[ENTRANCE_DEBUG] POI-to-POI returned no renderable path (${result.points.length} points)');
+        }
+      } catch (e) {
+        print('[ENTRANCE_DEBUG] POI-to-POI FAILED: $e');
+      }
+
+      // Fallback: coordinate-based routing
+      try {
+        print('[ENTRANCE_DEBUG] Trying coord-based: ${entrancePoint.latitude},${entrancePoint.longitude} floor=${entrancePoi.floorNumber} → $targetPuid');
         final result = await AnyplaceApiClient().fetchNavigationRouteFromCoordinates(
           latitude: entrancePoint.latitude,
           longitude: entrancePoint.longitude,
@@ -487,6 +849,7 @@ class CrossBuildingRouter {
         );
 
         if (result.hasRenderablePath) {
+          print('[ENTRANCE_DEBUG] coord-based SUCCESS: ${result.points.length} points');
           return RouteSegment.entrance(
             points: result.polylinePoints,
             buildingId: targetSpace.buid,
@@ -494,10 +857,38 @@ class CrossBuildingRouter {
             connectorPoiId: entrancePoi.puid,
             instruction: 'Enter ${targetSpace.name}',
           );
+        } else {
+          print('[ENTRANCE_DEBUG] coord-based returned no renderable path');
         }
       } catch (e) {
-        debugPrint('[CrossBuildingRouter] Entrance API failed: $e');
+        print('[ENTRANCE_DEBUG] coord-based FAILED: $e');
       }
+
+      // Fallback: Route through intermediate connector POIs
+      // The server requires edges between POIs. Rooms/entrances often lack edges,
+      // but connector POIs (pois_type == "None") have edges between them.
+      try {
+        print('[ENTRANCE_DEBUG] Trying connector-based routing...');
+        final route = await _routeViaConnectors(
+          entrancePoi: entrancePoi,
+          targetPuid: targetPuid,
+          targetSpace: targetSpace,
+        );
+        if (route != null) {
+          print('[ENTRANCE_DEBUG] connector-based SUCCESS: ${route.length} points');
+          return RouteSegment.entrance(
+            points: route,
+            buildingId: targetSpace.buid,
+            floorNumber: entrancePoi.floorNumber,
+            connectorPoiId: entrancePoi.puid,
+            instruction: 'Enter ${targetSpace.name}',
+          );
+        }
+      } catch (e) {
+        print('[ENTRANCE_DEBUG] connector-based FAILED: $e');
+      }
+    } else {
+      print('[ENTRANCE_DEBUG] SKIPPED API calls: entrancePoi=${entrancePoi?.name}, puid=${entrancePoi?.puid}, targetPuid=$targetPuid');
     }
 
     // Fallback: straight line
@@ -534,6 +925,109 @@ class CrossBuildingRouter {
 
   static double _toRadians(double degrees) => degrees * pi / 180.0;
   static double _toDegrees(double radians) => radians * 180.0 / pi;
+
+  /// Routes from entrance to target by finding nearest connector POIs
+  /// and routing through the connector graph.
+  ///
+  /// The server requires edges between POIs for routing. Room/entrance POIs
+  /// often lack edges, but connector POIs (pois_type == "None") have edges
+  /// between them in the hallway.
+  Future<List<LatLng>?> _routeViaConnectors({
+    required PoiModel entrancePoi,
+    required String targetPuid,
+    required SpaceModel targetSpace,
+  }) async {
+    // Load all POIs for the entrance's floor
+    final floorPois = await loadPois(targetSpace.buid, entrancePoi.floorNumber);
+    if (floorPois.isEmpty) return null;
+
+    // Find connector POIs (pois_type == "None" in Anyplace)
+    final connectors = floorPois
+        .where((p) => p.puid.isNotEmpty && p.poisType == 'None')
+        .toList();
+    if (connectors.isEmpty) {
+      print('[ENTRANCE_DEBUG] No connector POIs found on floor ${entrancePoi.floorNumber}');
+      return null;
+    }
+    print('[ENTRANCE_DEBUG] Found ${connectors.length} connectors on floor ${entrancePoi.floorNumber}');
+
+    // Find nearest connector to entrance
+    PoiModel? nearestToEntrance;
+    double minDistEntrance = double.infinity;
+    for (final c in connectors) {
+      final dist = Geolocator.distanceBetween(
+        entrancePoi.latitude, entrancePoi.longitude,
+        c.latitude, c.longitude,
+      );
+      if (dist < minDistEntrance) {
+        minDistEntrance = dist;
+        nearestToEntrance = c;
+      }
+    }
+
+    // Find nearest connector to target
+    final targetPoi = floorPois.firstWhere(
+      (p) => p.puid == targetPuid,
+      orElse: () => entrancePoi,
+    );
+    PoiModel? nearestToTarget;
+    double minDistTarget = double.infinity;
+    for (final c in connectors) {
+      final dist = Geolocator.distanceBetween(
+        targetPoi.latitude, targetPoi.longitude,
+        c.latitude, c.longitude,
+      );
+      if (dist < minDistTarget) {
+        minDistTarget = dist;
+        nearestToTarget = c;
+      }
+    }
+
+    if (nearestToEntrance == null || nearestToTarget == null) return null;
+
+    print('[ENTRANCE_DEBUG] nearest connector to entrance: ${nearestToEntrance.name} (${minDistEntrance.toStringAsFixed(0)}m)');
+    print('[ENTRANCE_DEBUG] nearest connector to target: ${nearestToTarget.name} (${minDistTarget.toStringAsFixed(0)}m)');
+
+    // If both connectors are the same, just do a straight line
+    if (nearestToEntrance.puid == nearestToTarget.puid) {
+      print('[ENTRANCE_DEBUG] Same connector for both — straight line');
+      return [entrancePoi.latLng, nearestToEntrance.latLng, targetPoi.latLng];
+    }
+
+    // Route between the two connectors via the server API
+    try {
+      final connectorRoute = await AnyplaceApiClient().fetchNavigationRoute(
+        fromPuid: nearestToEntrance.puid,
+        toPuid: nearestToTarget.puid,
+      );
+
+      if (connectorRoute.hasRenderablePath && connectorRoute.points.length >= 2) {
+        print('[ENTRANCE_DEBUG] connector→connector route: ${connectorRoute.points.length} points');
+        // Build full path: entrance → connector_start + route + connector_end → target
+        final fullPath = <LatLng>[
+          entrancePoi.latLng,
+          nearestToEntrance.latLng,
+          ...connectorRoute.polylinePoints,
+          nearestToTarget.latLng,
+          targetPoi.latLng,
+        ];
+        return fullPath;
+      } else {
+        print('[ENTRANCE_DEBUG] connector→connector returned ${connectorRoute.points.length} points');
+      }
+    } catch (e) {
+      print('[ENTRANCE_DEBUG] connector→connector FAILED: $e');
+    }
+
+    // Last resort: straight lines through the nearest connectors
+    print('[ENTRANCE_DEBUG] Falling back to straight-line through connectors');
+    return [
+      entrancePoi.latLng,
+      nearestToEntrance.latLng,
+      nearestToTarget.latLng,
+      targetPoi.latLng,
+    ];
+  }
 }
 
 /// Internal helper for scored entrance candidates.

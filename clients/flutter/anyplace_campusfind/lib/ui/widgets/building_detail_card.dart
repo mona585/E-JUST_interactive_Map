@@ -7,6 +7,7 @@ import '../../data/models/floor_model.dart';
 import '../../data/models/space_model.dart';
 import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
+import '../../utils/poi_classification.dart';
 
 /// Card showing detailed metadata, interactive floor selector, and RadioMap status for a selected building.
 class BuildingDetailCard extends StatelessWidget {
@@ -242,6 +243,17 @@ class BuildingDetailCard extends StatelessWidget {
                           _buildNavigationStatusBadge(context, provider),
                         ],
                       ),
+                    ],
+
+                    // POI LIST (when floor is selected and POIs are loaded)
+                    if (selectedFloor != null && provider.hasPois &&
+                        provider.pois.any((p) =>
+                            !PoiClassification.isConnector(p) &&
+                            !PoiClassification.isEntrance(p) &&
+                            !PoiClassification.isDoor(p) &&
+                            p.name.isNotEmpty)) ...[
+                      const SizedBox(height: 12),
+                      _buildPoiListSection(context, provider),
                     ],
 
                     const SizedBox(height: 12),
@@ -838,6 +850,171 @@ class BuildingDetailCard extends StatelessWidget {
                 color: textColor,
               ),
               overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPoiListSection(BuildContext context, SpaceProvider provider) {
+    final allPois = provider.pois;
+    final selectedPoi = provider.selectedPoi;
+
+    final navigablePois = allPois.where((p) =>
+        !PoiClassification.isConnector(p) &&
+        !PoiClassification.isEntrance(p) &&
+        !PoiClassification.isDoor(p) &&
+        p.name.isNotEmpty).toList();
+
+    if (navigablePois.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.place, size: 14, color: AppTheme.primary),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Points of Interest',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.cardBorder),
+                ),
+                child: Text(
+                  '${navigablePois.length}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 200),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.cardBorder),
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemCount: navigablePois.length,
+                itemBuilder: (context, index) {
+                  final poi = navigablePois[index];
+                  final isSelected = selectedPoi?.puid == poi.puid;
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppTheme.primary.withValues(alpha: 0.08)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () {
+                        provider.selectPoi(poi);
+                        provider.requestRouteToSelectedPoi();
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppTheme.primary.withValues(alpha: 0.1)
+                                    : const Color(0xFFF5F5F5),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                isSelected ? Icons.navigation : Icons.place,
+                                size: 14,
+                                color: isSelected
+                                    ? AppTheme.primary
+                                    : AppTheme.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    poi.name,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.w500,
+                                      color: AppTheme.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (poi.poisType.isNotEmpty)
+                                    Text(
+                                      poi.poisType,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              Icons.chevron_right,
+                              size: 18,
+                              color: isSelected
+                                  ? AppTheme.primary
+                                  : AppTheme.textTertiary,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ],

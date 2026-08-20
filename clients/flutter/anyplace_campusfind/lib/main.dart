@@ -7,6 +7,7 @@ import 'config/constants.dart';
 import 'config/theme.dart';
 import 'providers/providers.dart';
 import 'screens/main_shell.dart';
+import 'services/cache_service.dart';
 import 'state/location_provider.dart';
 import 'state/navigation_controller.dart';
 import 'state/space_provider.dart';
@@ -17,7 +18,10 @@ Future<void> main() async {
   await prefs.remove('server_url');
 
   final locationProvider = LocationProvider();
-  final spaceProvider = SpaceProvider();
+  final cacheService = CacheService();
+  final spaceProvider = SpaceProvider(
+    cacheService: cacheService,
+  );
   final navigationController = NavigationController(
     spaceProvider: spaceProvider,
     locationProvider: locationProvider,
@@ -30,7 +34,12 @@ Future<void> main() async {
         provider.ChangeNotifierProvider.value(value: spaceProvider),
         provider.ChangeNotifierProvider.value(value: navigationController),
       ],
-      child: const ProviderScope(child: CampusFindApp()),
+      child: ProviderScope(
+        overrides: [
+          cacheServiceProvider.overrideWithValue(cacheService),
+        ],
+        child: const CampusFindApp(),
+      ),
     ),
   );
 }

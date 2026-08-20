@@ -89,8 +89,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
             ),
           ],
-        ),
-      ),
+        ), ),
       body: Column(
         children: [
           Padding(

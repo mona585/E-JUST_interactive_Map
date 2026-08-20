@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../config/navigation_config.dart';
 import '../data/models/navigation_route_model.dart';
 import '../data/models/poi_model.dart';
+import '../data/models/route_progress.dart';
 import '../data/models/route_segment.dart';
 import '../data/models/space_model.dart';
 import '../data/models/user_location.dart';
@@ -62,6 +63,9 @@ class NavigationController extends ChangeNotifier {
   String? _pauseMessage;
   DateTime? _lastGpsLossTime;
 
+  // -- Custom route tracking --
+  RouteProgress? _customRouteProgress;
+
   NavigationController({
     required this._spaceProvider,
     required this._locationProvider,
@@ -91,6 +95,10 @@ class NavigationController extends ChangeNotifier {
   bool get isPaused => _isPaused;
   String? get pauseMessage => _pauseMessage;
   bool get isPartialRoute => _activeRoute?.isPartial ?? false;
+
+  // Custom route navigation getters
+  RouteProgress? get customRouteProgress => _customRouteProgress;
+  bool get isOnCustomRoute => _customRouteProgress?.isOnRoute ?? false;
 
   /// The current segment being navigated, or null if not started.
   RouteSegment? get currentSegment {
@@ -192,6 +200,7 @@ class NavigationController extends ChangeNotifier {
     _lastFloorSwitchTime = null;
     _transitionStartTime = null;
     _lastIndoorPosition = null;
+    _customRouteProgress = null;
     notifyListeners();
   }
 
@@ -240,6 +249,7 @@ class NavigationController extends ChangeNotifier {
     }
 
     _evaluateSubState();
+    _updateCustomRouteProgress(location);
     _checkDeviationAndReroute(location);
     _checkFloorTransition(location);
     _checkBuildingExit(location);
@@ -278,6 +288,32 @@ class NavigationController extends ChangeNotifier {
     }
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // Custom Route Progress Tracking
+  // ──────────────────────────────────────────────────────────────
+
+  /// Updates progress along the nearest custom route based on current GPS.
+  ///
+  /// Only active during outdoor navigation when custom routes are loaded.
+  void _updateCustomRouteProgress(UserLocation location) {
+    if (_subState != NavigationSubState.outdoor) {
+      _customRouteProgress = null;
+      return;
+    }
+
+    final customRepo = _spaceProvider.customRouteRepository;
+    if (!customRepo.isLoaded) {
+      _customRouteProgress = null;
+      return;
+    }
+
+    _customRouteProgress = customRepo.getRouteProgress(
+      location.latLng,
+      maxSnapDistance: NavigationConfig.customRouteSnapThreshold,
+      offRouteThreshold: NavigationConfig.customRouteOnThreshold,
+    );
+  }
+
   // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Deviation Detection & Rerouting Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
   void _checkDeviationAndReroute(UserLocation location) {
@@ -291,6 +327,19 @@ class NavigationController extends ChangeNotifier {
       if (elapsed.inSeconds < NavigationConfig.rerouteCooldownSeconds) return;
     }
 
+    // Use custom route graph for deviation when outdoors and on a custom route
+    if (_subState == NavigationSubState.outdoor &&
+        _customRouteProgress != null &&
+        !_customRouteProgress!.isOnRoute) {
+      debugPrint(
+        '[NavigationController] Off custom route '
+        '(distance: ${_customRouteProgress!.distanceFromRoute.toStringAsFixed(1)}m) — rerouting',
+      );
+      _triggerReroute();
+      return;
+    }
+
+    // Fallback: deviation against active route polyline
     final deviation = _computeMinDeviation(location.latLng, _activeRoute!);
     if (deviation > NavigationConfig.deviationThreshold) {
       _triggerReroute();
@@ -350,6 +399,49 @@ class NavigationController extends ChangeNotifier {
     _lastRerouteTime = DateTime.now();
     notifyListeners();
 
+    // Step 1: Try custom KMZ routes first (outdoor only)
+    if (_subState == NavigationSubState.outdoor) {
+      final customRepo = _spaceProvider.customRouteRepository;
+      if (customRepo.isLoaded) {
+        // Find destination from destination space
+        final destSpace = _destinationSpace;
+        if (destSpace != null) {
+          // Step 1a: Try pure custom graph routing
+          var customPath = customRepo.findRoute(
+            location.latLng,
+            destSpace.latLng,
+          );
+
+          // Step 1b: Try hybrid routing (edge-based snap)
+          if (customPath.length < 2) {
+            customPath = customRepo.findHybridRoute(
+              location.latLng,
+              destSpace.latLng,
+              snapThreshold: 100.0,
+            ) ?? [];
+          }
+
+          if (customPath.length >= 2) {
+            debugPrint(
+              '[NavigationController] Reroute using custom KMZ route: '
+              '${customPath.length} points',
+            );
+            final customRoute = customRepo.createNavigationRouteFromPath(
+              customPath,
+              destinationBuid: destSpace.buid,
+            );
+            if (customRoute != null && customRoute.hasRenderablePath) {
+              _activeRoute = customRoute;
+              _isRerouting = false;
+              notifyListeners();
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // Step 2: Fall back to API-based rerouting
     final currentFloor = _currentNavigatingFloor ?? '0';
 
     for (var attempt = 0; attempt < NavigationConfig.rerouteMaxRetries; attempt++) {

@@ -40,6 +40,20 @@ class NavigationConfig {
   /// Maximum retry attempts for failed reroute requests.
   static const int rerouteMaxRetries = 3;
 
+  // -- Custom route matching --
+
+  /// Maximum distance (m) from a custom route to consider the user "on-route".
+  /// Used by NavigationController for custom-route-aware off-route detection.
+  static const double customRouteOnThreshold = 30.0;
+
+  /// Maximum snap distance (m) when matching GPS to custom route graph.
+  static const double customRouteSnapThreshold = 50.0;
+
+  /// Maximum distance (m) to bridge OSRM endpoint to custom route start/end.
+  /// When the OSRM route endpoint or destination is within this distance
+  /// of a custom route edge, they are considered connectable.
+  static const double customRouteConnectionThreshold = 100.0;
+
   // -- Positioning stability --
 
   /// Duration (s) of the rolling window for stability detection.
@@ -67,6 +81,20 @@ class NavigationConfig {
 
   /// Lower-third offset: user position at 2/3 from top (1/3 from bottom).
   static const double followLowerThirdFraction = 0.67;
+
+  // -- Camera bearing --
+
+  /// Minimum speed (m/s) to compute movement bearing (filters stationary GPS noise).
+  static const double bearingSpeedThreshold = 0.5;
+
+  /// Exponential moving average factor for bearing smoothing (0..1). Lower = smoother.
+  static const double bearingSmoothingFactor = 0.25;
+
+  /// Minimum time (ms) between bearing-driven camera updates (prevents jitter at high GPS rates).
+  static const int bearingUpdateIntervalMs = 300;
+
+  /// When standing still, hold the last bearing for this duration (ms) before resetting to 0.
+  static const int bearingHoldDurationMs = 3000;
 
   // -- Floor transition --
 

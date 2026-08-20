@@ -8,7 +8,9 @@ import '../models/poi_model.dart';
 /// Local disk cache manager for Anyplace Points of Interest (POIs).
 ///
 /// Directory structure:
-/// `<baseDir>/pois/<buid>/<floor>/pois.json`
+/// `<baseDir>/pois/<buid>/<floor>/`
+///   - pois.json        : list of POIs (with optional per-POI last_modified)
+///   - cache_meta.json  : cache metadata including overall lastModified timestamp
 class PoiCache {
   final Directory? customBaseDir;
 
@@ -30,6 +32,49 @@ class PoiCache {
     return Directory('${root.path}/$cleanBuid/$cleanFloor');
   }
 
+  /// Reads the cache metadata file if it exists.
+  Future<Map<String, dynamic>?> _readCacheMeta(String buid, String floor) async {
+    final dir = await getFloorDir(buid, floor);
+    final metaFile = File('${dir.path}/cache_meta.json');
+    if (await metaFile.exists()) {
+      try {
+        final content = await metaFile.readAsString();
+        final dynamic decoded = jsonDecode(content);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+      } catch (e) {
+        debugPrint('[PoiCache] Error reading cache_meta.json: $e');
+      }
+    }
+    return null;
+  }
+
+  /// Writes the cache metadata file atomically.
+  Future<void> _writeCacheMeta(
+      String buid, String floor, String lastModified) async {
+    final dir = await getFloorDir(buid, floor);
+    await dir.create(recursive: true);
+    final metaFile = File('${dir.path}/cache_meta.json');
+    final tempFile = File('${dir.path}/cache_meta.json.tmp');
+
+    // 1. Write to temporary file
+    await tempFile.writeAsString(jsonEncode(<String, dynamic>{
+      'buid': buid,
+      'floor': floor,
+      'lastModified': lastModified,
+    }), flush: true);
+
+    // 2. Atomic rename
+    if (await tempFile.exists()) {
+      await tempFile.rename(metaFile.path);
+    }
+
+    debugPrint(
+      '[PoiCache] Wrote cache_meta.json for buid=$buid, floor=$floor',
+    );
+  }
+
   /// Checks if a valid cached POI list exists for the given building and floor.
   Future<bool> hasPois(String buid, String floor) async {
     final dir = await getFloorDir(buid, floor);
@@ -38,15 +83,22 @@ class PoiCache {
   }
 
   /// Retrieves the cached list of [PoiModel]s if available, otherwise null.
-  Future<List<PoiModel>?> getPois(String buid, String floor) async {
+  /// Also returns the cache-level lastModified timestamp if available.
+  Future<(List<PoiModel>?, String?)> getPoisWithMeta(
+      String buid, String floor) async {
     final cleanBuid = buid.trim();
     final cleanFloor = floor.trim();
+    final cacheMeta = await _readCacheMeta(cleanBuid, cleanFloor);
+    final cachedLastModified =
+        cacheMeta != null && cacheMeta['lastModified'] != null
+            ? cacheMeta['lastModified'].toString()
+            : null;
 
     if (!await hasPois(cleanBuid, cleanFloor)) {
       debugPrint(
         '[PoiCache] Cache MISS for buid=$cleanBuid, floor=$cleanFloor',
       );
-      return null;
+      return (null, null);
     }
 
     final dir = await getFloorDir(cleanBuid, cleanFloor);
@@ -62,23 +114,21 @@ class PoiCache {
             .toList();
 
         debugPrint(
-          '[PoiCache] Cache HIT for buid=$cleanBuid, floor=$cleanFloor (${list.length} POIs)',
+          '[PoiCache] Cache HIT for buid=$cleanBuid, floor=$cleanFloor (${list.length} POIs, '
+          'cache lastModified: $cachedLastModified)',
         );
-        return list;
+        return (list, cachedLastModified);
       }
     } catch (e) {
       debugPrint('[PoiCache] Error reading cached pois.json: $e');
     }
 
-    return null;
+    return (null, null);
   }
 
-  /// Saves the list of [PoiModel]s to disk atomically.
+  /// Saves the list of [PoiModel]s to disk atomically, including cache metadata.
   Future<void> savePois(
-    String buid,
-    String floor,
-    List<PoiModel> pois,
-  ) async {
+      String buid, String floor, List<PoiModel> pois, String lastModified) async {
     final cleanBuid = buid.trim();
     final cleanFloor = floor.trim();
     final dir = await getFloorDir(cleanBuid, cleanFloor);
@@ -98,8 +148,12 @@ class PoiCache {
       await tempFile.rename(targetFile.path);
     }
 
+    // 3. Write cache metadata
+    await _writeCacheMeta(cleanBuid, cleanFloor, lastModified);
+
     debugPrint(
-      '[PoiCache] Saved ${pois.length} POIs for buid=$cleanBuid, floor=$cleanFloor to ${targetFile.path}',
+      '[PoiCache] Saved ${pois.length} POIs for buid=$cleanBuid, floor=$cleanFloor, '
+      'lastModified=$lastModified',
     );
   }
 
