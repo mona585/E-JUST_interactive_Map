@@ -24,7 +24,8 @@ import scala.concurrent.Await
 class UserController @Inject()(cc: ControllerComponents,
                                pds: ProxyDataSource,
                                mongoDB: MongodbDatasource,
-                               userHelper: helper.User)
+                               userHelper: helper.User,
+                               conf: Configuration)
   extends AbstractController(cc) {
 
 
@@ -42,11 +43,11 @@ class UserController @Inject()(cc: ControllerComponents,
         val username = (json \ SCHEMA.fUsername).as[String]
         val password = (json \ SCHEMA.fPassword).as[String]
         val external = "anyplace"
-        var accType = "user"
-
-        // if first user then assign as admin
-        if (pds.db.isAdmin())
-          accType = "admin"
+        // D-05 / R-14: public registration must never grant Administrator.
+        // The sole initial Administrator is created only by the private,
+        // token-gated bootstrapAdmin() endpoint below, before any public
+        // registration happens. Every anonymous registrant is a plain user.
+        val accType = "user"
         // Check if the email is unique
         val storedEmail = pds.db.getFromKeyAsJson(SCHEMA.cUsers, SCHEMA.fEmail, email)
         if (storedEmail != null) return RESPONSE.BAD("There is already an account with this email.")
@@ -306,8 +307,9 @@ class UserController @Inject()(cc: ControllerComponents,
       pds.db.replaceJsonDocument(SCHEMA.cUsers, SCHEMA.fOwnerId,
         (json \ SCHEMA.fOwnerId).as[String], user.toString())
     }
-    var userType = "user"
-    if (pds.db.isAdmin()) userType = "admin"
+    // D-05 / R-14: Google registration must never auto-grant Administrator
+    // either; only the private bootstrapAdmin() endpoint can create it.
+    val userType = "user"
     json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(id)) +
       (SCHEMA.fType -> JsString(userType))
     var msg=""
@@ -327,6 +329,60 @@ class UserController @Inject()(cc: ControllerComponents,
 
     val response = Json.obj("user" -> user)
     RESPONSE.OK(response, msg)
+  }
+
+  /**
+   * D-05 / R-14 private Administrator bootstrap.
+   *
+   * This is the ONLY path that may create an "admin" account. It is not a
+   * general-purpose route: it requires a protected bootstrap token that is
+   * never tracked in source (configured as ADMIN_BOOTSTRAP_TOKEN in the
+   * protected server environment file, mirroring APPLICATION_SECRET), and it
+   * fails closed the moment any user already exists in the database. Once
+   * the sole initial Administrator has been created and verified, the
+   * operator must remove/rotate the bootstrap token before opening public
+   * registration; the token is single-use by construction because a second
+   * call always hits the "users already exist" guard below.
+   */
+  def bootstrapAdmin(): Action[AnyContent] = Action {
+    implicit request =>
+      def inner(request: Request[AnyContent]): Result = {
+        val configuredToken = conf.getOptional[String]("admin.bootstrapToken").getOrElse("")
+        if (configuredToken.trim.isEmpty || configuredToken == "CHANGE_ME_ADMIN_BOOTSTRAP_TOKEN") {
+          LOG.E("bootstrapAdmin: rejected - no protected bootstrap token is configured")
+          return RESPONSE.FORBIDDEN("Administrator bootstrap is not configured on this server.")
+        }
+
+        val providedToken = request.headers.get("X-Bootstrap-Token").getOrElse("")
+        if (providedToken.isEmpty || !MessageDigest.isEqual(providedToken.getBytes, configuredToken.getBytes)) {
+          LOG.E("bootstrapAdmin: rejected - missing or incorrect bootstrap token")
+          return RESPONSE.UNAUTHORIZED("Invalid or missing bootstrap token.")
+        }
+
+        // Fail closed: never overwrite/promote an existing account, and
+        // never run again once any user (admin or not) already exists.
+        if (!pds.db.isAdmin()) {
+          LOG.E("bootstrapAdmin: rejected - a user already exists; bootstrap is single-use")
+          return RESPONSE.FORBIDDEN("An Administrator or other user already exists. Bootstrap is single-use.")
+        }
+
+        val anyReq: OAuth2Request = new OAuth2Request(request)
+        if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
+        val json = anyReq.getJsonBody()
+        val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fUsername, SCHEMA.fPassword, SCHEMA.fName, SCHEMA.fEmail)
+        if (checkRequirements != null) return checkRequirements
+        val name = (json \ SCHEMA.fName).as[String]
+        val email = (json \ SCHEMA.fEmail).as[String]
+        val username = (json \ SCHEMA.fUsername).as[String]
+        val password = (json \ SCHEMA.fPassword).as[String]
+
+        val newAdmin = pds.db.register(SCHEMA.cUsers, name, email, username,
+          userHelper.getEncryptedPassword(password), "anyplace", "admin")
+        if (newAdmin == null) return RESPONSE.BAD("Could not create the Administrator account.")
+        LOG.E("bootstrapAdmin: initial Administrator account created for username=" + username)
+        RESPONSE.OK(Json.obj("newUser" -> newAdmin), "Administrator bootstrap complete.")
+      }
+      inner(request)
   }
 
 }
