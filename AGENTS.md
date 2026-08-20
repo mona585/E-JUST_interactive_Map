@@ -1,16 +1,15 @@
 # AGENTS.md
-
-E-JUST fork of the Anyplace indoor-navigation platform, mid-recovery. Phases 0–9 are claimed complete in `docs/recovery/PHASES_COMPLETED.md`; the active contract is a verification audit.
+E-JUST fork of the Anyplace indoor-navigation platform, mid-recovery. Phases 0–9 claimed complete in `docs/recovery/PHASES_COMPLETED.md`; active contract is a verification audit.
 
 ## Read first
 - `CONTEXT.md` — required domain vocabulary (Campus, Space, Floor, Floorplan, POI, Connection, Radiomap, Access Point). Use these terms, not synonyms.
 - `EJUST_RECOVERY_AUDIT_INSTRUCTIONS_V2.md` — the audit contract. Trust git/source/tests over completion claims.
-- `RECOVERY_REPORT.md` — pre-recovery investigation snapshot (partly stale; it predates the completed phases).
+- `RECOVERY_REPORT.md` — pre-recovery snapshot (partly stale; predates completed phases).
 - Phase 10 (modernization: AngularJS/Bower/Grunt/Play upgrades, old-client deletion) is OUT OF SCOPE.
 
 ## Layout (non-obvious)
-- `server/` = Play 2.8 (Scala 2.13) + MongoDB backend. Web clients also live here: `server/public/{anyplace_architect,anyplace_viewer,anyplace_viewer_campus}` (legacy AngularJS/Bower/Grunt) + `developers` (Swagger) + `shared`.
-- `clients/android-new/` = current Android apps (`logger`, `navigator`). `clients/android/` = legacy app, excluded launch scope — don't modify its code. `clients/deprecated/`, `docker/` = legacy.
+- `server/` = Play 2.8 (Scala 2.13) + MongoDB backend. Web clients also in `server/public/{anyplace_architect,anyplace_viewer,anyplace_viewer_campus}` (legacy AngularJS/Bower/Grunt) + `developers` (Swagger) + `shared`.
+- `clients/android-new/` = current Android apps (`logger`, `navigator`). `clients/android/` = legacy, excluded launch scope — don't modify its code. `clients/deprecated/`, `docker/` = legacy.
 - `server/anyplace_tiler/` = floorplan tiling pipeline (bash/Python/ImageMagick), Linux-only; will not run on Windows.
 - `server/database/` = manual MongoDB init/admin tools, not startup migrations.
 - Root `build` script + `dist/` produce deployment artifacts.
@@ -18,10 +17,11 @@ E-JUST fork of the Anyplace indoor-navigation platform, mid-recovery. Phases 0�
 ## Commands
 - Backend tests: `cd server; JAVA_HOME=<OpenJDK 11> sbt test` (expect 19 passing). Wrapper: `server/sbt` / `server/sbt.bat`.
 - Backend run: pinned JDK is 11. Bare Java 17 startup fails; workaround `--add-opens=java.base/java.lang=ALL-UNNAMED`.
-- Build: `./build --server` (also builds all web apps via bower/npm/grunt) | `--clients` (Android APKs → `apk generated/`) | `--all`.
+- Build: `./build --server` (builds server + web apps via bower/npm/grunt) | `--clients` (Android APKs → `apk generated/`) | `--all`.
 - Single web app: `cd server/public/<app>; bower install; npm install; grunt deploy`.
-- DB init: `cd server/database && ./init_database.sh [--drop]` (mongosh).
+- DB init: `cd server/database && ./init_database.sh [--drop]` (mongosh). Auto-initialized from `.env.example` by `./build` if missing.
 - Deploy: `cd dist && APPLICATION_SECRET=<...> ./deploy_to_vm.sh <port>`. Fails without `APPLICATION_SECRET` by design.
+- `.env` auto-init: `./build` copies `.env.example` → `.env`, `server/.env.example` → `server/.env`, `clients/.env.example` → `clients/.env` if they are absent.
 
 ## Config
 - `server/conf/application.conf` includes `app.base.conf` + `app.play.conf` + `app.private.conf`. The private file is gitignored; copy `app.private.example.conf` → `app.private.conf` and fill in (Mongo creds, `cors.allowedOrigins`, `application.secret`, password salt/pepper). Never commit or print it.
@@ -30,8 +30,8 @@ E-JUST fork of the Anyplace indoor-navigation platform, mid-recovery. Phases 0�
 
 ## Android
 - Toolchain: Gradle wrapper 6.5.1, AGP 4.0.2, compile/target SDK 29, build-tools 29.0.2.
-- Requires `clients/android-new/local.properties` (`sdk.dir=...`) and `clients/.env` (`MAPS_API_KEY`, `SERVER_URL`). `MAPS_API_KEY` is also read from `$HOME/MAPS_API_KEY` as a fallback.
-- Shared code comes from JitPack (`com.github.dmsl:anyplace-lib-core:4.0.2`, `com.github.dmsl:anyplace-lib-android:4.0.2`). `settings.gradle` still `include`s `:lib` and `:lib-core` whose directories (`clients/android-new/lib`, `clients/core/lib`) are absent in a fresh checkout — the build needs those dirs present or the includes removed.
+- Requires `clients/android-new/local.properties` (`sdk.dir=...`) and `clients/.env` (`MAPS_API_KEY`, `SERVER_URL`). `MAPS_API_KEY` also read from `$HOME/MAPS_API_KEY` as fallback.
+- Shared code from JitPack (`com.github.dmsl:anyplace-lib-core:4.0.2`, `com.github.dmsl:anyplace-lib-android:4.0.2`). `settings.gradle` includes `:lib` and `:lib-core` whose directories (`clients/android-new/lib`, `clients/core/lib`) are absent in a fresh checkout — the build needs those dirs present or the includes removed.
 - Package IDs: `eg.edu.ejust.anyplace.logger` / `eg.edu.ejust.anyplace.navigator` (D-11).
 
 ## Tests & invariants
