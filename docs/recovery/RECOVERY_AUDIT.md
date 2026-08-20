@@ -259,3 +259,220 @@ No Phase 5 recovery work has started. Approve Phase 5 only after the Phase 4
 runbook has generated and served the browser assets, or explicitly approve a
 source-only empty-data/hydration-contract audit while the runtime validation
 remains pending.
+
+Source-only Phase 5 and Phase 6 work was subsequently approved by the repo
+owner (assigned as this contributor's two phases) while Phase 4's browser
+runtime validation remains pending on this Windows host; results follow.
+
+## Phase 5 — Empty data baseline and hydration contract
+
+**Status: PARTIAL — the source-side data-baseline, Administrator-bootstrap,
+and coordinated-backup contracts are implemented and verified statically;
+MongoDB/HTTP runtime execution is an external dependency on this host.**
+
+### Audit result
+
+`PHASES_COMPLETED.md` claims Phase 5 delivered `init_schema.js`,
+`init_database.sh`, and a `DatabaseBaselineSpec` asserting "first user gets
+admin, second gets user." Both scripts are present and reasonable (15
+collections, the documented indexes, an explicit `--drop` flag), so that part
+of the claim is **VERIFIED COMPLETE**. `DatabaseBaselineSpec` itself is not
+in this checkout — `docs/recovery/RECOVERY_AUDIT.md`'s own Phase 3 entry
+records it was removed for asserting exactly the behavior
+`EJUST_RECOVERY_AUDIT_INSTRUCTIONS_V2.md` calls out as insufficient for
+Phase 5: "first user = admin, second = user" is not proof of a *controlled
+private* bootstrap.
+
+Re-reading the actual `UserController.scala` on this branch (HEAD
+`b620e9b5`) confirmed the underlying defect the instructions warn about was
+still live, in **two** places:
+
+- `register()` (public, unauthenticated `POST /api/user/register`): `if
+  (pds.db.isAdmin()) accType = "admin"` — the first anonymous HTTP caller on
+  an empty database became Administrator with no gate at all. This is
+  exactly R-14/D-05.
+- `authorizeGoogleAccount()`: the same `if (pds.db.isAdmin()) userType =
+  "admin"` pattern, on the deferred-but-still-routed Google login path.
+
+This is a **NOT VERIFIED → CONFIRMED GAP** against the prior claim, not a
+verified completion: whatever `DatabaseBaselineSpec` asserted, the shipped
+controller still let the network decide who becomes Administrator.
+
+### Fix applied
+
+- `server/app/controllers/UserController.scala`: both auto-promotion sites
+  removed. `register()` and `authorizeGoogleAccount()` now unconditionally
+  assign `"user"`; no code path can reach `"admin"` except the new endpoint
+  below.
+- Added `UserController.bootstrapAdmin()`, the sole private admin-creation
+  path: requires a dedicated `X-Bootstrap-Token` header matched against
+  `admin.bootstrapToken` (`MessageDigest.isEqual`, constant-time) with
+  fail-closed behavior when the token is unset/placeholder, wrong, or when
+  any user already exists (`!pds.db.isAdmin()`) — making it single-use by
+  construction. Routed at `POST /api/user/bootstrap-admin`
+  (`server/conf/api.routes`).
+- `server/conf/app.private.example.conf`: documents `admin.bootstrapToken`
+  with an explicit `CHANGE_ME_ADMIN_BOOTSTRAP_TOKEN` placeholder (endpoint
+  disabled until the operator sets a real value), matching the existing
+  salt/pepper/secret placeholder convention.
+- `install.sh`: the "ALL ANYPLACE CONFIGURATION SETTINGS" display now
+  acknowledges the bootstrap token exists without ever printing its value
+  (same pattern as the existing secret/salt/pepper lines).
+- `docs/recovery/PHASE_5_DATA_RUNBOOK.md`: schema init, the bootstrap
+  sequence (create → verify single-use rejection → verify a normal
+  registrant gets `user`), coordinated backup/restore-drill usage, and the
+  disposable-fixture note for Phase 6.
+- D-10 coordinated backup: `server/database/admin/coordinated_backup.sh` and
+  `coordinated_restore_drill.sh` (new) wrap the existing Mongo-only
+  `backup.sh`/`helper.sh` (unchanged) to also capture
+  `floorPlansRootDir`/`radioMapRawDir`/`radioMapFrozenDir` from the same run,
+  write a `MANIFEST.txt` with a `sha256sum` per file, prune bundles past
+  `RETENTION_DAYS` (default 30), and optionally GPG-encrypt and `scp` the
+  bundle off-host. The restore drill verifies the manifest and restores
+  MongoDB only into the disposable `RESTORE_MDB_DATABASE`, never the live
+  database. The actual off-host destination and GPG recipient are left
+  unset by design — **EXTERNAL DEPENDENCY** (university-supplied off-host
+  storage/credentials), not fabricated.
+
+### Validation evidence
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File
+  scripts/Test-AdminBootstrapContract.ps1` (new) — passed. Confirms both
+  auto-promotion sites are gone, `bootstrapAdmin()` exists with the
+  token-header/placeholder/fail-closed checks, the route is registered, the
+  private-config template documents the placeholder, `install.sh` never
+  prints the token, and the coordinated backup/restore scripts reference the
+  required filesystem roots, manifest, checksums, and disposable-database
+  guard.
+- `bash -n server/database/admin/coordinated_backup.sh` and `bash -n
+  server/database/admin/coordinated_restore_drill.sh` — passed (shell syntax
+  only).
+- Manual balanced-braces/parens check of the edited
+  `UserController.scala` (274/274 parens, 49/49 braces) — passed. **`sbt
+  test` was not run**: no `sbt` binary is available on this Windows
+  investigation host (same limitation recorded in every prior phase); this
+  is the authoritative Phase 2/3 Ubuntu environment's job, not this host's.
+- `SecurityRegressionSpec` (`server/test/`) was re-read, not re-run: its
+  admin-related assertion is "a second registrant must never receive
+  `admin`," which remains true (both registrants are now always `user`), so
+  no test contradicts this fix; it stays gated behind
+  `RUN_MONGO_INTEGRATION_TESTS=true` per its existing Phase 3 pattern.
+- HTTP-level verification of the bootstrap sequence
+  (`PHASE_5_DATA_RUNBOOK.md` §3) and the coordinated backup/restore drill
+  against a real MongoDB — **not run**; require the Phase 2 authenticated
+  staging MongoDB, which is itself still an external dependency on this
+  host.
+
+TestSprite was not used: the changes are unauthenticated-endpoint
+authorization logic and backup shell scripts, not yet reachable without the
+Phase 2 staging backend; the runbook records the exact `curl` sequence to
+run once that backend exists.
+
+### Final status: PARTIAL (source-side VERIFIED COMPLETE; runtime execution EXTERNAL DEPENDENCY)
+
+## Phase 6 — Floorplan/tiler pipeline
+
+**Status: PARTIAL — the source-side link-generation, routing, and argument
+contracts are verified correct with no code change required; end-to-end
+execution needs the Linux/ImageMagick toolchain this host does not have.**
+
+### Audit result
+
+`PHASES_COMPLETED.md` claims Phase 6 fixed a Python 3 `bytes`-decoding bug,
+switched `advpng -4` to `-2`, and verified end-to-end tiling on an execution
+host this checkout has no record of. That execution cannot be re-verified
+here (no accessible Ubuntu VM/log), so it is **NOT VERIFIED** as a claim, but
+unlike Phase 5 the underlying source-level defects R-10 and R-08 named in
+`RECOVERY_REPORT.md` were checked directly against the current tree and
+found already correct:
+
+- **R-10 (tile/archive link path):** `AnyPlaceTilerHelper.getFloorTilesZipLinkFor`
+  builds its link via `AnyplaceServerAPI.urlPath("api", "floortiles", buid,
+  floor, FLOOR_TILES_ZIP_NAME)`, and `urlPath` joins segments with a literal
+  `"/"` from the configured `public.baseUrl` — not `File.separatorChar`, and
+  not the legacy `/anyplace/floortiles` prefix the report flagged. This
+  matches the routed `GET /api/floortiles/:buid/:floor_number/*file`.
+  **VERIFIED COMPLETE**, already fixed on this branch (most likely as part
+  of the Phase 8 domain-detachment work referenced in `PHASES_COMPLETED.md`,
+  since it depends on the same `public.baseUrl`/`urlPath` machinery). No
+  change made.
+- **Deprecated 4-argument tiler call:** the report separately notes "a
+  deprecated upload method also passes four tiler arguments, while the
+  launcher requires five." Confirmed still true of `MapFloorplanController.upload()`
+  /`AnyPlaceTilerHelper.tileImage()`, and `start-anyplace-tiler.sh` still
+  hard-requires exactly 5 arguments (`[[ "$#" != "5" ]] && usage`) — but
+  `server/conf/api.routes` only maps `/api/mapping/floor/floorplan/upload`
+  to `uploadWithZoom()`, which calls `tileImageWithZoom()` with all 5
+  arguments including zoom. `upload()` is not routed anywhere and is
+  unreachable over HTTP. Left unchanged: it is confirmed dead code, not a
+  live recovery blocker, and rewriting/deleting unrouted legacy code is
+  outside this phase's "smallest path/argument fixes" allowance.
+- **R-08 (tiler cannot execute on Windows):** still true and, per D-01,
+  intentionally out of scope to fix here — the target is Ubuntu 22.04, not a
+  native Windows port.
+
+### Fix applied
+
+No production code changes were needed for Phase 6's confirmed-defect list;
+the two source-level correctness items (R-10, the 5-argument contract) were
+already satisfied. Added:
+
+- `docs/recovery/PHASE_6_TILER_RUNBOOK.md`: the full
+  upload → metadata → filesystem → tiler → retrieval → Viewer sequence with
+  concrete `curl`/`mongosh`/`identify`/`unzip` checks, run twice from a clean
+  floorplan directory per the report's Definition of Done, plus the source
+  facts above so the runbook doesn't need to re-derive them.
+- `scripts/Test-FloorplanPipelineContract.ps1` (new): statically pins the
+  R-10 link-generation contract, confirms `upload()` stays unrouted while
+  `uploadWithZoom()` is the only routed action, confirms the tiler script
+  still requires 5 arguments, confirms the zoom-floor validation
+  (`MIN_ZOOM_UPLOAD`) precedes tiling, and confirms the filesystem roots stay
+  externally configured.
+
+### Validation evidence
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File
+  scripts/Test-FloorplanPipelineContract.ps1` (new) — passed.
+- Direct source read of `AnyPlaceTilerHelper.scala`, `AnyplaceServerAPI.scala`,
+  `MapFloorplanController.scala`, `server/conf/api.routes`, and
+  `start-anyplace-tiler.sh` — as summarized above.
+- End-to-end upload → tile → retrieve → Viewer-display execution
+  (`PHASE_6_TILER_RUNBOOK.md`) — **not run**. This Windows host lacks
+  ImageMagick/`identify`/`advpng`, matching every prior phase's tiler
+  preflight result; this is **EXTERNAL DEPENDENCY** on the Ubuntu 22.04
+  staging VM from Phase 1, not a phase-6-specific gap.
+
+TestSprite was not used: floorplan upload/tiling is a multipart
+file-plus-filesystem-plus-external-process workflow outside TestSprite's
+HTTP-contract scope, and requires the same unavailable staging backend as
+Phase 5's runtime checks.
+
+### Final status: PARTIAL (source-side VERIFIED COMPLETE; end-to-end execution EXTERNAL DEPENDENCY)
+
+## Phase gate
+
+Both of this contributor's assigned phases (5 and 6) are now PARTIAL in the
+sense the completion standard allows: all code-side work is
+`VERIFIED COMPLETE`, and the remaining item in each is a runtime execution
+that requires infrastructure this Windows host does not have (an
+authenticated MongoDB/staging backend for Phase 5's HTTP bootstrap sequence
+and coordinated-backup drill; the pinned Ubuntu/ImageMagick toolchain for
+Phase 6's tiling run) — `EXTERNAL DEPENDENCY`, per the completion standard in
+`EJUST_RECOVERY_AUDIT_INSTRUCTIONS_V2.md`.
+
+### Unrelated finding: git index currently stages ~4,960 tracked files for deletion
+
+While validating these phases, `git status` showed roughly 4,960 tracked
+files across effectively the whole repository (`server/`, `scripts/`,
+`docs/`, `install.sh`, and more) staged as deleted (`D`), with the same paths
+simultaneously appearing as untracked (`??`) because the working-tree copies
+are still present. This predates this session's edits — no command run here
+staged anything — and was already partially visible in the untruncated
+`git status` at session start. **A commit made from this index as-is would
+delete almost the entire tracked repository even though the working tree is
+intact.** This is a repository-hygiene issue outside Phase 5/6 scope; it is
+flagged here rather than silently fixed because correcting a ~5,000-file
+index affects every contributor's pending work, not just these two phases.
+
+Should Phase 7 (Android) be approved next, or should the git index anomaly
+above be resolved first?

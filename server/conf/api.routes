@@ -50,6 +50,14 @@ GET        /api/version                                     controllers.MainCont
 POST        /api/user/register                              controllers.UserController.register()
 
 ###
+#  summary: D-05/R-14 private, token-gated Administrator bootstrap. Not part
+#    of the public client apps; see docs/recovery/PHASE_5_DATA_RUNBOOK.md.
+#  tags:
+#    - User
+###
+POST        /api/user/bootstrap-admin                       controllers.UserController.bootstrapAdmin()
+
+###
 #  summary: Login for local users
 #  tags:
 #    - User
