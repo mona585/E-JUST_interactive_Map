@@ -54,7 +54,14 @@ check_for_errors(){
 }
 
 check_requirements(){
-	[[ -z "$(which python)" ]] && echo "python ::You do not have Python installed!" && exit 1
+	PYTHON_BIN=""
+	if command -v python3 >/dev/null 2>&1; then
+		PYTHON_BIN="python3"
+	elif command -v python >/dev/null 2>&1; then
+		PYTHON_BIN="python"
+	else
+		echo "python ::You do not have Python installed!" && exit 1
+	fi
 	[[ -z "$(which convert)" ]] && echo "convert ::You do not have ImageMagick installed!" && exit 1
 	[[ -z "$(which identify)" ]] && echo "identify ::You do not have ImageMagick installed!" && exit 1
 	[[ -z "$(which advpng)" ]] && echo "advpng ::You do not have AdvanceCOMP installed!" && exit 1
@@ -109,7 +116,7 @@ echo
 echo ":: Starting anyplace-tiler ..."
 anyTiler="$scriptsDir/anyplace-tiler.py" 
 
-python "$anyTiler" "$scriptsDir" "$ImageLatitude" "$ImageLongitude" "$ZoomOriginal" "$ZoomDestination" "$ImageFileName" "$UploadZoom"
+"$PYTHON_BIN" "$anyTiler" "$scriptsDir" "$ImageLatitude" "$ImageLongitude" "$ZoomOriginal" "$ZoomDestination" "$ImageFileName" "$UploadZoom"
 check_for_errors
 
 echo

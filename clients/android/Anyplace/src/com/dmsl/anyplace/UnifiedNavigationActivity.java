@@ -921,11 +921,10 @@ public class UnifiedNavigationActivity extends SherlockFragmentActivity implemen
     private void initMap() {
         // Sets the map type to be NORMAL - ROAD mode
         mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
-        // mMap.setMyLocationEnabled(true); //displays a button to navigate to
-        // the current user's position
-        // mMap.setInfoWindowAdapter(new CustomInfoWindowAdapter(this,
-        // mPoiMarkersBundle));
-        mMap.setBuildingsEnabled(false);
+        mMap.setBuildingsEnabled(true);
+        mMap.getUiSettings().setTiltGesturesEnabled(true);
+        mMap.getUiSettings().setCompassEnabled(true);
+        mMap.getUiSettings().setRotateGesturesEnabled(true);
     }
 
     // Called from onConnecetd
@@ -1445,16 +1444,21 @@ public class UnifiedNavigationActivity extends SherlockFragmentActivity implemen
         disableAnyplaceTracker();
 
         // set the newly selected floor
-        b.setSelectedFloor(f.floor_number);
-        userData.setSelectedBuilding(b);
-        userData.setSelectedFloor(f);
-        textFloor.setText(f.floor_name);
+        if (f != null) {
+            b.setSelectedFloor(f.floor_number);
+            userData.setSelectedBuilding(b);
+            userData.setSelectedFloor(f);
+            textFloor.setText(f.floor_name);
 
-        // clean the map in case there are overlays
-        mMap.clear();
+            // clean the map in case there are overlays
+            mMap.clear();
 
-        // add the Tile Provider that uses our Building tiles over Google Maps
-        TileOverlay mTileOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(new AnyPlaceMapTileProvider(getBaseContext(), b.buid, f.floor_number)));
+            // add the Tile Provider that uses our Building tiles over Google Maps
+            TileOverlay mTileOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(new AnyPlaceMapTileProvider(getBaseContext(), b.buid, f.floor_number)));
+        } else {
+            userData.setSelectedBuilding(b);
+            mMap.clear();
+        }
         mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(b.getPosition(), 19.0f), new CancelableCallback() {
 
             @Override

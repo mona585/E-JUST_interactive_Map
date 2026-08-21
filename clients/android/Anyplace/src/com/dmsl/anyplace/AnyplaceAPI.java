@@ -66,13 +66,55 @@ public class AnyplaceAPI {
 	// private static String server = "https://anyplace.rayzit.com";
 
 	private static URL getServerIPAddress() throws MalformedURLException {
-		if (!DEBUG_URL) {
+		try {
 			Context c = MyApplication.getAppContext();
-			SharedPreferences preferences = c.getSharedPreferences(UnifiedNavigationActivity.SHARED_PREFS_ANYPLACE, c.MODE_PRIVATE);
-			return new URL(preferences.getString("server_ip_address", c.getString(R.string.default_server_ip_address)));
-		} else {
-			return new URL("http://192.168.1.2:9000");
-		}
+			if (c != null) {
+				SharedPreferences preferences = c.getSharedPreferences(UnifiedNavigationActivity.SHARED_PREFS_ANYPLACE, Context.MODE_PRIVATE);
+				String server = preferences.getString("server_ip_address", null);
+				if (server != null && !server.isEmpty()) {
+					if (!server.startsWith("http://") && !server.startsWith("https://")) {
+						server = "http://" + server;
+					}
+					return new URL(server);
+				}
+
+				int resId = c.getResources().getIdentifier("default_server_ip_address", "string", c.getPackageName());
+				if (resId != 0) {
+					String s = c.getString(resId);
+					if (!s.startsWith("http://") && !s.startsWith("https://")) {
+						s = "http://" + s;
+					}
+					return new URL(s);
+				}
+			}
+		} catch (Exception e) {}
+		return new URL("https://map.beout.ai");
+	}
+
+	public static String getApiUsername() {
+		try {
+			Context c = MyApplication.getAppContext();
+			if (c != null) {
+				int resId = c.getResources().getIdentifier("default_api_username", "string", c.getPackageName());
+				if (resId != 0) {
+					return c.getString(resId);
+				}
+			}
+		} catch (Exception e) {}
+		return "username";
+	}
+
+	public static String getApiPassword() {
+		try {
+			Context c = MyApplication.getAppContext();
+			if (c != null) {
+				int resId = c.getResources().getIdentifier("default_api_password", "string", c.getPackageName());
+				if (resId != 0) {
+					return c.getString(resId);
+				}
+			}
+		} catch (Exception e) {}
+		return "pass";
 	}
 
 	private final static String PREDICT_FLOOR_ALGO1 = "/anyplace/position/predictFloorAlgo1";

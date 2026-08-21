@@ -75,71 +75,60 @@ public class AnyplacePrefs extends PreferenceActivity {
 
 		addPreferencesFromResource(R.xml.preferences_anyplace);
 
-		Preference clearRadioPref = findPreference("clear_radiomaps");
-		if (clearRadioPref != null) {
-			clearRadioPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
-				@Override
-				public boolean onPreferenceClick(Preference preference) {
-					try {
-						File extRadioMaps = new File(getExternalFilesDir(null), "radiomaps");
-						deleteFolder(extRadioMaps);
-						File localRadioMaps = new File(getFilesDir(), "radiomaps");
-						deleteFolder(localRadioMaps);
-						Toast.makeText(getApplicationContext(), "Cached radiomaps deleted successfully!", Toast.LENGTH_SHORT).show();
-					} catch (Exception e) {
-						Toast.makeText(getApplicationContext(), "Error clearing radiomaps: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-					}
-					return true;
-				}
-			});
-		}
+		getPreferenceManager().findPreference("clear_radiomaps").setOnPreferenceClickListener(new OnPreferenceClickListener() {
+			@Override
+			public boolean onPreferenceClick(Preference preference) {
 
-		Preference clearFloorPref = findPreference("clear_floorplans");
-		if (clearFloorPref != null) {
-			clearFloorPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
-				@Override
-				public boolean onPreferenceClick(Preference preference) {
-					try {
-						File extFloorPlans = new File(getExternalFilesDir(null), "floor_plans");
-						deleteFolder(extFloorPlans);
-						File localFloorPlans = new File(getFilesDir(), "floor_plans");
-						deleteFolder(localFloorPlans);
-						Toast.makeText(getApplicationContext(), "Cached floorplans deleted successfully!", Toast.LENGTH_SHORT).show();
-					} catch (Exception e) {
-						Toast.makeText(getApplicationContext(), "Error clearing floorplans: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-					}
-					return true;
+				File root;
+				try {
+					root = AnyplaceUtils.getRadioMapsRootFolder(AnyplacePrefs.this);
+					DeleteFolderBackgroundTask task = new DeleteFolderBackgroundTask(AnyplacePrefs.this);
+					task.setFiles(root);
+					task.execute();
+				} catch (Exception e) {
+					Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_SHORT).show();
 				}
-			});
-		}
+				return true;
+			}
+		});
 
-		Preference refBldPref = findPreference("refresh_building");
-		if (refBldPref != null) {
-			refBldPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
-				@Override
-				public boolean onPreferenceClick(Preference preference) {
-					Intent returnIntent = new Intent();
-					returnIntent.putExtra("action", Action.REFRESH_BUILDING);
-					setResult(RESULT_OK, returnIntent);
-					finish();
-					return true;
+		getPreferenceManager().findPreference("clear_floorplans").setOnPreferenceClickListener(new OnPreferenceClickListener() {
+			@Override
+			public boolean onPreferenceClick(Preference preference) {
+				File root;
+				try {
+					root = AnyplaceUtils.getFloorPlansRootFolder(AnyplacePrefs.this);
+					DeleteFolderBackgroundTask task = new DeleteFolderBackgroundTask(AnyplacePrefs.this);
+					task.setFiles(root);
+					task.execute();
+				} catch (Exception e) {
+					Toast.makeText(getApplicationContext(), e.getMessage(), Toast.LENGTH_SHORT).show();
 				}
-			});
-		}
 
-		Preference refMapPref = findPreference("refresh_map");
-		if (refMapPref != null) {
-			refMapPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
-				@Override
-				public boolean onPreferenceClick(Preference preference) {
-					Intent returnIntent = new Intent();
-					returnIntent.putExtra("action", Action.REFRESH_MAP);
-					setResult(RESULT_OK, returnIntent);
-					finish();
-					return true;
-				}
-			});
-		}
+				return true;
+			}
+		});
+
+		getPreferenceManager().findPreference("refresh_building").setOnPreferenceClickListener(new OnPreferenceClickListener() {
+			@Override
+			public boolean onPreferenceClick(Preference preference) {
+				Intent returnIntent = new Intent();
+				returnIntent.putExtra("action", Action.REFRESH_BUILDING);
+				setResult(RESULT_OK, returnIntent);
+				finish();
+				return true;
+			}
+		});
+		getPreferenceManager().findPreference("refresh_map").setOnPreferenceClickListener(new OnPreferenceClickListener() {
+			@Override
+			public boolean onPreferenceClick(Preference preference) {
+				Intent returnIntent = new Intent();
+				returnIntent.putExtra("action", Action.REFRESH_MAP);
+				setResult(RESULT_OK, returnIntent);
+				finish();
+				return true;
+			}
+		});
 
 		// Customize the description of algorithms
 		getPreferenceManager().findPreference("Short_Desc").setOnPreferenceClickListener(new OnPreferenceClickListener() {
@@ -239,16 +228,4 @@ public class AnyplacePrefs extends PreferenceActivity {
 		alert.show();
 	}
 
-	private void deleteFolder(File fileOrDirectory) {
-		if (fileOrDirectory == null || !fileOrDirectory.exists()) return;
-		if (fileOrDirectory.isDirectory()) {
-			File[] children = fileOrDirectory.listFiles();
-			if (children != null) {
-				for (File child : children) {
-					deleteFolder(child);
-				}
-			}
-		}
-		fileOrDirectory.delete();
-	}
 }

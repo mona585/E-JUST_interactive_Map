@@ -29,6 +29,7 @@ android {
         release.setRoot('build-types/release')
     }
 
+    /*
     signingConfigs {
         config {
             keyAlias 'Anyplace'
@@ -37,14 +38,15 @@ android {
             storePassword 'abcdef'
         }
     }
+    */
 
     buildTypes {
         debug {
             debuggable = true
-            signingConfig signingConfigs.config
+            // signingConfig signingConfigs.config
         }
         release {
-            signingConfig signingConfigs.config
+            // signingConfig signingConfigs.config
         }
     }
 
@@ -53,8 +55,24 @@ android {
     }
 
     defaultConfig {
+        applicationId "cy.ac.ucy.cs.anyplace.navigator"
         targetSdkVersion 29
         minSdkVersion 14
+
+        // Read settings from clients/.env or central .env file
+        def envFile = file("../.env")
+        if (!envFile.exists()) {
+            envFile = file("../../.env")
+        }
+        def envProps = new Properties()
+        if (envFile.exists()) {
+            envFile.withInputStream { envProps.load(it) }
+        }
+        def keyVal = envProps.getProperty("MAPS_API_KEY") ?: ""
+        def serverUrl = envProps.getProperty("SERVER_URL") ?: "https://map.beout.ai"
+
+        resValue "string", "maps_api_key", keyVal
+        resValue "string", "default_server_ip_address", serverUrl
     }
 }
 

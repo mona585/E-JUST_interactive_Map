@@ -148,8 +148,8 @@ public class FetchFloorPlanTask extends AsyncTask<Void, Void, String> {
 			// prepare the json object request
 			JSONObject j = new JSONObject();
 
-			j.put("username", "username");
-			j.put("password", "pass");
+			j.put("username", AnyplaceAPI.getApiUsername());
+			j.put("password", AnyplaceAPI.getApiPassword());
 
 			is = NetworkUtils.downloadHttpClientJsonPostStream(AnyplaceAPI.getServeFloorTilesZipUrl(buid, floor_number), j.toString());
 

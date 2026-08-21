@@ -96,8 +96,8 @@ public class DownloadRadioMapTaskBuid extends AsyncTask<Void, Void, String> {
 
 			JSONObject j = new JSONObject();
 
-			j.put("username", "username");
-			j.put("password", "pass");
+			j.put("username", AnyplaceAPI.getApiUsername());
+			j.put("password", AnyplaceAPI.getApiPassword());
 
 			// add the building and floor in order to get only the necessary
 			// radio map
@@ -166,8 +166,8 @@ public class DownloadRadioMapTaskBuid extends AsyncTask<Void, Void, String> {
 
 			// create the credentials JSON in order to send and download the radio map
 			JSONObject json_credentials = new JSONObject();
-			json_credentials.put("username", "username");
-			json_credentials.put("password", "pass");
+			json_credentials.put("username", AnyplaceAPI.getApiUsername());
+			json_credentials.put("password", AnyplaceAPI.getApiPassword());
 			String cred_str = json_credentials.toString();
 
 			String ms = NetworkUtils.downloadHttpClientJsonPost(means, cred_str);

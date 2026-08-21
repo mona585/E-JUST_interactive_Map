@@ -1,24 +1,45 @@
-# Repository Guidelines
+# AGENTS.md
+E-JUST fork of the Anyplace indoor-navigation platform, mid-recovery. Phases 0–9 claimed complete in `docs/recovery/PHASES_COMPLETED.md`; active contract is a verification audit.
 
-## Project Structure & Module Organization
+## Read first
+- `CONTEXT.md` — required domain vocabulary (Campus, Space, Floor, Floorplan, POI, Connection, Radiomap, Access Point). Use these terms, not synonyms.
+- `EJUST_RECOVERY_AUDIT_INSTRUCTIONS_V2.md` — the audit contract. Trust git/source/tests over completion claims.
+- `RECOVERY_REPORT.md` — pre-recovery snapshot (partly stale; predates completed phases).
+- Phase 10 (modernization: AngularJS/Bower/Grunt/Play upgrades, old-client deletion) is OUT OF SCOPE.
 
-This repository hosts the E-JUST deployment of the Anyplace indoor-navigation system. The Scala/Play API lives in `server/`: application code is in `server/app/`, configuration in `server/conf/`, database notes in `server/database/`, and Specs2 tests in `server/test/`. Static web clients are under `clients/web/`; shared JavaScript, CSS, and images belong in `clients/web/shared/`, while `anyplace_architect`, `anyplace_viewer`, and `anyplace_viewer_campus` are individual AngularJS/Grunt apps. Android modules are in `clients/android/`, with the primary app in `clients/android/Anyplace/`. Root scripts (`install.sh`, `start.sh`, `stop.sh`, `status.sh`) support Linux deployment. Treat `docker/` and `clients/deprecated/` as legacy unless a task explicitly targets them.
+## Layout (non-obvious)
+- `server/` = Play 2.8 (Scala 2.13) + MongoDB backend. Web clients also in `server/public/{anyplace_architect,anyplace_viewer,anyplace_viewer_campus}` (legacy AngularJS/Bower/Grunt) + `developers` (Swagger) + `shared`.
+- `clients/android-new/` = current Android apps (`logger`, `navigator`). `clients/android/` = legacy, excluded launch scope — don't modify its code. `clients/deprecated/`, `docker/` = legacy.
+- `server/anyplace_tiler/` = floorplan tiling pipeline (bash/Python/ImageMagick), Linux-only; will not run on Windows.
+- `server/database/` = manual MongoDB init/admin tools, not startup migrations.
+- Root `build` script + `dist/` produce deployment artifacts.
 
-## Build, Test, and Development Commands
+## Commands
+- Backend tests: `cd server; JAVA_HOME=<OpenJDK 11> sbt test` (expect 19 passing). Wrapper: `server/sbt` / `server/sbt.bat`.
+- Backend run: pinned JDK is 11. Bare Java 17 startup fails; workaround `--add-opens=java.base/java.lang=ALL-UNNAMED`.
+- Build: `./build --server` (builds server + web apps via bower/npm/grunt) | `--clients` (Android APKs → `apk generated/`) | `--all`.
+- Single web app: `cd server/public/<app>; bower install; npm install; grunt deploy`.
+- DB init: `cd server/database && ./init_database.sh [--drop]` (mongosh). Auto-initialized from `.env.example` by `./build` if missing.
+- Deploy: `cd dist && APPLICATION_SECRET=<...> ./deploy_to_vm.sh <port>`. Fails without `APPLICATION_SECRET` by design.
+- `.env` auto-init: `./build` copies `.env.example` → `.env`, `server/.env.example` → `server/.env`, `clients/.env.example` → `clients/.env` if they are absent.
 
-- `./install.sh` installs and configures the complete local Linux stack; use `./start.sh`, `./stop.sh`, and `./status.sh` for operations.
-- `cd server && ./sbt compile` compiles the Play backend; `./sbt run` starts it on port 9000, and `./sbt test` runs backend tests. Use `./sbt dist` to build the distributable archive.
-- From a web app such as `clients/web/anyplace_architect`, run `npm install`, `bower install`, then `grunt` for watch-mode development or `grunt deploy` for optimized `build/` assets.
-- `cd clients/android && ./gradlew :Anyplace:assembleDebug` builds the Android client when a compatible Android SDK is installed.
+## Config
+- `server/conf/application.conf` includes `app.base.conf` + `app.play.conf` + `app.private.conf`. The private file is gitignored; copy `app.private.example.conf` → `app.private.conf` and fill in (Mongo creds, `cors.allowedOrigins`, `application.secret`, password salt/pepper). Never commit or print it.
+- `.env`, `server/.env`, `clients/.env` are gitignored copies of the `.env.example` templates.
+- `anyplace.ejust.edu.eg` is illustrative (decision D-07), not the confirmed official hostname. Derive hostnames from environment/config (PUBLIC_BASE_URL style); never do a global domain replacement.
 
-## Coding Style & Naming Conventions
+## Android
+- Toolchain: Gradle wrapper 6.5.1, AGP 4.0.2, compile/target SDK 29, build-tools 29.0.2.
+- Requires `clients/android-new/local.properties` (`sdk.dir=...`) and `clients/.env` (`MAPS_API_KEY`, `SERVER_URL`). `MAPS_API_KEY` also read from `$HOME/MAPS_API_KEY` as fallback.
+- Shared code from JitPack (`com.github.dmsl:anyplace-lib-core:4.0.2`, `com.github.dmsl:anyplace-lib-android:4.0.2`). `settings.gradle` includes `:lib` and `:lib-core` whose directories (`clients/android-new/lib`, `clients/core/lib`) are absent in a fresh checkout — the build needs those dirs present or the includes removed.
+- Package IDs: `eg.edu.ejust.anyplace.logger` / `eg.edu.ejust.anyplace.navigator` (D-11).
 
-Follow the nearest `.editorconfig`: UTF-8, LF line endings, two-space indentation, and a 120-character maximum line length. Keep Scala types and classes in PascalCase; use camelCase for Scala/Java members and JavaScript identifiers. Match surrounding conventions for routes, JSON fields, and Angular controllers. Do not hand-edit generated web `build/` output or dependency directories.
+## Tests & invariants
+- Backend specs (ApplicationSpec, DatabaseBaselineSpec, SecurityRegressionSpec, IntegrationSpec) must handle gzip responses — helpers decompress before parsing.
+- `DatabaseBaselineSpec` uses unique per-run emails; fixed emails will fail with duplicate-email 400.
+- Invariants under test: first registrant = admin, subsequent = user (public bootstrap must stay blocked until admin verified); password never echoed; unauthenticated protected routes rejected.
+- MongoDB must be authenticated and localhost-bound only (D-06); analytics disabled by default (D-09); never expose Mongo publicly.
 
-## Testing Guidelines
-
-Backend tests use Specs2 with Play test helpers. Put focused specs in `server/test/` and name them `*Spec.scala` (for example, `UserControllerSpec.scala`). Cover success and failure cases for changed API routes, then run `./sbt test`. There is no repository-wide coverage gate; add tests with behavior changes instead of lowering existing assertions.
-
-## Commit & Pull Request Guidelines
-
-Recent history follows Conventional Commit prefixes: `feat:`, `fix:`, and `chore:`; use concise imperative subjects, e.g. `fix(smas): validate empty model responses`. Target the `develop` branch per `CONTRIBUTING.md`. PRs should state the problem and solution, link the issue when applicable, list validation commands, and include screenshots for web or Android UI changes. Never commit `server/conf/app.private.conf`, credentials, runtime data, or build artifacts.
+## Environment
+- Production target: Ubuntu 22.04 LTS, OpenJDK 11, MongoDB 6.0.29, ImageMagick 6.9, grunt-cli 1.5.0, bower 1.8.14. The Windows host is dev/investigation only.
+- Do not fabricate official DNS, TLS, map keys, or signing material — mark dependent work `EXTERNAL DEPENDENCY`.

@@ -59,9 +59,6 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Spinner;
-import android.graphics.Color;
-import android.view.ViewGroup;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.fragment.app.FragmentActivity;
@@ -269,7 +266,14 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 			floorSelector.Start(lat, lon);
 			startBuildingsFetch(true, false);
 		} else {
-			startBuildingsFetch(false, true);
+			List<BuildingModel> buildings = mAnyplaceCache.getSpinnerBuildings();
+
+			if (buildings.size() == 0) {
+				startBuildingsFetch(false, false);
+			} else {
+				setBuildingSpinner(buildings);
+				spinnerBuildings.setSelection(mAnyplaceCache.getSelectedBuildingIndex());
+			}
 		}
 
 	}
@@ -396,7 +400,7 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 		btnRefreshNearmeBuildings.setEnabled(false);
 		isBuildingsJobRunning = true;
 
-		AnyplaceServerAPI.fetchBuildings(getApplicationContext(), new FetchBuildingsTaskListener() {
+		mAnyplaceCache.loadWorldBuildings(new FetchBuildingsTaskListener() {
 
 			@Override
 			public void onSuccess(String result, List<BuildingModel> buildings) {
@@ -438,7 +442,7 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 				btnRefreshNearmeBuildings.setEnabled(btnRefreshNearmeBuildingsState);
 				isBuildingsJobRunning = false;
 			}
-		});
+		}, this, forceReload);
 	}
 
 	private void startFloorFetch() throws IndexOutOfBoundsException {
@@ -448,7 +452,7 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 
 			spinnerBuildings.setEnabled(false);
 
-			AnyplaceServerAPI.fetchFloors(getApplicationContext(), building.buid, new FetchFloorsByBuidTask.FetchFloorsByBuidTaskListener() {
+			building.loadFloors(new FetchFloorsByBuidTask.FetchFloorsByBuidTaskListener() {
 
 				@Override
 				public void onSuccess(String result, List<FloorModel> floors) {
@@ -468,7 +472,8 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 					spinnerBuildings.setEnabled(true);
 					isFloorsJobRunning = false;
 				}
-			});
+
+			}, this, true, true);
 
 		}
 	}
@@ -497,25 +502,8 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 				}
 			}
 
-			ArrayAdapter<String> spinnerBuildingsAdapter = new ArrayAdapter<String>(SelectBuildingActivity.this, android.R.layout.simple_spinner_item, list) {
-				@Override
-				public View getView(int position, View convertView, ViewGroup parent) {
-					View v = super.getView(position, convertView, parent);
-					if (v instanceof TextView) {
-						((TextView) v).setTextColor(Color.BLACK);
-					}
-					return v;
-				}
-
-				@Override
-				public View getDropDownView(int position, View convertView, ViewGroup parent) {
-					View v = super.getDropDownView(position, convertView, parent);
-					if (v instanceof TextView) {
-						((TextView) v).setTextColor(Color.BLACK);
-					}
-					return v;
-				}
-			};
+			ArrayAdapter<String> spinnerBuildingsAdapter;
+			spinnerBuildingsAdapter = new ArrayAdapter<String>(getBaseContext(), android.R.layout.simple_spinner_item, list);
 			spinnerBuildingsAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
 			spinnerBuildings.setAdapter(spinnerBuildingsAdapter);
 
@@ -530,25 +518,8 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 			list.add(floor.toString());
 		}
 
-		ArrayAdapter<String> spinnerFloorsAdapter = new ArrayAdapter<String>(SelectBuildingActivity.this, android.R.layout.simple_spinner_item, list) {
-			@Override
-			public View getView(int position, View convertView, ViewGroup parent) {
-				View v = super.getView(position, convertView, parent);
-				if (v instanceof TextView) {
-					((TextView) v).setTextColor(Color.BLACK);
-				}
-				return v;
-			}
-
-			@Override
-			public View getDropDownView(int position, View convertView, ViewGroup parent) {
-				View v = super.getDropDownView(position, convertView, parent);
-				if (v instanceof TextView) {
-					((TextView) v).setTextColor(Color.BLACK);
-				}
-				return v;
-			}
-		};
+		ArrayAdapter<String> spinnerFloorsAdapter;
+		spinnerFloorsAdapter = new ArrayAdapter<String>(getBaseContext(), android.R.layout.simple_spinner_item, list);
 		spinnerFloorsAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
 		spinnerFloors.setAdapter(spinnerFloorsAdapter);
 	}
@@ -597,11 +568,6 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 	}
 
 	private void onFloorsLoaded(List<FloorModel> floors) {
-		BuildingModel b = mAnyplaceCache.getSelectedBuilding();
-		if (b != null && floors != null) {
-			b.getFloors().clear();
-			b.getFloors().addAll(floors);
-		}
 		// if the user should not interact with the gui and
 		// automatically
 		// load the building
@@ -651,21 +617,10 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 				return;
 			}
 
-			FloorModel f = null;
-			if (b.getFloors() != null && !b.getFloors().isEmpty() && selectedFloorIndex >= 0 && selectedFloorIndex < b.getFloors().size()) {
-				f = b.getFloors().get(selectedFloorIndex);
-			}
+			final FloorModel f = b.getFloors().get(selectedFloorIndex);
 
-			if (f == null) {
-				Intent returnIntent = new Intent();
-				returnIntent.putExtra("bmodel", mAnyplaceCache.getSelectedBuildingIndex());
-				returnIntent.putExtra("fmodel", selectedFloorIndex);
-				setResult(RESULT_OK, returnIntent);
-				finish();
-				return;
-			}
-
-			AnyplaceServerAPI.fetchFloorPlan(this, b.buid, f.floor_number, new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
+			final FetchFloorPlanTask fetchFloorPlanTask = new FetchFloorPlanTask(this, b.buid, f.floor_number);
+			fetchFloorPlanTask.setCallbackInterface(new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
 
 				private ProgressDialog dialog;
 
@@ -686,13 +641,13 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 				public void onErrorOrCancel(String result) {
 					if (dialog != null)
 						dialog.dismiss();
+					Toast.makeText(getBaseContext(), result, Toast.LENGTH_SHORT).show();
 
 					Intent returnIntent = new Intent();
-					returnIntent.putExtra("bmodel", mAnyplaceCache.getSelectedBuildingIndex());
-					returnIntent.putExtra("fmodel", selectedFloorIndex);
 					returnIntent.putExtra("message", result);
-					setResult(RESULT_OK, returnIntent);
+					setResult(RESULT_CANCELED);
 					finish();
+
 				}
 
 				@Override
@@ -703,9 +658,16 @@ public class SelectBuildingActivity extends FragmentActivity implements FloorAny
 					dialog.setMessage("Please be patient...");
 					dialog.setCancelable(true);
 					dialog.setCanceledOnTouchOutside(false);
+					dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
+						@Override
+						public void onCancel(DialogInterface dialog) {
+							fetchFloorPlanTask.cancel(true);
+						}
+					});
 					dialog.show();
 				}
 			});
+			fetchFloorPlanTask.execute();
 		} catch (IndexOutOfBoundsException e) {
 			Toast.makeText(getBaseContext(), "You haven't selected both building and floor...!", Toast.LENGTH_SHORT).show();
 			setResult(RESULT_CANCELED);

@@ -75,8 +75,8 @@ public class FetchBuildingsByBuidTask extends AsyncTask<Void, Void, String> {
 		// create the JSON object for the navigation API call
 		JSONObject j = new JSONObject();
 		try {
-			j.put("username", "username");
-			j.put("password", "pass");
+			j.put("username", AnyplaceAPI.getApiUsername());
+			j.put("password", AnyplaceAPI.getApiPassword());
 			// insert the destination POI and the user's coordinates
 			j.put("buid", buid);
 			this.json_req = j.toString();
@@ -134,14 +134,11 @@ public class FetchBuildingsByBuidTask extends AsyncTask<Void, Void, String> {
 			}
 
 			// process the buildings received
-			BuildingModel b;
-			b = new BuildingModel();
-			b.setPosition(json.getString("coordinates_lat"), json.getString("coordinates_lon"));
-			b.buid = json.getString("buid");
-			// b.address = json.getString("address");
-			// b.description = json.getString("description");
-			b.name = json.getString("name");
-			// b.url = json.getString("url");
+			JSONObject target = json.has("space") ? json.getJSONObject("space") : (json.has("building") ? json.getJSONObject("building") : json);
+			BuildingModel b = new BuildingModel();
+			b.setPosition(target.getString("coordinates_lat"), target.getString("coordinates_lon"));
+			b.buid = target.getString("buid");
+			b.name = target.getString("name");
 
 			building = b;
 

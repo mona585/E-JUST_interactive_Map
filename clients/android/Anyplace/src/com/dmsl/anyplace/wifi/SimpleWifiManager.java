@@ -49,7 +49,7 @@ import android.net.wifi.WifiManager;
 
 public class SimpleWifiManager {
 
-	private final static Long DEFAULT_INTERVAL = 100L;
+	private final static Long DEFAULT_INTERVAL = 2000L;
 	private static SimpleWifiManager mInstance = null;
 
 	/**

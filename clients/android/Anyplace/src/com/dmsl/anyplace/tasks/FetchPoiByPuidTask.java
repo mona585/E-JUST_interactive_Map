@@ -103,8 +103,8 @@ public class FetchPoiByPuidTask extends AsyncTask<Void, Void, String> {
 		try {
 			JSONObject j = new JSONObject();
 			try {
-				j.put("username", "username");
-				j.put("password", "pass");
+				j.put("username", AnyplaceAPI.getApiUsername());
+				j.put("password", AnyplaceAPI.getApiPassword());
 
 				j.put("pois", this.puid);
 			} catch (JSONException e) {

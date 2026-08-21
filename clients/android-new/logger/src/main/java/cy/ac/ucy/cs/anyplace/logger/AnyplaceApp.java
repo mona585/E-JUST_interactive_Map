@@ -11,7 +11,7 @@ public class AnyplaceApp extends Application {
   public void initializeAnyplace(){
     //TODO: initialize with shared preferences
 
-     this.client = new Anyplace("ap-dev.cs.ucy.ac.cy", "443",getApplicationContext().getCacheDir().getAbsolutePath());
+     this.client = new Anyplace("anyplace.ejust.edu.eg", "443",getApplicationContext().getCacheDir().getAbsolutePath());
 
   }
 

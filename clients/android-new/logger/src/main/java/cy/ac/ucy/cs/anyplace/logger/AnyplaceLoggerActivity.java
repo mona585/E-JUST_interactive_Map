@@ -36,10 +36,7 @@
 
 package cy.ac.ucy.cs.anyplace.logger;
 
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
+
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -49,9 +46,7 @@ import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
-
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.GoogleMap.CancelableCallback;
 import com.google.android.gms.maps.GoogleMap.OnMarkerDragListener;
@@ -60,7 +55,6 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.GoogleMap.OnMapClickListener;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
-import com.google.android.gms.maps.model.Circle;
 import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MapStyleOptions;
@@ -72,11 +66,8 @@ import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
-import com.google.maps.android.clustering.Cluster;
 import com.google.maps.android.clustering.ClusterManager;
-import com.google.maps.android.clustering.ClusterManager.OnClusterClickListener;
 import com.google.maps.android.clustering.ClusterManager.OnClusterItemClickListener;
-import com.google.maps.android.heatmaps.Gradient;
 import com.google.maps.android.heatmaps.HeatmapTileProvider;
 import com.google.maps.android.heatmaps.WeightedLatLng;
 
@@ -115,12 +106,6 @@ import cy.ac.ucy.cs.anyplace.lib.android.tasks.DownloadRadioMapTaskBuid.Download
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import com.google.android.gms.maps.model.BitmapDescriptorFactory;
-import com.google.android.gms.maps.model.CircleOptions;
-import com.google.android.gms.maps.model.GroundOverlayOptions;
-import com.google.android.gms.maps.model.LatLngBounds;
 
 import java.io.File;
 import java.io.FilenameFilter;
@@ -174,10 +159,11 @@ import androidx.core.content.ContextCompat;
  *
  */
 public class AnyplaceLoggerActivity extends AppCompatActivity implements
-    OnSharedPreferenceChangeListener, GoogleApiClient.ConnectionCallbacks,
-    GoogleApiClient.OnConnectionFailedListener, LocationListener, OnMapClickListener,
-    OnMapReadyCallback {
+        OnSharedPreferenceChangeListener, GoogleApiClient.ConnectionCallbacks,
+        GoogleApiClient.OnConnectionFailedListener, LocationListener, OnMapClickListener,
+        OnMapReadyCallback {
   private static final String TAG = "AnyplaceLoggerActivity";
+
 
   // Define a request code to send to Google Play services This code is
   // returned in Activity.onActivityResult
@@ -189,11 +175,12 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
   private static final float mInitialZoomLevel = 18.0f;
 
-  // Google API
+  //Google API
+
 
   private LocationListener mLocationListener = this;
   // Location API
-  // private LocationClient mLocationClient;
+  //private LocationClient mLocationClient;
   // Define an object that holds accuracy and frequency parameters
   private LocationRequest mLocationRequest;
 
@@ -203,6 +190,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   private Location mLastLocation;
 
   private FusedLocationProviderClient mFusedLocationClient;
+
 
   // <Load Building and Marker>
   private ClusterManager<BuildingModel> mClusterManager;
@@ -248,58 +236,6 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   // Positioning
   private SensorsMain positioning;
   private MovementDetector movementDetector;
-
-  // Direct Hardware Accelerometer, Magnetometer & Gyroscope Sensors
-  private SensorManager mSensorManager;
-  private Sensor mAccelerometerSensor;
-  private Sensor mMagnetometerSensor;
-  private Sensor mGyroscopeSensor;
-  private float[] mGravityMatrix = new float[3];
-  private float[] mGeomagneticMatrix = new float[3];
-  private float[] mGyroscopeMatrix = new float[3];
-  private boolean mHasGravity = false;
-  private boolean mHasGeomagnetic = false;
-  private boolean mHasGyroscope = false;
-
-  private final SensorEventListener mHardwareSensorListener = new SensorEventListener() {
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-      if (event == null || event.values == null) return;
-
-      if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-        System.arraycopy(event.values, 0, mGravityMatrix, 0, 3);
-        mHasGravity = true;
-        if (movementDetector != null) {
-          movementDetector.onNewAccelerometer(event.values);
-        }
-      } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
-        System.arraycopy(event.values, 0, mGeomagneticMatrix, 0, 3);
-        mHasGeomagnetic = true;
-      } else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
-        System.arraycopy(event.values, 0, mGyroscopeMatrix, 0, 3);
-        mHasGyroscope = true;
-      }
-
-      if (mHasGravity && mHasGeomagnetic) {
-        float R[] = new float[9];
-        float I[] = new float[9];
-        boolean success = SensorManager.getRotationMatrix(R, I, mGravityMatrix, mGeomagneticMatrix);
-        if (success) {
-          float orientation[] = new float[3];
-          SensorManager.getOrientation(R, orientation);
-          float azimuthInDegrees = (float) Math.toDegrees(orientation[0]);
-          if (azimuthInDegrees < 0) {
-            azimuthInDegrees += 360;
-          }
-          raw_heading = azimuthInDegrees;
-          updateInfoView();
-        }
-      }
-    }
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
-  };
   private float raw_heading = 0.0f;
   private boolean walking = false;
 
@@ -310,8 +246,6 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   private BuildingModel mCurrentBuilding = null;
   private FloorModel mCurrentFloor = null;
   private HeatmapTileProvider mProvider;
-  private TileOverlay mHeatmapOverlay = null;
-  private List<Circle> mFingerprintCircles = new ArrayList<>();
   // Logger Service
   private int mCurrentSamplesTaken = 0;
   private boolean mIsSamplingActive = false;
@@ -323,10 +257,12 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
-    // app = (AnyplaceApp) getApplication();
+    //app = (AnyplaceApp) getApplication();
     setContentView(R.layout.activity_logger);
 
+
     mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+
 
     textFloor = (TextView) findViewById(R.id.textFloor);
     progressBar = (ProgressBar) findViewById(R.id.progressBar);
@@ -340,57 +276,89 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     // setup the trackme button overlaid in the map
     btnTrackme = (ImageButton) findViewById(R.id.btnTrackme);
 
+
+
+
+
     btnTrackme.setOnClickListener(new OnClickListener() {
       @Override
       public void onClick(View v) {
-        checkLocationPermission();
-        if (mFusedLocationClient != null) {
-          mFusedLocationClient.getLastLocation().addOnCompleteListener(new OnCompleteListener<Location>() {
+
+
+        if (gpsMarker != null) {
+          Log.d(TAG, " gpsMarker is not null");
+          AnyplaceCache mAnyplaceCache = AnyplaceCache.getInstance(AnyplaceLoggerActivity.this);
+          mAnyplaceCache.loadWorldBuildings(new FetchBuildingsTaskListener() {
+
             @Override
-            public void onComplete(@NonNull Task<Location> task) {
-              Location loc = task.getResult();
-              if (loc != null) {
-                final LatLng coord = new LatLng(loc.getLatitude(), loc.getLongitude());
-                if (gpsMarker != null) {
-                  gpsMarker.remove();
-                }
-                MarkerOptions markerOptions = new MarkerOptions()
-                    .position(coord)
-                    .title("GPS Position")
-                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE));
-                gpsMarker = mMap.addMarker(markerOptions);
-                if (mMap != null) {
-                  mMap.animateCamera(create3DCameraUpdate(coord, 19.0f));
-                }
+            public void onSuccess(String result, List<BuildingModel> buildings) {
+              FetchNearBuildingsTask nearest = new FetchNearBuildingsTask();
+              nearest.run(buildings.iterator(), gpsMarker.getPosition().latitude, gpsMarker.getPosition().longitude, 100);
 
-                AnyplaceServerAPI.fetchBuildings(AnyplaceLoggerActivity.this, new FetchBuildingsTaskListener() {
-                  @Override
-                  public void onSuccess(String result, List<BuildingModel> buildings) {
-                    if (buildings != null && !buildings.isEmpty()) {
-                      builds = buildings;
-                      FetchNearBuildingsTask nearest = new FetchNearBuildingsTask();
-                      nearest.run(buildings.iterator(), coord.latitude, coord.longitude, 200);
-                      if (nearest.buildings != null && nearest.buildings.size() > 0) {
-                        bypassSelectBuildingActivity(nearest.buildings.get(0));
-                      }
-                    }
-                  }
-
-                  @Override
-                  public void onErrorOrCancel(String result) {
-                  }
-                });
+              if (nearest.buildings.size() > 0) {
+                bypassSelectBuildingActivity(nearest.buildings.get(0));
               } else {
-                Toast.makeText(getApplicationContext(), "Locating GPS position...", Toast.LENGTH_SHORT).show();
-                if (mLocationRequest != null && mLocationCallbackConnected != null) {
-                  try {
-                    mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallbackConnected, Looper.getMainLooper());
-                  } catch (Exception ignored) {}
-                }
+                // mMap.getCameraPosition().zoom
+                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(gpsMarker.getPosition(), mInitialZoomLevel));
               }
             }
-          });
+
+            @Override
+            public void onErrorOrCancel(String result) {
+              Toast.makeText(getBaseContext(), "Error localizing", Toast.LENGTH_SHORT).show();
+            }
+
+          }, AnyplaceLoggerActivity.this, false);
         }
+
+
+        else{
+          if(AnyplaceDebug.DEBUG_MESSAGES){
+            Log.d(TAG, " gpsMarker is null");
+          }
+
+
+          AnyplaceCache mAnyplaceCache = AnyplaceCache.getInstance(AnyplaceLoggerActivity.this);
+          //TODO: in MapUtils
+          mAnyplaceCache.loadWorldBuildings(new FetchBuildingsTaskListener() {
+
+            @Override
+            public void onSuccess(String result, List<BuildingModel> buildings) {
+              builds = buildings;
+              checkLocationPermission();
+              // mFusedLocationClient.requestLocationUpdates(mLocationRequest,mLocationCallbackInitial,Looper.myLooper());
+
+              mFusedLocationClient.getLastLocation().addOnCompleteListener(new OnCompleteListener<Location>() {
+                @Override
+                public void onComplete(@NonNull Task<Location> task) {
+                  if (!task.isSuccessful() || task.getResult() == null) return;
+                  Location loc = task.getResult();
+                  LatLng coord = new LatLng(loc.getLatitude(),loc.getLongitude());
+                  FetchNearBuildingsTask nearest = new FetchNearBuildingsTask();
+                  nearest.run(builds.iterator(), coord.latitude, coord.longitude, 100);
+
+                  if (nearest.buildings.size() > 0) {
+                    bypassSelectBuildingActivity(nearest.buildings.get(0));
+                  } else {
+                    // mMap.getCameraPosition().zoom
+                    mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(coord, mInitialZoomLevel));
+                  }
+                }
+              });
+
+
+
+            }
+
+            @Override
+            public void onErrorOrCancel(String result) {
+              Toast.makeText(getBaseContext(), "Error localizing", Toast.LENGTH_SHORT).show();
+            }
+
+          }, AnyplaceLoggerActivity.this, false);
+
+        }
+
       }
     });
 
@@ -461,54 +429,28 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     // Set the fastest update interval to 1 second
     mLocationRequest.setFastestInterval(1000);
 
+
+
     // get settings
     PreferenceManager.setDefaultValues(this, getString(R.string.preferences_file), MODE_PRIVATE,
-        cy.ac.ucy.cs.anyplace.lib.R.xml.preferences_logger, true);
+            cy.ac.ucy.cs.anyplace.lib.R.xml.preferences_logger, true);
     preferences = getSharedPreferences(getString(R.string.preferences_file), MODE_PRIVATE);
-    SharedPreferences.Editor initEditor = preferences.edit();
-    initEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    initEditor.putString("password", "ahmedmesbah");
-    initEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    initEditor.putString("server_port", "44");
-    initEditor.putString("samples_interval", "1000");
-    initEditor.commit();
-
-    SharedPreferences apPrefs = getSharedPreferences("Anyplace_Preferences", MODE_PRIVATE);
-    SharedPreferences.Editor apEditor = apPrefs.edit();
-    apEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    apEditor.putString("password", "ahmedmesbah");
-    apEditor.putString("access_token", "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap");
-    apEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    apEditor.putString("server_port", "44");
-    apEditor.putString("samples_interval", "1000");
-    apEditor.commit();
-
-    SharedPreferences defPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-    SharedPreferences.Editor defEditor = defPrefs.edit();
-    defEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    defEditor.putString("password", "ahmedmesbah");
-    defEditor.putString("access_token", "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap");
-    defEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    defEditor.putString("server_port", "44");
-    defEditor.putString("samples_interval", "1000");
-    defEditor.commit();
-
     preferences.registerOnSharedPreferenceChangeListener(this);
     onSharedPreferenceChanged(preferences, "walk_bar");
 
-    File appStorageDir = getExternalFilesDir(null);
-    String defaultFolder = (appStorageDir != null) ? appStorageDir.getAbsolutePath() : getFilesDir().getAbsolutePath();
-    folder_path = preferences.getString("folder_browser", defaultFolder);
-    filename_rss = preferences.getString("filename_log", "anyplace_rss.txt");
-
-    if (appStorageDir != null) {
-      if (!appStorageDir.exists()) {
-        appStorageDir.mkdirs();
+    String folder_browser = preferences.getString("folder_browser", null);
+    if (folder_browser == null) {
+      File f = new File(Environment.getExternalStorageDirectory() + File.separator + getResources().getString(R.string.app_name));
+      f.mkdirs();
+      if (f.mkdirs() || f.isDirectory()) {
+        String path = f.getAbsolutePath();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putString("folder_browser", path);
+        editor.commit();
       }
-      SharedPreferences.Editor editor = preferences.edit();
-      editor.putString("folder_browser", folder_path);
-      editor.putString("filename_log", filename_rss);
-      editor.commit();
+    } else {
+      File f = new File(folder_browser);
+      f.mkdirs();
     }
 
     // WiFi manager to manage scans
@@ -529,74 +471,74 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
     setUpMapIfNeeded();
   }
-
   public static final int MY_PERMISSIONS_REQUEST_LOCATION = 99;
-
-
   private void checkLocationPermission() {
-    if (ActivityCompat.checkSelfPermission(this,
-        Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+    if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
 
       // Should we show an explanation?
       if (ActivityCompat.shouldShowRequestPermissionRationale(this,
-          Manifest.permission.ACCESS_FINE_LOCATION)) {
+              Manifest.permission.ACCESS_FINE_LOCATION)) {
 
         // Show an explanation to the user *asynchronously* -- don't block
         // this thread waiting for the user's response! After the user
         // sees the explanation, try again to request the permission.
         new AlertDialog.Builder(this)
-            .setTitle("Location Permission Needed")
-            .setMessage("This app needs the Location permission, please accept to use location functionality")
-            .setPositiveButton("OK", new DialogInterface.OnClickListener() {
-              @Override
-              public void onClick(DialogInterface dialogInterface, int i) {
-                // Prompt the user once explanation has been shown
-                ActivityCompat.requestPermissions(AnyplaceLoggerActivity.this,
-                    new String[] { Manifest.permission.ACCESS_FINE_LOCATION },
-                    MY_PERMISSIONS_REQUEST_LOCATION);
-              }
-            })
-            .create()
-            .show();
+                .setTitle("Location Permission Needed")
+                .setMessage("This app needs the Location permission, please accept to use location functionality")
+                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                  @Override
+                  public void onClick(DialogInterface dialogInterface, int i) {
+                    //Prompt the user once explanation has been shown
+                    ActivityCompat.requestPermissions(AnyplaceLoggerActivity.this,
+                            new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                            MY_PERMISSIONS_REQUEST_LOCATION );
+                  }
+                })
+                .create()
+                .show();
+
 
       } else {
         // No explanation needed, we can request the permission.
         ActivityCompat.requestPermissions(this,
-            new String[] { Manifest.permission.ACCESS_FINE_LOCATION },
-            MY_PERMISSIONS_REQUEST_LOCATION);
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                MY_PERMISSIONS_REQUEST_LOCATION );
       }
     }
 
-    if (ActivityCompat.checkSelfPermission(this,
-        Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+
+    if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
 
       // Should we show an explanation?
       if (ActivityCompat.shouldShowRequestPermissionRationale(this,
-          Manifest.permission.ACCESS_COARSE_LOCATION)) {
+              Manifest.permission.ACCESS_COARSE_LOCATION)) {
 
         // Show an explanation to the user *asynchronously* -- don't block
         // this thread waiting for the user's response! After the user
         // sees the explanation, try again to request the permission.
         new AlertDialog.Builder(this)
-            .setTitle("Location Permission Needed")
-            .setMessage("This app needs the Location permission, please accept to use location functionality")
-            .setPositiveButton("OK", new DialogInterface.OnClickListener() {
-              @Override
-              public void onClick(DialogInterface dialogInterface, int i) {
-                // Prompt the user once explanation has been shown
-                ActivityCompat.requestPermissions(AnyplaceLoggerActivity.this,
-                    new String[] { Manifest.permission.ACCESS_COARSE_LOCATION },
-                    MY_PERMISSIONS_REQUEST_LOCATION);
-              }
-            })
-            .create()
-            .show();
+                .setTitle("Location Permission Needed")
+                .setMessage("This app needs the Location permission, please accept to use location functionality")
+                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                  @Override
+                  public void onClick(DialogInterface dialogInterface, int i) {
+                    //Prompt the user once explanation has been shown
+                    ActivityCompat.requestPermissions(AnyplaceLoggerActivity.this,
+                            new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
+                            MY_PERMISSIONS_REQUEST_LOCATION );
+                  }
+                })
+                .create()
+                .show();
+
 
       } else {
         // No explanation needed, we can request the permission.
         ActivityCompat.requestPermissions(this,
-            new String[] { Manifest.permission.ACCESS_COARSE_LOCATION },
-            MY_PERMISSIONS_REQUEST_LOCATION);
+                new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
+                MY_PERMISSIONS_REQUEST_LOCATION );
       }
     }
 
@@ -609,20 +551,13 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   /**
    * Sets up the map if it is possible to do so (i.e., the Google Play
    * services APK is correctly installed) and the map has not already been
-   * instantiated.. This will ensure that we only ever call once when
-   * {@link #mMap} is not null.
+   * instantiated.. This will ensure that we only ever call  once when {@link #mMap} is not null.
    * <p>
-   * If it isn't installed {@link SupportMapFragment} (and
-   * {@link com.google.android.gms.maps.MapView MapView}) will show a prompt for
-   * the user to install/update the Google Play services APK on
+   * If it isn't installed {@link SupportMapFragment} (and {@link com.google.android.gms.maps.MapView MapView}) will show a prompt for the user to install/update the Google Play services APK on
    * their device.
    * <p>
-   * A user can return to this FragmentActivity after following the prompt and
-   * correctly installing/updating/enabling the Google Play services. Since the
-   * FragmentActivity may not have been
-   * completely destroyed during this process (it is likely that it would only be
-   * stopped or paused), {@link #onCreate(Bundle)} may not be called again so we
-   * should call this method in
+   * A user can return to this FragmentActivity after following the prompt and correctly installing/updating/enabling the Google Play services. Since the FragmentActivity may not have been
+   * completely destroyed during this process (it is likely that it would only be stopped or paused), {@link #onCreate(Bundle)} may not be called again so we should call this method in
    * {@link #onResume()} to guarantee that it will be called.
    */
   private void setUpMapIfNeeded() {
@@ -632,87 +567,104 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       return;
     }
     SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
-        .findFragmentById(R.id.map);
+            .findFragmentById(R.id.map);
 
     mapFragment.getMapAsync(this);
 
+
   }
+
 
   @Override
   public void onMapReady(GoogleMap googleMap) {
     mMap = googleMap;
-    mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
-    mMap.setBuildingsEnabled(false);
-    mMap.setIndoorEnabled(true);
-    mMap.getUiSettings().setTiltGesturesEnabled(false);
-    mMap.getUiSettings().setCompassEnabled(true);
-    mMap.getUiSettings().setZoomControlsEnabled(true);
-    mMap.getUiSettings().setMyLocationButtonEnabled(true);
+    mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
 
     mClusterManager = new ClusterManager<>(this, mMap);
-    mClusterManager.setRenderer(new MyBuildingsRenderer(this, mMap, mClusterManager));
     initListeners();
 
-    // Automatically reload buildings from server and refresh map markers
-    handleBuildingsOnMap();
-  }
 
-  private CameraUpdate create3DCameraUpdate(LatLng target, float zoom) {
-    CameraPosition cp = new CameraPosition.Builder()
-        .target(target)
-        .zoom(zoom)
-        .tilt(0.0f)
-        .build();
-    return CameraUpdateFactory.newCameraPosition(cp);
-  }
-
-  private void updateGpsMarker(LatLng newPos) {
-    if (mMap == null || newPos == null) return;
-    if (gpsMarker == null) {
-      MarkerOptions marker = new MarkerOptions();
-      marker.position(newPos);
-      marker.title("User").snippet("Estimated Position");
-      marker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE));
-      marker.anchor(0.5f, 0.5f);
-      marker.flat(true);
-      gpsMarker = mMap.addMarker(marker);
-    } else {
-      gpsMarker.setPosition(newPos);
-    }
-    if (gpsMarker != null) {
-      gpsMarker.setRotation(raw_heading - bearing);
-    }
   }
 
   LocationCallback mLocationCallbackInitial = new LocationCallback() {
     @Override
     public void onLocationResult(LocationResult locationResult) {
-      if (locationResult == null) return;
       List<Location> locationList = locationResult.getLocations();
       if (locationList.size() > 0) {
+        //The last location in the list is the newest
         Location location = locationList.get(locationList.size() - 1);
+        if (AnyplaceDebug.DEBUG_LOCATION){
+          Log.i(TAG, "Location: " + location.getLatitude() + " " + location.getLongitude());
+        }
+
         mLastLocation = location;
-        LatLng newPos = new LatLng(location.getLatitude(), location.getLongitude());
-        updateGpsMarker(newPos);
+
+
+        if (gpsMarker != null) {
+          // draw the location of the new position
+          gpsMarker.remove();
+
+        }
+        MarkerOptions marker = new MarkerOptions();
+        marker.position(new LatLng(locationResult.getLastLocation().getLatitude(), locationResult.getLastLocation().getLongitude()));
+        marker.title("User").snippet("Estimated Position");
+        marker.icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_icon));
+
+        marker.rotation(raw_heading - bearing);
+        gpsMarker = mMap.addMarker(marker);
+
+        //move map camera
+        // mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 11));
+
+        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(gpsMarker.getPosition(), mInitialZoomLevel));
+
+
       }
-      if (mFusedLocationClient != null) {
-        try {
-          mFusedLocationClient.removeLocationUpdates(mLocationCallbackInitial);
-        } catch (Exception ignored) {}
-      }
+
+      mFusedLocationClient.removeLocationUpdates(mLocationCallbackInitial);
     }
   };
+
 
   LocationCallback mLocationCallback = new LocationCallback() {
     @Override
     public void onLocationResult(LocationResult locationResult) {
-      if (locationResult == null) return;
       List<Location> locationList = locationResult.getLocations();
       if (locationList.size() > 0) {
+        //The last location in the list is the newest
         Location location = locationList.get(locationList.size() - 1);
+        if (AnyplaceDebug.DEBUG_LOCATION){
+          Log.i(TAG, "Location: " + location.getLatitude() + " " + location.getLongitude());
+        }
+
         mLastLocation = location;
-        LatLng newPos = new LatLng(location.getLatitude(), location.getLongitude());
-        updateGpsMarker(newPos);
+
+
+        if (gpsMarker != null) {
+          // draw the location of the new position
+          gpsMarker.remove();
+
+        }
+        MarkerOptions marker = new MarkerOptions();
+        marker.position(new LatLng(locationResult.getLastLocation().getLatitude(), locationResult.getLastLocation().getLongitude()));
+        marker.title("User").snippet("Estimated Position");
+        marker.icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_icon));
+
+        marker.rotation(raw_heading - bearing);
+        gpsMarker = mMap.addMarker(marker);
+
+        //move map camera
+        // mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 11));
+
+        // mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(gpsMarker.getPosition(), mInitialZoomLevel));
+
+        FetchNearBuildingsTask nearest = new FetchNearBuildingsTask();
+        if (builds != null){
+          nearest.run(builds.iterator(), gpsMarker.getPosition().latitude, gpsMarker.getPosition().longitude, 100);
+          if (nearest.buildings.size() > 0) {
+            bypassSelectBuildingActivity(nearest.buildings.get(0));
+          }
+        }
       }
     }
   };
@@ -720,16 +672,46 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   LocationCallback mLocationCallbackConnected = new LocationCallback() {
     @Override
     public void onLocationResult(LocationResult locationResult) {
-      if (locationResult == null) return;
       List<Location> locationList = locationResult.getLocations();
       if (locationList.size() > 0) {
+        //The last location in the list is the newest
         Location location = locationList.get(locationList.size() - 1);
+        if (AnyplaceDebug.DEBUG_LOCATION){
+          Log.i(TAG, "Location: " + location.getLatitude() + " " + location.getLongitude());
+        }
+
         mLastLocation = location;
-        LatLng newPos = new LatLng(location.getLatitude(), location.getLongitude());
-        updateGpsMarker(newPos);
+
+
+        if (gpsMarker != null) {
+          // draw the location of the new position
+          gpsMarker.remove();
+
+        }
+        MarkerOptions marker = new MarkerOptions();
+        marker.position(new LatLng(locationResult.getLastLocation().getLatitude(), locationResult.getLastLocation().getLongitude()));
+        marker.title("User").snippet("Estimated Position");
+        marker.icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_icon));
+
+        marker.rotation(raw_heading - bearing);
+        gpsMarker = mMap.addMarker(marker);
+        // Log.d(TAG, "Should have a marker");
+
+        //move map camera
+        // mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 11));
+
+        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(gpsMarker.getPosition(), mInitialZoomLevel));
+
+
       }
+        mFusedLocationClient.removeLocationUpdates(mLocationCallbackConnected);
+        checkLocationPermission();
+        mFusedLocationClient.requestLocationUpdates(mLocationRequest,mLocationCallback,Looper.myLooper());
+
     }
   };
+
+
 
   private void initCamera() {
 
@@ -739,14 +721,16 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
     checkLocationPermission();
     mFusedLocationClient
-        .getCurrentLocation(LocationRequest.PRIORITY_HIGH_ACCURACY, null)
-        .addOnCompleteListener(new OnCompleteListener<Location>() {
-          @Override
-          public void onComplete(@NonNull Task<Location> task) {
-            Location gps = task.getResult();
-            mMap.animateCamera(
-                create3DCameraUpdate(new LatLng(gps.getLatitude(), gps.getLongitude()), mInitialZoomLevel),
-                new CancelableCallback() {
+            .getCurrentLocation(LocationRequest.PRIORITY_HIGH_ACCURACY, null)
+            .addOnCompleteListener(new OnCompleteListener<Location>() {
+              @Override
+              public void onComplete(@NonNull Task<Location> task) {
+                if (!task.isSuccessful() || task.getResult() == null) {
+                  handleBuildingsOnMap();
+                  return;
+                }
+                Location gps = task.getResult();
+                mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(gps.getLatitude(), gps.getLongitude()), mInitialZoomLevel), new CancelableCallback() {
 
                   @Override
                   public void onFinish() {
@@ -758,44 +742,55 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
                     handleBuildingsOnMap();
                   }
                 });
-          }
-        }).addOnFailureListener(new OnFailureListener() {
-          @Override
-          public void onFailure(@NonNull Exception e) {
-            Toast.makeText(getApplicationContext(), "Failed to get location. Please check if location is enabled",
-                Toast.LENGTH_SHORT).show();
-            Log.d(TAG, e.getMessage());
-          }
-        });
+              }
+            }).addOnFailureListener(new OnFailureListener() {
+      @Override
+      public void onFailure(@NonNull Exception e) {
+        Toast.makeText(getApplicationContext(), "Failed to get location. Please check if location is enabled", Toast.LENGTH_SHORT).show();
+        Log.d(TAG, e.getMessage());
+      }
+    });
+
+
+
 
   }
 
   private void initListeners() {
 
-    mMap.setOnCameraIdleListener(new GoogleMap.OnCameraIdleListener() {
+    mMap.setOnCameraChangeListener(new GoogleMap.OnCameraChangeListener() {
       @Override
-      public void onCameraIdle() {
-        if (mMap == null) return;
-        CameraPosition position = mMap.getCameraPosition();
+      public void onCameraChange(CameraPosition position) {
+        // change search box message and clear pois
         if (searchType != AnyPlaceSeachingHelper.getSearchType(position.zoom)) {
           searchType = AnyPlaceSeachingHelper.getSearchType(position.zoom);
           if (searchType == SearchTypes.INDOOR_MODE) {
-            btnTrackme.setVisibility(View.VISIBLE);
+            btnTrackme.setVisibility(View.INVISIBLE);
             btnRecord.setVisibility(View.VISIBLE);
+
+
+            if (gpsMarker != null) {
+              // draw the location of the new position
+              gpsMarker.remove();
+            }
+
           } else if (searchType == SearchTypes.OUTDOOR_MODE) {
             btnTrackme.setVisibility(View.VISIBLE);
-            btnRecord.setVisibility(View.VISIBLE);
+            btnRecord.setVisibility(View.INVISIBLE);
+
+
+
+            checkLocationPermission();
+            mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallbackConnected, Looper.myLooper());
+            handleBuildingsOnMap();
+
+            // mMap.setMyLocationEnabled(true);
+
           }
         }
 
         bearing = position.bearing;
-        if (mClusterManager != null) {
-          mClusterManager.onCameraChange(position);
-        }
-        if ((curLocation == null || (curLocation.latitude == 0.0 && curLocation.longitude == 0.0)) && position != null && position.target != null && (position.target.latitude != 0.0 || position.target.longitude != 0.0)) {
-          curLocation = position.target;
-        }
-        updateInfoView();
+        mClusterManager.onCameraChange(position);
       }
     });
 
@@ -811,16 +806,15 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
       @Override
       public void onMarkerDragEnd(Marker arg0) {
-        if (arg0 != null && arg0.getPosition() != null) {
-          LatLng dragPosition = arg0.getPosition();
+        // TODO Auto-generated method stub
+        LatLng dragPosition = arg0.getPosition();
 
-          if (mIsSamplingActive) {
-            saveRecordingToLine(dragPosition);
-          }
-
-          curLocation = dragPosition;
-          updateInfoView();
+        if (mIsSamplingActive) {
+          saveRecordingToLine(dragPosition);
         }
+
+        curLocation = dragPosition;
+
       }
 
       @Override
@@ -832,23 +826,14 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
     mMap.setOnMarkerClickListener(mClusterManager);
 
-    mClusterManager.setOnClusterClickListener(new OnClusterClickListener<BuildingModel>() {
-      @Override
-      public boolean onClusterClick(Cluster<BuildingModel> cluster) {
-        if (cluster != null && cluster.getPosition() != null && mMap != null) {
-          mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(cluster.getPosition(), mMap.getCameraPosition().zoom + 2));
-        }
-        return true;
-      }
-    });
-
     mClusterManager.setOnClusterItemClickListener(new OnClusterItemClickListener<BuildingModel>() {
+
       @Override
       public boolean onClusterItemClick(final BuildingModel b) {
-        if (b != null && b.buid != null) {
-          Toast.makeText(AnyplaceLoggerActivity.this, "Loading building: " + (b.name != null ? b.name : "Building"), Toast.LENGTH_SHORT).show();
+        if (b != null) {
           bypassSelectBuildingActivity(b);
         }
+        // Prevent Popup dialog
         return true;
       }
     });
@@ -876,6 +861,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       return true;
     } else {
       // Google Play services was not available for some reason
+
 
       if (GooglePlayServicesUtil.isUserRecoverableError(resultCode)) {
         GooglePlayServicesUtil.getErrorDialog(resultCode, this, PLAY_SERVICES_RESOLUTION_REQUEST).show();
@@ -916,11 +902,14 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   @Override
   public void onConnected(Bundle arg0) {
 
+
     mLocationRequest = LocationRequest.create();
     mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
     mLocationRequest.setInterval(1000); // Update location every second
     checkLocationPermission();
-    mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, Looper.myLooper());
+    mFusedLocationClient.requestLocationUpdates(mLocationRequest,mLocationCallback,Looper.myLooper());
+
+
 
     // No map is loaded
     if (checkPlayServices()) {
@@ -968,19 +957,22 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
   }
 
+
   private void handleBuildingsOnMap() {
 
-    AnyplaceServerAPI.fetchBuildings(AnyplaceLoggerActivity.this, new FetchBuildingsTaskListener() {
+    AnyplaceCache mAnyplaceCache = AnyplaceCache.getInstance(AnyplaceLoggerActivity.this);
+    mAnyplaceCache.loadWorldBuildings(new FetchBuildingsTaskListener() {
 
       @Override
       public void onSuccess(String result, List<BuildingModel> buildings) {
-        if (mClusterManager == null) return;
         List<BuildingModel> collection = new ArrayList<BuildingModel>(buildings);
         mClusterManager.clearItems();
         if (mCurrentBuilding != null)
           collection.remove(mCurrentBuilding);
         mClusterManager.addItems(collection);
         mClusterManager.cluster();
+        // HACK. This dumps all the cached icons & recreates everything.
+        mClusterManager.setRenderer(new MyBuildingsRenderer(AnyplaceLoggerActivity.this, mMap, mClusterManager));
       }
 
       @Override
@@ -988,8 +980,9 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
       }
 
-    });
+    }, this, false);
   }
+
 
   /** Called when we want to clear the map overlays */
   private void clearMap() {
@@ -1004,14 +997,8 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     Log.i(TAG, "onPause");
     super.onPause();
 
-    if (!mIsSamplingActive && positioning != null) {
+    if (!mIsSamplingActive) {
       positioning.pause();
-    }
-
-    if (mFusedLocationClient != null && mLocationCallbackConnected != null) {
-      try {
-        mFusedLocationClient.removeLocationUpdates(mLocationCallbackConnected);
-      } catch (Exception ignored) {}
     }
   }
 
@@ -1021,32 +1008,8 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     super.onResume();
     setUpMapIfNeeded();
 
-    if (!mIsSamplingActive && positioning != null) {
+    if (!mIsSamplingActive) {
       positioning.resume();
-    }
-
-    // Register Direct Hardware Accelerometer, Magnetometer & Gyroscope
-    mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-    if (mSensorManager != null) {
-      mAccelerometerSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-      mMagnetometerSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
-      mGyroscopeSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
-      if (mAccelerometerSensor != null) {
-        mSensorManager.registerListener(mHardwareSensorListener, mAccelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
-      }
-      if (mMagnetometerSensor != null) {
-        mSensorManager.registerListener(mHardwareSensorListener, mMagnetometerSensor, SensorManager.SENSOR_DELAY_GAME);
-      }
-      if (mGyroscopeSensor != null) {
-        mSensorManager.registerListener(mHardwareSensorListener, mGyroscopeSensor, SensorManager.SENSOR_DELAY_GAME);
-      }
-    }
-
-    checkLocationPermission();
-    if (mFusedLocationClient != null && mLocationRequest != null && mLocationCallbackConnected != null) {
-      try {
-        mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallbackConnected, Looper.getMainLooper());
-      } catch (Exception ignored) {}
     }
   }
 
@@ -1054,23 +1017,15 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
   protected void onStart() {
     super.onStart();
 
+
   }
 
   @Override
   protected void onStop() {
     super.onStop();
 
-    if (mSensorManager != null && mHardwareSensorListener != null) {
-      try {
-        mSensorManager.unregisterListener(mHardwareSensorListener);
-      } catch (Exception ignored) {}
-    }
+    // Disconnecting the client invalidates it.
 
-    if (mFusedLocationClient != null && mLocationCallbackConnected != null) {
-      try {
-        mFusedLocationClient.removeLocationUpdates(mLocationCallbackConnected);
-      } catch (Exception ignored) {}
-    }
   }
 
   @Override
@@ -1089,26 +1044,19 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
             return;
           }
 
-          try {
-            int bIndex = data.getIntExtra("bmodel", 0);
-            int fIndex = data.getIntExtra("fmodel", 0);
-            List<BuildingModel> buildings = AnyplaceCache.getInstance(this).getSpinnerBuildings();
-            if (buildings != null && bIndex >= 0 && bIndex < buildings.size()) {
-              BuildingModel b = buildings.get(bIndex);
-              FloorModel f = null;
-              if (b.getFloors() != null && fIndex >= 0 && fIndex < b.getFloors().size()) {
-                f = b.getFloors().get(fIndex);
-              }
-              if (f == null) {
-                f = b.getSelectedFloor();
-              }
+          String fpf = data.getStringExtra("floor_plan_path");
+          if (fpf == null) {
+            Toast.makeText(getBaseContext(), "You haven't selected both building and floor...!", Toast.LENGTH_SHORT).show();
+            return;
+          }
 
-              if (f != null) {
-                selectPlaceActivityResult(b, f);
-              }
-            }
+          try {
+            BuildingModel b = AnyplaceCache.getInstance(this).getSpinnerBuildings().get(data.getIntExtra("bmodel", 0));
+            FloorModel f = b.getFloors().get(data.getIntExtra("fmodel", 0));
+
+            bypassSelectBuildingActivity(b, f);
           } catch (Exception ex) {
-            Log.e(TAG, "Error handling select place activity result: " + ex.getMessage(), ex);
+            Toast.makeText(getBaseContext(), "You haven't selected both building and floor...!", Toast.LENGTH_SHORT).show();
           }
         } else if (resultCode == RESULT_CANCELED) {
           // CANCELLED
@@ -1129,14 +1077,12 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
             case REFRESH_BUILDING:
 
               if (mCurrentBuilding == null) {
-                Toast.makeText(getBaseContext(), "Load a map before performing this action!", Toast.LENGTH_SHORT)
-                    .show();
+                Toast.makeText(getBaseContext(), "Load a map before performing this action!", Toast.LENGTH_SHORT).show();
                 break;
               }
 
               if (progressBar.getVisibility() == View.VISIBLE) {
-                Toast.makeText(getBaseContext(), "Building Loading in progress. Please Wait!", Toast.LENGTH_SHORT)
-                    .show();
+                Toast.makeText(getBaseContext(), "Building Loading in progress. Please Wait!", Toast.LENGTH_SHORT).show();
                 break;
               }
 
@@ -1160,14 +1106,13 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
                   radiomaps[i] = radiomapsRoot.getAbsolutePath() + File.separator + radiomaps[i];
                 }
 
-                DeleteFolderBackgroundTask task = new DeleteFolderBackgroundTask(
-                    new DeleteFolderBackgroundTask.DeleteFolderBackgroundTaskListener() {
+                DeleteFolderBackgroundTask task = new DeleteFolderBackgroundTask(new DeleteFolderBackgroundTask.DeleteFolderBackgroundTaskListener() {
 
-                      @Override
-                      public void onSuccess() {
-                        bypassSelectBuildingActivity(mCurrentBuilding, mCurrentBuilding.getSelectedFloor());
-                      }
-                    }, this, true);
+                  @Override
+                  public void onSuccess() {
+                    bypassSelectBuildingActivity(mCurrentBuilding, mCurrentBuilding.getSelectedFloor());
+                  }
+                }, this, true);
                 task.setFiles(floorsRoot);
                 task.setFiles(radiomaps);
                 task.execute();
@@ -1191,7 +1136,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       }
 
       // Load Building
-      AnyplaceServerAPI.fetchFloors(AnyplaceLoggerActivity.this, b.buid, new FetchFloorsByBuidTaskListener() {
+      b.loadFloors(new FetchFloorsByBuidTaskListener() {
 
         @Override
         public void onSuccess(String result, List<FloorModel> floors) {
@@ -1202,30 +1147,12 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
           mAnyplaceCache.setSelectedBuildingIndex(0);
           mAnyplaceCache.setSpinnerBuildings(getApplicationContext(), list);
 
-          FloorModel floor = null;
-          if (floors != null && !floors.isEmpty()) {
-            try {
-              if (b.getFloors() != null) {
-                b.getFloors().clear();
-                b.getFloors().addAll(floors);
-              }
-            } catch (Exception ignored) {}
-            for (FloorModel fm : floors) {
-              if ("0".equals(fm.floor_number)) {
-                floor = fm;
-                break;
-              }
-            }
-            if (floor == null) {
-              floor = floors.get(0);
-            }
+          FloorModel floor;
+          if ((floor = b.getFloorFromNumber("0")) == null) {
+            floor = b.getSelectedFloor();
           }
 
-          if (floor != null) {
-            bypassSelectBuildingActivity(b, floor);
-          } else {
-            Toast.makeText(getBaseContext(), "No floors found for this building.", Toast.LENGTH_SHORT).show();
-          }
+          bypassSelectBuildingActivity(b, floor);
         }
 
         @Override
@@ -1233,177 +1160,95 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
           Toast.makeText(getBaseContext(), result, Toast.LENGTH_SHORT).show();
 
         }
-      });
+      }, AnyplaceLoggerActivity.this, false, true);
     }
   }
 
   private void bypassSelectBuildingActivity(final BuildingModel b, final FloorModel f) {
-    if (b == null || f == null) {
-      return;
-    }
 
-    AnyplaceServerAPI.fetchFloorPlan(getApplicationContext(), b.buid, f.floor_number, new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
+    final FetchFloorPlanTask fetchFloorPlanTask = new FetchFloorPlanTask(getApplicationContext(), b.buid, f.floor_number);
+
+    fetchFloorPlanTask.setCallbackInterface(new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
+
+
+      private ProgressDialog dialog;
 
       @Override
       public void onSuccess(String result, File floor_plan_file) {
-        if (progressBar != null) {
-          progressBar.setVisibility(View.GONE);
-        }
+        if (dialog != null)
+          dialog.dismiss();
+
+
         selectPlaceActivityResult(b, f);
+
       }
 
       @Override
       public void onErrorOrCancel(String result) {
-        if (progressBar != null) {
-          progressBar.setVisibility(View.GONE);
-        }
-        selectPlaceActivityResult(b, f);
+        if (dialog != null)
+          dialog.dismiss();
+        Toast.makeText(getBaseContext(), result, Toast.LENGTH_SHORT).show();
       }
 
       @Override
       public void onPrepareLongExecute() {
+        // dialog = new ProgressDialog(getApplicationContext());
+        // dialog.setIndeterminate(true);
+        // dialog.setTitle("Downloading floor plan");
+        // dialog.setMessage("Please be patient...");
+        // dialog.setCancelable(true);
+        // dialog.setCanceledOnTouchOutside(false);
+        // dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
+        //   @Override
+        //   public void onCancel(DialogInterface dialog) {
+        //     fetchFloorPlanTask.cancel(true);
+        //   }
+        // });
+        // dialog.show();
+
         RelativeLayout layout = findViewById(R.id.loggerView);
-        if (progressBar == null) {
-          progressBar = new ProgressBar(AnyplaceLoggerActivity.this, null, android.R.attr.progressBarStyleLarge);
-          RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(100, 100);
-          params.addRule(RelativeLayout.CENTER_IN_PARENT);
-          layout.addView(progressBar, params);
-        }
+
+        progressBar = new ProgressBar(AnyplaceLoggerActivity.this, null, android.R.attr.progressBarStyleLarge);
+        RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(100, 100);
+        params.addRule(RelativeLayout.CENTER_IN_PARENT);
+        layout.addView(progressBar, params);
+
         progressBar.setVisibility(View.VISIBLE);
+
+
+
+
       }
+
+
+
     });
+    fetchFloorPlanTask.execute();
   }
 
   private void loadMapBasicLayer(BuildingModel b, FloorModel f) {
-    if (mMap == null || b == null || f == null) {
-      return;
-    }
+    // remove the previous GroundOverlay or TileOverlay
     mMap.clear();
-
-    try {
-      File destDir = new File(getBaseContext().getExternalFilesDir(null), "floor_plans/" + b.buid + "/" + f.floor_number);
-      File pngFile = new File(destDir, "floor_plan.png");
-      if (!pngFile.exists()) {
-        pngFile = new File(destDir, "tiles_archive.zip");
-      }
-
-      if (pngFile.exists() && pngFile.isFile()) {
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(pngFile.getAbsolutePath(), options);
-
-        int maxDim = 2048;
-        int inSampleSize = 1;
-        if (options.outHeight > maxDim || options.outWidth > maxDim) {
-          int heightRatio = Math.round((float) options.outHeight / (float) maxDim);
-          int widthRatio = Math.round((float) options.outWidth / (float) maxDim);
-          inSampleSize = Math.max(heightRatio, widthRatio);
-        }
-
-        BitmapFactory.Options decodeOptions = new BitmapFactory.Options();
-        decodeOptions.inSampleSize = Math.max(1, inSampleSize);
-        Bitmap bm = BitmapFactory.decodeFile(pngFile.getAbsolutePath(), decodeOptions);
-
-        if (bm != null) {
-          try {
-            double blLat = 0, blLng = 0, trLat = 0, trLng = 0;
-            boolean hasCoords = false;
-            if (f.bottom_left_lat != null && !f.bottom_left_lat.isEmpty() &&
-                f.bottom_left_lng != null && !f.bottom_left_lng.isEmpty() &&
-                f.top_right_lat != null && !f.top_right_lat.isEmpty() &&
-                f.top_right_lng != null && !f.top_right_lng.isEmpty()) {
-              try {
-                blLat = Double.parseDouble(f.bottom_left_lat);
-                blLng = Double.parseDouble(f.bottom_left_lng);
-                trLat = Double.parseDouble(f.top_right_lat);
-                trLng = Double.parseDouble(f.top_right_lng);
-                if (Math.abs(trLat - blLat) > 0.00001 && Math.abs(trLng - blLng) > 0.00001) {
-                  hasCoords = true;
-                }
-              } catch (Exception ignored) {}
-            }
-
-            if (!hasCoords && b != null && b.getPosition() != null) {
-              double centerLat = b.getPosition().latitude;
-              double centerLng = b.getPosition().longitude;
-              if (centerLat != 0.0 || centerLng != 0.0) {
-                blLat = centerLat - 0.0004;
-                blLng = centerLng - 0.0004;
-                trLat = centerLat + 0.0004;
-                trLng = centerLng + 0.0004;
-                hasCoords = true;
-              }
-            }
-
-            if (hasCoords) {
-              LatLngBounds bounds = new LatLngBounds(
-                  new LatLng(Math.min(blLat, trLat), Math.min(blLng, trLng)),
-                  new LatLng(Math.max(blLat, trLat), Math.max(blLng, trLng))
-              );
-
-              mMap.addGroundOverlay(new GroundOverlayOptions()
-                  .image(BitmapDescriptorFactory.fromBitmap(bm))
-                  .positionFromBounds(bounds)
-                  .zIndex(0));
-              mMap.animateCamera(create3DCameraUpdate(bounds.getCenter(), 19.0f));
-
-              // Automatically trigger fingerprint heatmap overlay from cached server radiomap or local RSS log
-              try {
-                File cachedServerMap = new File(getBaseContext().getExternalFilesDir(null), "radiomaps/" + b.buid + "/" + f.floor_number + "/indoor-radiomap-mean.txt");
-                if (cachedServerMap.exists() && cachedServerMap.length() > 0) {
-                  new HeatmapTask().execute(cachedServerMap);
-                } else if (folder_path != null && filename_rss != null) {
-                  File localRss = new File(folder_path, filename_rss);
-                  if (localRss.exists() && localRss.length() > 0) {
-                    new HeatmapTask().execute(localRss);
-                  }
-                }
-              } catch (Exception ignored) {}
-
-              return;
-            }
-          } catch (Exception nfe) {
-            Log.e(TAG, "Coordinates parse error: " + nfe.getMessage());
-          }
-        }
-      }
-
-      File tilesDir = new File(destDir, "tiles_archive");
-      if (tilesDir.exists() && tilesDir.isDirectory()) {
-        mMap.addTileOverlay(
-            new TileOverlayOptions().tileProvider(new MapTileProvider(getBaseContext(), b.buid, f.floor_number)).zIndex(0));
-      }
-    } catch (Exception e) {
-      Log.e(TAG, "Error in loadMapBasicLayer: " + e.getMessage(), e);
-    }
+    // load the floorplan
+    // add the Tile Provider that uses our Building tiles over
+    // Google Maps
+    TileOverlay mTileOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(new MapTileProvider(getBaseContext(), b.buid, f.floor_number)).zIndex(0));
   }
 
   private void selectPlaceActivityResult(final BuildingModel b, FloorModel f) {
-    if (b == null || f == null || mMap == null) {
-      return;
-    }
+
+
 
     // set the newly selected floor
-    if (b.getFloors() != null && !b.getFloors().isEmpty() && f.floor_number != null) {
-      b.setSelectedFloor(f.floor_number);
-    }
+    b.setSelectedFloor(f.floor_number);
     mCurrentBuilding = b;
     mCurrentFloor = f;
-    if (b.getPosition() != null) {
-      curLocation = b.getPosition();
-    }
+    curLocation = null;
     userIsNearby = false;
-    if (textFloor != null) {
-      textFloor.setText(f.floor_name != null ? f.floor_name : f.floor_number);
-    }
-
-    if (curLocation != null) {
-      updateMarker(curLocation);
-      updateInfoView();
-    }
+    textFloor.setText(f.floor_name);
 
     loadMapBasicLayer(b, f);
-    mMap.animateCamera(create3DCameraUpdate(b.getPosition(), 19.0f), new CancelableCallback() {
+    mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(b.getPosition(), 19.0f), new CancelableCallback() {
 
       @Override
       public void onFinish() {
@@ -1415,30 +1260,13 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       }
     });
 
-    // Fetch radiomap from server API and render fingerprint markers & heatmap
-    AnyplaceServerAPI.fetchRadioMap(this, b.buid, f.floor_number, b.getLatitudeString(), b.getLongitudeString(), new AnyplaceServerAPI.FetchRadioMapCallback() {
-      @Override
-      public void onSuccess(File file) {
-        if (file != null && file.exists()) {
-          new HeatmapTask().execute(file);
-        }
-      }
-
-      @Override
-      public void onError(String error) {
-        if (folder_path != null && filename_rss != null) {
-          File localRss = new File(folder_path, filename_rss);
-          if (localRss.exists() && localRss.length() > 0) {
-            new HeatmapTask().execute(localRss);
-          }
-        }
-      }
-    });
-
     class Callback implements DownloadRadioMapListener, PreviousRunningTask {
       boolean progressBarEnabled = false;
       boolean disableSuccess = false;
       static final boolean DEBUG_CALLBACK = false;
+
+
+
 
       @Override
       public void onSuccess(String result) {
@@ -1450,10 +1278,9 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
         File root;
         try {
-          root = AnyplaceUtils.getRadioMapFolder(AnyplaceLoggerActivity.this, mCurrentBuilding.buid,
-              mCurrentFloor.floor_number);
+          root = AnyplaceUtils.getRadioMapFolder(AnyplaceLoggerActivity.this, mCurrentBuilding.buid, mCurrentFloor.floor_number);
           File f = new File(root, AnyplaceUtils.getRadioMapFileName(mCurrentFloor.floor_number));
-          if (DEBUG_CALLBACK) {
+          if(DEBUG_CALLBACK){
             Log.d(TAG, "inside the Callback class before heatmaptask");
           }
 
@@ -1500,7 +1327,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
 
       @Override
       public void onErrorOrCancel(String result) {
-        if (DEBUG_CALLBACK) {
+        if (DEBUG_CALLBACK){
           Log.d(TAG, "Callback onErrorOrCancel with " + result);
         }
         if (progressBarEnabled) {
@@ -1513,8 +1340,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
         progressBarEnabled = true;
         showProgressBar();
         // Set a smaller percentage than fetchAllFloorsRadiomapsOfBUID
-        int count = (b != null && b.getFloors() != null && !b.getFloors().isEmpty()) ? b.getFloors().size() : 1;
-        progressBar.setProgress((int) (1.0f / (count * 2) * progressBar.getMax()));
+        progressBar.setProgress((int) (1.0f / (b.getFloors().size() * 2) * progressBar.getMax()));
       }
 
       @Override
@@ -1527,8 +1353,8 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       ((PreviousRunningTask) downloadRadioMapTaskBuid.getCallbackInterface()).disableSuccess();
     }
 
-    downloadRadioMapTaskBuid = new DownloadRadioMapTaskBuid(new Callback(), this, b.getLatitudeString(),
-        b.getLongitudeString(), b.buid, f.floor_number, false);
+
+    downloadRadioMapTaskBuid = new DownloadRadioMapTaskBuid(new Callback(), this, b.getLatitudeString(), b.getLongitudeString(), b.buid, f.floor_number, false);
 
     int currentapiVersion = android.os.Build.VERSION.SDK_INT;
     if (currentapiVersion >= android.os.Build.VERSION_CODES.HONEYCOMB) {
@@ -1538,8 +1364,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     } else {
       downloadRadioMapTaskBuid.execute();
     }
-    showHelp("Help",
-        "<b>1.</b> Select your floor (using arrows on the right).<br><b>2.</b> Click on the map (to identify your location).");
+    showHelp("Help", "<b>1.</b> Select your floor (using arrows on the right).<br><b>2.</b> Click on the map (to identify your location).");
   }
 
   @Override
@@ -1576,46 +1401,58 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
           return true;
         }
 
-        // checkLocationPermission();
-        // Location currentLocation =
-        // LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
-        // we must set listener to the get the first location from the API
-        // it will trigger the onLocationChanged below when a new location
-        // is found or notify the user
-        checkLocationPermission();
+          // checkLocationPermission();
+          // Location currentLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+          // we must set listener to the get the first location from the API
+          // it will trigger the onLocationChanged below when a new location
+          // is found or notify the user
+          checkLocationPermission();
 
-        mFusedLocationClient.getLastLocation().addOnCompleteListener(new OnCompleteListener<Location>() {
-          @Override
-          public void onComplete(@NonNull Task<Location> task) {
-            final Location currentLocation = task.getResult();
-            onLocationChanged(currentLocation);
 
-            Intent placeIntent = new Intent(AnyplaceLoggerActivity.this, SelectBuildingActivity.class);
-            Bundle b = new Bundle();
-            if (currentLocation != null) {
-              b.putString("coordinates_lat", String.valueOf(currentLocation.getLatitude()));
-              b.putString("coordinates_lon", String.valueOf(currentLocation.getLongitude()));
+          mFusedLocationClient.getLastLocation().addOnCompleteListener(new OnCompleteListener<Location>() {
+            @Override
+            public void onComplete(@NonNull Task<Location> task) {
+              if (!task.isSuccessful() || task.getResult() == null) {
+                return;
+              }
+              final Location currentLocation = task.getResult();
+              onLocationChanged(currentLocation);
+
+              Intent placeIntent = new Intent(AnyplaceLoggerActivity.this, SelectBuildingActivity.class);
+              Bundle b = new Bundle();
+              if (currentLocation != null) {
+                b.putString("coordinates_lat", String.valueOf(currentLocation.getLatitude()));
+                b.putString("coordinates_lon", String.valueOf(currentLocation.getLongitude()));
+              }
+
+              if (mCurrentBuilding == null) {
+                b.putSerializable("mode", SelectBuildingActivity.Mode.NEAREST);
+              }
+
+              placeIntent.putExtras(b);
+              startActivityForResult(placeIntent, SELECT_PLACE_ACTIVITY_RESULT);
+
             }
-
-            if (mCurrentBuilding == null) {
-              b.putSerializable("mode", SelectBuildingActivity.Mode.NEAREST);
+          }).addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+              Toast.makeText(getBaseContext(), "No location available at the moment.", Toast.LENGTH_LONG).show();
             }
+          });
 
-            placeIntent.putExtras(b);
-            startActivityForResult(placeIntent, SELECT_PLACE_ACTIVITY_RESULT);
-
-          }
-        }).addOnFailureListener(new OnFailureListener() {
-          @Override
-          public void onFailure(@NonNull Exception e) {
-            Toast.makeText(getBaseContext(), "No location available at the moment.", Toast.LENGTH_LONG).show();
-          }
-        });
 
         return true;
       }
       case R.id.main_menu_clear_logging: {
-        resetServerRadioMap();
+        if (mCurrentBuilding == null)
+          Toast.makeText(getBaseContext(), "Load a map before tracking can be used!", Toast.LENGTH_SHORT).show();
+        else {
+          loadMapBasicLayer(mCurrentBuilding, mCurrentFloor);
+          handleBuildingsOnMap();
+
+          if (curLocation != null)
+            updateMarker(curLocation);
+        }
         return true;
       }
 
@@ -1637,8 +1474,8 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       }
 
       // case R.id.main_menu_exit: {
-      // this.finish();
-      // System.gc();
+      //   this.finish();
+      //   System.gc();
       // }
     }
     return false;
@@ -1648,47 +1485,36 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     if (this.marker != null) {
       this.marker.remove();
     }
-    this.marker = this.mMap.addMarker(new MarkerOptions().position(latlng).draggable(true)
-        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)));
+    this.marker = this.mMap.addMarker(new MarkerOptions().position(latlng).draggable(true).icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)));
     curLocation = latlng;
   }
 
   // update the info view
   private void updateInfoView() {
-    LatLng displayLoc = curLocation;
-    if (displayLoc == null || (displayLoc.latitude == 0.0 && displayLoc.longitude == 0.0)) {
-      if (mCurrentBuilding != null && mCurrentBuilding.getPosition() != null && (mCurrentBuilding.getPosition().latitude != 0.0 || mCurrentBuilding.getPosition().longitude != 0.0)) {
-        displayLoc = mCurrentBuilding.getPosition();
-      } else if (gpsMarker != null && gpsMarker.getPosition() != null) {
-        displayLoc = gpsMarker.getPosition();
-      } else if (mMap != null && mMap.getCameraPosition() != null) {
-        LatLng target = mMap.getCameraPosition().target;
-        if (target != null && (target.latitude != 0.0 || target.longitude != 0.0)) {
-          displayLoc = target;
-        }
-      }
-    }
-
-    if (displayLoc != null && (displayLoc.latitude != 0.0 || displayLoc.longitude != 0.0)) {
-      curLocation = displayLoc;
-    }
-
-    String latStr = (displayLoc != null && (displayLoc.latitude != 0.0 || displayLoc.longitude != 0.0))
-        ? String.format("%.6f", displayLoc.latitude) : "N/A";
-    String lonStr = (displayLoc != null && (displayLoc.latitude != 0.0 || displayLoc.longitude != 0.0))
-        ? String.format("%.6f", displayLoc.longitude) : "N/A";
 
     StringBuilder sb = new StringBuilder();
-    sb.append("Lat[ ").append(latStr).append(" ]");
-    sb.append("  Lon[ ").append(lonStr).append(" ]");
-    sb.append("\nHeading[ ").append(String.format("%.2f", raw_heading)).append("° ]");
-    if (mHasGyroscope) {
-      sb.append(String.format("  Gyro[%.2f,%.2f,%.2f]", mGyroscopeMatrix[0], mGyroscopeMatrix[1], mGyroscopeMatrix[2]));
-    }
-    sb.append("  Status[ ").append(walking ? "Walking" : "Standing").append(" ]");
-    sb.append("  Samples[ ").append(mCurrentSamplesTaken).append(" ]");
+    sb.append("Lat[ ");
+    if (curLocation != null)
+      sb.append(curLocation.latitude);
+    sb.append(" ]");
+    sb.append("\nLon[ ");
+    if (curLocation != null)
+      sb.append(curLocation.longitude);
+    sb.append(" ]");
+    sb.append("\nHeading[ ");
+    sb.append(String.format("%.2f", raw_heading));
+    sb.append(" ]");
+    sb.append("  Status[ ");
+    sb.append(String.format("%8s", walking ? "Walking" : "Standing"));
+    sb.append(" ]");
+    sb.append("  Samples[ ");
+    sb.append(mCurrentSamplesTaken);
+    sb.append(" ]");
     mTrackingInfoView.setText(sb.toString());
+
   }
+
+
 
   /*
    * Gets called whenever there is a change in sensors in positioning
@@ -1737,8 +1563,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       lat1 = lat1 * Math.PI / 180;
       lat2 = lat2 * Math.PI / 180;
 
-      double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-          + Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+      double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
       double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       double d = R * c;
 
@@ -1812,8 +1637,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
                 draw(latlng, sum);
               }
 
-              Toast.makeText(AnyplaceLoggerActivity.this, mSamples.size() + " Samples Recorded Successfully!",
-                  Toast.LENGTH_LONG).show();
+              Toast.makeText(AnyplaceLoggerActivity.this, mSamples.size() + " Samples Recorded Successfully!", Toast.LENGTH_LONG).show();
             }
 
             mCurrentSamplesTaken -= mSamples.size();
@@ -1840,6 +1664,7 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     @Override
     public void onReceive(Context c, Intent intent) {
 
+
       try {
         if (intent == null || c == null || intent.getAction() == null)
           return;
@@ -1852,13 +1677,13 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
         if (!mIsSamplingActive)
           return;
 
-        if (wifiList.size() > 0 && curLocation != null) {
+        if (wifiList.size() > 0) {
           mCurrentSamplesTaken++;
+
           logger.add(wifiList, curLocation.latitude + "," + curLocation.longitude, raw_heading, walking);
-          updateInfoView();
         }
       } catch (RuntimeException e) {
-        Log.e(TAG, "WiFi scan RuntimeException: " + e.getMessage(), e);
+        Toast.makeText(c, "RuntimeException [" + e.getMessage() + "]", Toast.LENGTH_SHORT).show();
         return;
       }
     }
@@ -1891,6 +1716,9 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
     }
   }
 
+
+
+
   private void startRecordingInfo() {
 
     // avoid recording when no floor has been selected
@@ -1899,396 +1727,283 @@ public class AnyplaceLoggerActivity extends AppCompatActivity implements
       return;
     }
 
-    // avoid recording when no position has been clicked
+    // avoid recording when no floor has been selected
     if (curLocation == null) {
-      Toast.makeText(getBaseContext(), "Click a position on the map before recording...", Toast.LENGTH_SHORT).show();
+      Toast.makeText(getBaseContext(), "Click a position before recording...", Toast.LENGTH_SHORT).show();
       return;
     }
 
-    if (mCurrentBuilding == null) {
-      Toast.makeText(getBaseContext(), "Select a building before recording...", Toast.LENGTH_SHORT).show();
-      return;
-    }
+    boolean hasGPS = getPackageManager().hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS);
+    if (hasGPS) {
+      if (!userIsNearby) {
+        LocationManager manager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        boolean statusOfGPS = manager.isProviderEnabled(LocationManager.GPS_PROVIDER);
 
-    // Mark user as nearby — the logger is used on-site by design
-    userIsNearby = true;
+        if (statusOfGPS == false) {
+          Toast.makeText(this, "Please enable GPS", Toast.LENGTH_LONG).show();
+          return;
+        }
 
-    File appStorageDir = getExternalFilesDir(null);
-    String defaultFolder = (appStorageDir != null) ? appStorageDir.getAbsolutePath() : getFilesDir().getAbsolutePath();
+        final GeoPoint gps;
+        if (AnyplaceDebug.DEBUG_WIFI) {
+          gps = AnyUserData.fakeGPS();
 
-    folder_path = preferences.getString("folder_browser", defaultFolder);
-    File fDir = new File(folder_path);
-    if (!fDir.exists()) {
-      fDir.mkdirs();
-    }
-    if (!fDir.canWrite()) {
-      folder_path = defaultFolder;
-      fDir = new File(folder_path);
-      fDir.mkdirs();
-      SharedPreferences.Editor ed = preferences.edit();
-      ed.putString("folder_browser", defaultFolder);
-      ed.commit();
-    }
+        } else {
+          // checkLocationPermission();
+          // Location location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
 
-    filename_rss = preferences.getString("filename_log", "anyplace_rss.txt");
-    if (filename_rss == null || filename_rss.isEmpty() || filename_rss.equals("n/a")) {
-      filename_rss = "anyplace_rss.txt";
-      SharedPreferences.Editor ed = preferences.edit();
-      ed.putString("filename_log", filename_rss);
-      ed.commit();
-    }
-
-    disableRecordButton();
-    // start the TASK
-    mCurrentSamplesTaken = 0;
-    mIsSamplingActive = true;
-    updateInfoView();
-    Toast.makeText(getBaseContext(), "Sampling started! Stand at position or walk, then tap Stop to save samples.", Toast.LENGTH_LONG).show();
-  }
-
-  private void saveRecordingToLine(LatLng latlng) {
-    if (latlng == null || mCurrentFloor == null || mCurrentBuilding == null) {
-      if (mSamplingProgressDialog != null) {
-        mSamplingProgressDialog.dismiss();
-        mSamplingProgressDialog = null;
-      }
-      enableRecordButton();
-      Toast.makeText(this, "Cannot save: missing location or building data.", Toast.LENGTH_SHORT).show();
-      return;
-    }
-
-    logger.save(latlng.latitude + "," + latlng.longitude, folder_path, filename_rss, mCurrentFloor.floor_number,
-        mCurrentBuilding.buid);
-
-    if (mMap != null) {
-      mMap.addCircle(new CircleOptions()
-          .center(latlng)
-          .radius(1.2)
-          .strokeColor(android.graphics.Color.RED)
-          .fillColor(android.graphics.Color.argb(200, 255, 0, 0))
-          .strokeWidth(3.0f)
-          .zIndex(10));
-    }
-
-    Toast.makeText(this, "Saved " + mCurrentSamplesTaken + " consecutive WiFi samples!", Toast.LENGTH_SHORT).show();
-
-    if (mSamplingProgressDialog != null) {
-      mSamplingProgressDialog.dismiss();
-      mSamplingProgressDialog = null;
-    }
-    enableRecordButton();
-
-    // Refresh and render fingerprint markers immediately after saving recording
-    try {
-      if (folder_path != null && filename_rss != null) {
-        File localRss = new File(folder_path, filename_rss);
-        new HeatmapTask().execute(localRss);
-      }
-    } catch (Exception ignored) {}
-  }
-
-  // ****************************************************************
-  // Listener that handles clicks on map
-  // ****************************************************************
-
-  @Override
-  public void onMapClick(LatLng latlng) {
-
-    if (mIsSamplingActive) {
-      saveRecordingToLine(latlng);
-    }
-
-    updateMarker(latlng);
-    updateInfoView();
-
-    if (!mIsSamplingActive) {
-      showHelp("Help",
-          "<b>1.</b> Please click \"START\"<br><b>2.</b> Then walk around the building in staight lines.<br><b>3.</b> Re-identify your location on the map every time you turn.");
-    }
-
-  }
-
-  // ***************************************************************************************
-  // UPLOAD RSS TASK
-  // ***************************************************************************************
-
-  private void uploadRSSLog() {
-    synchronized (upInProgressLock) {
-      if (upInProgress) {
-        Toast.makeText(getApplicationContext(), "Upload in progress...", Toast.LENGTH_SHORT).show();
-        return;
-      }
-    }
-
-    if (folder_path == null || filename_rss == null) {
-      Toast.makeText(getApplicationContext(), "No RSS log file to upload.", Toast.LENGTH_SHORT).show();
-      return;
-    }
-
-    startUploadTask(folder_path + File.separator + filename_rss);
-  }
-
-  private void resetServerRadioMap() {
-    new AlertDialog.Builder(this)
-        .setTitle("Reset Server WiFi Data")
-        .setMessage("Are you sure you want to delete and clear all WiFi data from the server?")
-        .setPositiveButton("Clear / Delete", new DialogInterface.OnClickListener() {
-          @Override
-          public void onClick(DialogInterface dialog, int which) {
-            AnyplaceServerAPI.resetServerRadioMap(AnyplaceLoggerActivity.this, new AnyplaceServerAPI.ResetRadioMapCallback() {
+          try {
+            checkLocationPermission();
+            mFusedLocationClient.getLastLocation().addOnCompleteListener(new OnCompleteListener<Location>() {
               @Override
-              public void onSuccess(String message) {
-                Toast.makeText(AnyplaceLoggerActivity.this, message, Toast.LENGTH_LONG).show();
-                if (mCurrentBuilding != null && mCurrentFloor != null) {
-                  loadMapBasicLayer(mCurrentBuilding, mCurrentFloor);
+              public void onComplete(@NonNull Task<Location> task) {
+                try {
+                  if (!task.isSuccessful() || task.getResult() == null) return;
+                  Location location = task.getResult();
+                  GeoPoint gps = new GeoPoint(location.getLatitude(), location.getLongitude());
+                  if (GeoPoint.getDistanceBetweenPoints(mCurrentBuilding.longitude, mCurrentBuilding.latitude, gps.dlon, gps.dlat, "") > 200) {
+                    Toast.makeText(getBaseContext(), "You are only allowed to use the logger for a building you are currently at or physically nearby.", Toast.LENGTH_SHORT).show();
+                    userIsNearby = false;
+                  }else{
+                    userIsNearby = true;
+                  }
+
+
+                }
+                catch(Exception e){
+                  Log.d(TAG, e.getMessage());
                 }
               }
+              });
 
-              @Override
-              public void onError(String error) {
-                Toast.makeText(AnyplaceLoggerActivity.this, "Error: " + error, Toast.LENGTH_LONG).show();
-              }
-            });
-          }
-        })
-        .setNegativeButton("Cancel", null)
-        .show();
-  }
-
-  private void startUploadTask(final String file_path) {
-    upInProgress = true;
-    final File file = new File(file_path);
-    if (!file.exists() || file.length() == 0) {
-      upInProgress = false;
-      Toast.makeText(getApplicationContext(), "No RSS log records captured to upload!", Toast.LENGTH_SHORT).show();
-      return;
-    }
-
-    AnyplaceServerAPI.uploadRSSLog(this, file, new AnyplaceServerAPI.UploadRSSCallback() {
-      @Override
-      public void onSuccess(String result) {
-        upInProgress = false;
-        file.delete();
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(AnyplaceLoggerActivity.this);
-        builder.setTitle("Data Sent Successfully!");
-        if (mCurrentBuilding == null)
-          builder.setMessage("Data is sent success!\nVerified by Anyplace Server: " + result);
-        else
-          builder.setMessage("Data is sent success for building " + mCurrentBuilding.name + "!\nVerified by Anyplace Server: " + result);
-
-        builder.setCancelable(false).setPositiveButton("OK", new DialogInterface.OnClickListener() {
-          public void onClick(DialogInterface dialog, int id) {
-            dialog.dismiss();
-          }
-        });
-        AlertDialog alert = builder.create();
-        alert.show();
-      }
-
-      @Override
-      public void onError(String result) {
-        upInProgress = false;
-        AlertDialog.Builder builder = new AlertDialog.Builder(AnyplaceLoggerActivity.this);
-        builder.setTitle("Upload Error");
-        builder.setMessage("Failed to send RSS log data to server:\n" + result);
-        builder.setPositiveButton("OK", null);
-        builder.show();
-      }
-    });
-  }
-
-  private void showProgressBar() {
-    progressBar.setVisibility(View.VISIBLE);
-  }
-
-  private void hideProgressBar() {
-    progressBar.setVisibility(View.GONE);
-  }
-
-  // *****************************************************************************
-  // HELPERS
-  // *****************************************************************************
-
-  private void enableRecordButton() {
-    btnRecord.setText("Start WiFi Recording");
-    btnRecord.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.presence_invisible, 0, 0, 0);
-  }
-
-  private void disableRecordButton() {
-    btnRecord.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.presence_online, 0, 0, 0);
-    btnRecord.setText("Stop WiFi Recording");
-  }
-
-  @Override
-  public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-    // TODO Auto-generated method stub
-
-    if (key.equals("walk_bar")) {
-      int sensitivity = sharedPreferences.getInt("walk_bar", 26);
-      int max = Integer.parseInt(getResources().getString(R.string.walk_bar_max));
-      MovementDetector.setSensitivity(max - sensitivity);
-    } else if (key.equals("samples_interval")) {
-      wifi.startScan(sharedPreferences.getString("samples_interval", "30000"));
-    }
-
-  }
-
-  private void showHelp(String title, String message) {
-    AlertDialog.Builder adb = new AlertDialog.Builder(this);
-    LayoutInflater adbInflater = LayoutInflater.from(this);
-    View eulaLayout = adbInflater.inflate(cy.ac.ucy.cs.anyplace.lib.R.layout.info_window_help, null);
-    final CheckBox dontShowAgain = (CheckBox) eulaLayout.findViewById(R.id.skip);
-    adb.setView(eulaLayout);
-    adb.setTitle(Html.fromHtml(title));
-    adb.setMessage(Html.fromHtml(message));
-    adb.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
-      public void onClick(DialogInterface dialog, int which) {
-        SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("skipHelpMessage", dontShowAgain.isChecked());
-        editor.commit();
-        return;
-      }
-    });
-
-    Boolean skipMessage = preferences.getBoolean("skipHelpMessage", false);
-    if (!skipMessage)
-      adb.show();
-  }
-
-  private class HeatmapTask extends AsyncTask<File, Integer, List<LatLng>> {
-    private static final boolean DEBUG = false;
-
-    public HeatmapTask() {
-
-    }
-
-    private void parseRadiomapFile(File targetFile, List<LatLng> list) {
-      if (targetFile == null || !targetFile.exists() || targetFile.length() == 0) return;
-      try {
-        java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(targetFile));
-        String line;
-        while ((line = br.readLine()) != null) {
-          if (line.startsWith("#") || line.trim().isEmpty()) continue;
-          String[] tokens = line.trim().split("[,\\s]+");
-          try {
-            if (tokens.length >= 3 && tokens[0].length() > 9) {
-              double lat = Double.parseDouble(tokens[1]);
-              double lng = Double.parseDouble(tokens[2]);
-              list.add(new LatLng(lat, lng));
-            } else if (tokens.length >= 2) {
-              double lat = Double.parseDouble(tokens[0]);
-              double lng = Double.parseDouble(tokens[1]);
-              list.add(new LatLng(lat, lng));
+            if (!userIsNearby){
+              return;
             }
-          } catch (Exception ignored) {}
-        }
-        br.close();
-      } catch (Exception e) {
-        Log.e(TAG, "Error parsing radiomap file: " + e.getMessage());
+           }
+           catch (Exception e){
+              Log.d(TAG, e.getMessage());
+            }
+          }
+
+        userIsNearby = true;
+
+
       }
     }
 
-    @Override
-    protected List<LatLng> doInBackground(File... params) {
-      List<LatLng> list = new ArrayList<>();
+		folder_path = (String) preferences.getString("folder_browser", "n/a");
+		if (folder_path.equals("n/a") || folder_path.equals("")) {
+			toastPrint("Folder path not specified\nGo to Menu::Preferences::Storing Settings::Folder", Toast.LENGTH_LONG);
+			return;
 
-      // 1. Read from provided radiomap file parameter
-      File primaryFile = null;
-      if (params != null && params.length > 0 && params[0] != null) {
-        primaryFile = params[0];
-        parseRadiomapFile(primaryFile, list);
-      }
+		} else if ((!(new File(folder_path).canWrite()))) {
+			toastPrint("Folder path is not writable\nGo to Menu::Preferences::Storing Settings::Folder", Toast.LENGTH_LONG);
+			return;
+		}
 
-      // 2. Read from cached server radiomap file (indoor-radiomap-mean.txt)
-      if (mCurrentBuilding != null && mCurrentFloor != null) {
-        try {
-          File cachedServerMap = new File(getBaseContext().getExternalFilesDir(null), "radiomaps/" + mCurrentBuilding.buid + "/" + mCurrentFloor.floor_number + "/indoor-radiomap-mean.txt");
-          if (cachedServerMap.exists() && !cachedServerMap.equals(primaryFile)) {
-            parseRadiomapFile(cachedServerMap, list);
+		filename_rss = (String) preferences.getString("filename_log", "n/a");
+		if (filename_rss.equals("n/a") || filename_rss.equals("")) {
+			toastPrint("Filename of RSS log not specified\nGo to Menu::Preferences::Storing Settings::Filename", Toast.LENGTH_LONG);
+			return;
+		}
+
+		disableRecordButton();
+		// start the TASK
+		mIsSamplingActive = true;
+	}
+
+	private void saveRecordingToLine(LatLng latlng) {
+
+		logger.save(latlng.latitude + "," + latlng.longitude, folder_path, filename_rss, mCurrentFloor.floor_number, mCurrentBuilding.buid);
+
+	}
+
+	// ****************************************************************
+	// Listener that handles clicks on map
+	// ****************************************************************
+
+	@Override
+	public void onMapClick(LatLng latlng) {
+
+		if (mIsSamplingActive) {
+			saveRecordingToLine(latlng);
+		}
+
+		updateMarker(latlng);
+		updateInfoView();
+
+		if (!mIsSamplingActive) {
+			showHelp("Help", "<b>1.</b> Please click \"START\"<br><b>2.</b> Then walk around the building in staight lines.<br><b>3.</b> Re-identify your location on the map every time you turn.");
+		}
+
+	}
+
+	// ***************************************************************************************
+	// UPLOAD RSS TASK
+	// ***************************************************************************************
+
+	private void uploadRSSLog() {
+		synchronized (upInProgressLock) {
+			if (!upInProgress) {
+
+				if (!NetworkUtils.isOnline(AnyplaceLoggerActivity.this)) {
+					Toast.makeText(getApplicationContext(), "No Internet Connection", Toast.LENGTH_SHORT).show();
+					return;
+				}
+
+				String file_path = preferences.getString("folder_browser", "") + File.separator + preferences.getString("filename_log", "");
+				startUploadTask(file_path);
+
+			} else {
+				Toast.makeText(getApplicationContext(), "Already uploading rss log...", Toast.LENGTH_SHORT).show();
+			}
+		}
+
+	}
+
+	private void startUploadTask(final String file_path) {
+		upInProgress = true;
+
+		new UploadRSSLogTask(new UploadRSSLogTask.UploadRSSLogTaskListener() {
+			@Override
+			public void onSuccess(String result) {
+				upInProgress = false;
+				File file = new File(file_path);
+				file.delete();
+
+				AlertDialog.Builder builder = new AlertDialog.Builder(AnyplaceLoggerActivity.this);
+				if (mCurrentBuilding == null)
+					builder.setMessage("Thank you for improving the location quality of Anyplace");
+				else
+					builder.setMessage("Thank you for improving the location quality for building " + mCurrentBuilding.name);
+
+				builder.setCancelable(false).setPositiveButton("OK", new DialogInterface.OnClickListener() {
+					public void onClick(DialogInterface dialog, int id) {
+						// do things
+					}
+				});
+				AlertDialog alert = builder.create();
+				alert.show();
+
+			}
+
+			@Override
+			public void onErrorOrCancel(String result) {
+				upInProgress = false;
+				Toast.makeText(getApplicationContext(), result, Toast.LENGTH_LONG).show();
+			}
+		}, this, file_path, preferences.getString("username", ""), preferences.getString("password", "")).execute();
+	}
+
+	private void showProgressBar() {
+		progressBar.setVisibility(View.VISIBLE);
+	}
+
+	private void hideProgressBar() {
+		progressBar.setVisibility(View.GONE);
+	}
+
+	// *****************************************************************************
+	// HELPERS
+	// *****************************************************************************
+
+	private void enableRecordButton() {
+		btnRecord.setText("Start WiFi Recording");
+		btnRecord.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.presence_invisible, 0, 0, 0);
+	}
+
+	private void disableRecordButton() {
+		btnRecord.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.presence_online, 0, 0, 0);
+		btnRecord.setText("Stop WiFi Recording");
+	}
+
+	@Override
+	public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+		// TODO Auto-generated method stub
+
+		if (key.equals("walk_bar")) {
+			int sensitivity = sharedPreferences.getInt("walk_bar", 26);
+			int max = Integer.parseInt(getResources().getString(R.string.walk_bar_max));
+			MovementDetector.setSensitivity(max - sensitivity);
+		} else if (key.equals("samples_interval")) {
+			wifi.startScan(sharedPreferences.getString("samples_interval", "1000"));
+		}
+
+	}
+
+	private void showHelp(String title, String message) {
+		AlertDialog.Builder adb = new AlertDialog.Builder(this);
+		LayoutInflater adbInflater = LayoutInflater.from(this);
+		View eulaLayout = adbInflater.inflate(cy.ac.ucy.cs.anyplace.lib.R.layout.info_window_help, null);
+		final CheckBox dontShowAgain = (CheckBox) eulaLayout.findViewById(R.id.skip);
+		adb.setView(eulaLayout);
+		adb.setTitle(Html.fromHtml(title));
+		adb.setMessage(Html.fromHtml(message));
+		adb.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+			public void onClick(DialogInterface dialog, int which) {
+				SharedPreferences.Editor editor = preferences.edit();
+				editor.putBoolean("skipHelpMessage", dontShowAgain.isChecked());
+				editor.commit();
+				return;
+			}
+		});
+
+		Boolean skipMessage = preferences.getBoolean("skipHelpMessage", false);
+		if (!skipMessage)
+			adb.show();
+	}
+
+	private class HeatmapTask extends AsyncTask<File, Integer, Collection<WeightedLatLng>> {
+        private static final boolean DEBUG = false;
+
+		public HeatmapTask() {
+
+		}
+
+		@Override
+		protected Collection<WeightedLatLng> doInBackground(File... params) {
+		  if (DEBUG) {
+            Log.d(TAG, "HeatmapTask doInBackground");
+            if (params[0] == null) {
+              Log.d(TAG, "HeatmapTask params is null");
+            } else {
+              Log.d(TAG, "HeatmapTask params is not null and is : " + params[0].getAbsolutePath());
+            }
           }
-        } catch (Exception ignored) {}
-      }
-
-      // 3. Read from local anyplace_rss.txt
-      if (folder_path != null && filename_rss != null) {
-        try {
-          File localRss = new File(folder_path, filename_rss);
-          if (localRss.exists() && !localRss.equals(primaryFile)) {
-            parseRadiomapFile(localRss, list);
-          }
-        } catch (Exception ignored) {}
-      }
-
-      return list;
-    }
-
-    @Override
-    protected void onPostExecute(List<LatLng> result) {
-      if (result == null || result.isEmpty()) {
-        Log.d(TAG, "No fingerprint radiomap records available for display.");
-        return;
-      }
-
-      // Clear existing circles and tile overlay to avoid duplication
-      if (mHeatmapOverlay != null) {
-        mHeatmapOverlay.remove();
-        mHeatmapOverlay = null;
-      }
-      for (Circle c : mFingerprintCircles) {
-        if (c != null) {
-          c.remove();
-        }
-      }
-      mFingerprintCircles.clear();
-
-      // Draw bright cyan/blue fingerprint location circles on Google Map for all sample points
-      if (mMap != null) {
-        for (LatLng latLng : result) {
-          if (latLng != null) {
-            Circle circle = mMap.addCircle(new CircleOptions()
-                .center(latLng)
-                .radius(1.0)
-                .strokeColor(android.graphics.Color.rgb(0, 180, 255))
-                .fillColor(android.graphics.Color.argb(220, 0, 150, 255))
-                .strokeWidth(3.0f)
-                .zIndex(10));
-            mFingerprintCircles.add(circle);
-          }
-        }
-
-        try {
-          List<WeightedLatLng> weightedList = new ArrayList<>();
-          for (LatLng latLng : result) {
-            weightedList.add(new WeightedLatLng(latLng));
+          Collection<WeightedLatLng>  res = MapTileProvider.readRadioMapLocations(params[0]);
+		  if (DEBUG && res == null){
+            Log.e(TAG, "HeatmapTask doInBackground has a null result");
           }
 
-          int[] colors = {
-              android.graphics.Color.rgb(0, 150, 255),  // Deep Blue
-              android.graphics.Color.rgb(0, 230, 255),  // Bright Cyan
-              android.graphics.Color.rgb(50, 255, 100), // Lime Green
-              android.graphics.Color.rgb(255, 200, 0)   // Yellow
-          };
-          float[] startPoints = { 0.2f, 0.5f, 0.8f, 1.0f };
-          com.google.maps.android.heatmaps.Gradient gradient = new com.google.maps.android.heatmaps.Gradient(colors, startPoints);
+          return res;
 
-          mProvider = new HeatmapTileProvider.Builder()
-              .weightedData(weightedList)
-              .gradient(gradient)
-              .radius(35)
-              .opacity(0.75)
-              .build();
+		}
 
-          mHeatmapOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider).zIndex(1));
-        } catch (Exception e) {
-          Log.e(TAG, "Error displaying heatmap tile overlay: " + e.getMessage());
-        }
-      }
-    }
+		@Override
+		protected void onPostExecute(Collection<WeightedLatLng> result) {
+			// Check if need to instantiate (avoid setData etc
+			// twice)
+			if (mProvider == null) {
+			  if(result  == null){
+			    Log.d(TAG, "No radiomap for selected building");
+			    Toast.makeText(getApplicationContext(), "This building has no radiomap", Toast.LENGTH_SHORT).show();
+			    return;
+              }
+				mProvider = new HeatmapTileProvider.Builder().weightedData(result).build();
+			} else {
+				mProvider.setWeightedData(result);
+			}
+            if (DEBUG){
+              Log.d(TAG, "Setting heatmap, " + result.size());
+            }
 
-  }
 
-  interface PreviousRunningTask {
-    void disableSuccess();
-  }
+			TileOverlay mHeapOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider).zIndex(1));
+		}
+
+	}
+
+	interface PreviousRunningTask {
+		void disableSuccess();
+	}
 }

@@ -114,8 +114,8 @@ public class FetchBuildingsTask extends AsyncTask<Void, Void, String> {
 
 			JSONObject j = new JSONObject();
 			try {
-				j.put("username", "username");
-				j.put("password", "pass");
+				j.put("username", AnyplaceAPI.getApiUsername());
+				j.put("password", AnyplaceAPI.getApiPassword());
 
 			} catch (JSONException e) {
 				return "Error requesting the buildings around you!";
@@ -135,16 +135,20 @@ public class FetchBuildingsTask extends AsyncTask<Void, Void, String> {
 
 			// process the buildings received
 			BuildingModel b;
-			JSONArray buids_json = new JSONArray(json.getString("buildings"));
+			JSONArray buids_json;
+			if (json.has("buildings")) {
+				buids_json = json.getJSONArray("buildings");
+			} else if (json.has("spaces")) {
+				buids_json = json.getJSONArray("spaces");
+			} else {
+				return "Error Message: No buildings found in response!";
+			}
 			for (int i = 0, sz = buids_json.length(); i < sz; i++) {
 				JSONObject cp = (JSONObject) buids_json.get(i);
 				b = new BuildingModel();
 				b.setPosition(cp.getString("coordinates_lat"), cp.getString("coordinates_lon"));
 				b.buid = cp.getString("buid");
-				// b.address = cp.getString("address");
-				// b.description = cp.getString("description");
 				b.name = cp.getString("name");
-				// b.url = cp.getString("url");
 
 				buildings.add(b); // the anyplace Cache list
 			}

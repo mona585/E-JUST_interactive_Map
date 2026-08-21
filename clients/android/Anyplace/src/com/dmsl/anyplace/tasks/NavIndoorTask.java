@@ -75,8 +75,8 @@ public class NavIndoorTask extends AsyncTask<Void, Void, String> {
 		// create the JSON object for the navigation API call
 		JSONObject j = new JSONObject();
 		try {
-			j.put("username", "username");
-			j.put("password", "pass");
+			j.put("username", AnyplaceAPI.getApiUsername());
+			j.put("password", AnyplaceAPI.getApiPassword());
 			// insert the destination POI and the user's coordinates
 			j.put("pois_to", poid);
 			j.put("coordinates_lat", pos.lat);

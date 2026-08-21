@@ -5,26 +5,30 @@ android {
     buildToolsVersion "29.0.2"
 
     defaultConfig {
-        applicationId "cy.ac.ucy.cs.anyplace.navigator"
+        applicationId "eg.edu.ejust.anyplace.navigator"
         minSdkVersion 28
         targetSdkVersion 29
         versionCode 2
         versionName "4.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-      // Read the API key from properties into R.string.maps_api_key
-      def secureProps = new Properties()
-      if (file("../secure.properties").exists()) {
-        file("../secure.properties")?.withInputStream { secureProps.load(it) }
-      }
-      if (file("../local.properties").exists()) {
-        file("../local.properties")?.withInputStream { secureProps.load(it) }
-      }
-      if (file("local.properties").exists()) {
-        file("local.properties")?.withInputStream { secureProps.load(it) }
-      }
-      resValue "string", "maps_api_key", (secureProps.getProperty("MAPS_API_KEY") ?: "AIzaSyDK8JRCY8ZX1htNbqfKge2W7wCGTZTmtpw")
+        // Read settings from clients/.env or central .env file
+        def envFile = file("../.env")
+        if (!envFile.exists()) {
+            envFile = file("../../.env")
+        }
+        def envProps = new Properties()
+        if (envFile.exists()) {
+            envFile.withInputStream { envProps.load(it) }
+        }
+        def keyVal = envProps.getProperty("MAPS_API_KEY") ?: ""
+        if (keyVal.isEmpty() && file("${System.properties['user.home']}/MAPS_API_KEY").exists()) {
+            keyVal = file("${System.properties['user.home']}/MAPS_API_KEY").text.trim()
+        }
+        def serverUrl = envProps.getProperty("SERVER_URL") ?: "http://anyplace.ejust.edu.eg:443"
 
+        resValue "string", "maps_api_key", keyVal
+        resValue "string", "default_server_ip_address", serverUrl
     }
 
     buildTypes {
@@ -66,14 +70,11 @@ dependencies {
   implementation 'com.google.android.gms:play-services-auth:18.1.0'
   implementation 'com.google.maps.android:android-maps-utils:0.3.4'
   implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
+  implementation 'com.squareup.okhttp3:okhttp:4.9.1'
 
 
   implementation 'com.github.dmsl:anyplace-lib-core:4.0.2'
   implementation 'com.github.dmsl:anyplace-lib-android:4.0.2'
-  implementation 'com.squareup.okhttp3:okhttp:4.3.1'
-  implementation 'com.squareup.okio:okio:2.4.1'
-
-//  implementation project(path: ':lib')
 
 
   //
@@ -87,16 +88,4 @@ dependencies {
   testImplementation 'junit:junit:4.13'
   androidTestImplementation 'androidx.test.ext:junit:1.1.1'
   androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
-}
-
-android.applicationVariants.all { variant ->
-    variant.assembleProvider.configure {
-        doLast {
-            copy {
-                from variant.outputs.first().outputFile
-                into rootProject.file("../../APKs")
-                rename { "navigator.apk" }
-            }
-        }
-    }
 }

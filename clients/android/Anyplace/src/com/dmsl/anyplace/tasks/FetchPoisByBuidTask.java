@@ -116,8 +116,8 @@ public class FetchPoisByBuidTask extends AsyncTask<Void, Void, String> {
 		try {
 			JSONObject j = new JSONObject();
 			try {
-				j.put("username", "username");
-				j.put("password", "pass");
+				j.put("username", AnyplaceAPI.getApiUsername());
+				j.put("password", AnyplaceAPI.getApiPassword());
 
 				j.put("buid", this.buid);
 				j.put("floor_number", this.floor_number);

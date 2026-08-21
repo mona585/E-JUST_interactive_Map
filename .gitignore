@@ -1,55 +1,89 @@
-# Application Logs & Runtime Files
-*.log
-anyplace.log
-RUNNING_PID
-*/RUNNING_PID
+# ==========================================
+# Anyplace Platform - Comprehensive .gitignore
+# ==========================================
 
-# Private Server Configuration (contains generated secret keys and DB credentials)
-server/conf/app.private.conf
+# Environment & Secret Configuration Files
 .env
-.env.*
-!.env.example
+*.env
 server/.env
-server/.env.*
-!server/.env.example
 clients/.env
-clients/.env.*
-!clients/.env.example
+**/secure.properties
+**/MAPS_API_KEY
 
-# Built/Deployed Web Applications & Assets
-public/
-server/public/
-server/target/
-target/
+# Java & Gradle Build Artifacts
+.gradle/
+**/build/
+bin/
+!server/sbt-dist/bin/
+out/
+*.class
+*.jar
+!server/lib/*.jar
+!server/sbt-dist/bin/sbt-launch.jar
+*.war
+*.ear
 
-# Data Directories (files generated at runtime)
-server/floorplans/*
-!server/floorplans/.gitkeep
-server/radiomaps_raw/*
-!server/radiomaps_raw/.gitkeep
-server/radiomaps_frozen/*
-!server/radiomaps_frozen/.gitkeep
-server/anyplace_tiler/*
-!server/anyplace_tiler/.gitkeep
-
-# Node & Bower Dependencies
-node_modules/
-bower_components/
-
-# IDE & Editor Temporary Files
-.idea/
+# SBT & Scala Build Artifacts
+**/target/
+project/target/
+project/project/
+.sbt/
 .bsp/
-.history/
-*.swp
-*~
+
+# Android Generated Files & Logs
+*.apk
+*.aab
+apk generated/
+captures/
+.externalNativeBuild
+.cxx/
+local.properties
+
+# IDE & Editor Settings
+.idea/
+*.iml
+.vscode/
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# OS & System Files
 .DS_Store
 Thumbs.db
-.android-sdk/
+*.log
+*.tmp
+*.swp
+*~
 
-### Linux ###
-.fuse_hidden*
-.directory
-.Trash-*
-.nfs*
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
 
+# Symbolication related
+app.*.symbols
 
+# Obfuscation related
+app.*.map.json
+
+# Android Studio generated files
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Miscellaneous
+*.pyc
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/

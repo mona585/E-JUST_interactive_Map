@@ -148,9 +148,6 @@ import com.google.maps.android.clustering.Cluster;
 import com.google.maps.android.clustering.ClusterManager;
 import com.google.maps.android.clustering.ClusterManager.OnClusterClickListener;
 import com.google.maps.android.clustering.ClusterManager.OnClusterItemClickListener;
-import com.google.maps.android.heatmaps.HeatmapTileProvider;
-import com.google.maps.android.heatmaps.WeightedLatLng;
-import com.google.maps.android.heatmaps.Gradient;
 
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -216,10 +213,6 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
   private boolean floorChangeRequestDialog = false;
   // </Tasks>
   private boolean mAutomaticGPSBuildingSelection;
-
-  private HeatmapTileProvider mProvider;
-  private TileOverlay mHeatmapOverlay = null;
-  private List<Circle> mFingerprintCircles = new ArrayList<>();
 
   /**
    * Note that this may be null if the Google Play services APK is not available.
@@ -307,14 +300,15 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
           @Override
           public void onComplete(@NonNull Task<Location> task) {
             if (!task.isSuccessful() || task.getResult() == null) {
-              Log.w(TAG, "getCurrentLocation task failed or returned null", task.getException());
+              handleBuildingsOnMap(true);
               return;
             }
             Location location = task.getResult();
             final GeoPoint gpsLoc = new GeoPoint(location);
 
 
-            AnyplaceServerAPI.fetchBuildings(UnifiedNavigationActivity.this, new FetchBuildingsTaskListener() {
+            AnyplaceCache mAnyplaceCache = AnyplaceCache.getInstance(UnifiedNavigationActivity.this);
+            mAnyplaceCache.loadWorldBuildings(new FetchBuildingsTaskListener() {
 
               @Override
               public void onSuccess(String result, List<BuildingModel> buildings) {
@@ -376,11 +370,8 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
                   mFusedLocationClient.getLastLocation().addOnCompleteListener(new OnCompleteListener<Location>() {
                     @Override
                     public void onComplete(@NonNull Task<Location> task) {
-                      if (!task.isSuccessful() || task.getResult() == null) {
-                        Log.w(TAG, "getLastLocation task failed or returned null", task.getException());
-                        return;
-                      }
-                      Location loc = task.getResult();
+                      if (!task.isSuccessful() || task.getResult() == null) return;
+                      Location loc= task.getResult();
 
                       addMarker(loc);
                       cameraUpdate = true;
@@ -411,7 +402,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
 
               }
 
-            });
+            }, UnifiedNavigationActivity.this, false);
 
           }
         }).addOnFailureListener(new OnFailureListener() {
@@ -526,9 +517,9 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
     // Use high accuracy
     mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
     // Set the update interval to 2 seconds
-    mLocationRequest.setInterval(100);
+    mLocationRequest.setInterval(2000);
     // Set the fastest update interval to 1 second
-    mLocationRequest.setFastestInterval(50);
+    mLocationRequest.setFastestInterval(1000);
     //mLocationClient = new LocationClient(this, this, this);
 
 
@@ -539,35 +530,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
 
     // get/set settings
     PreferenceManager.setDefaultValues(this, SHARED_PREFS_ANYPLACE, MODE_PRIVATE, R.xml.preferences_anyplace, true);
-    
-    String prefFile = getString(R.string.preferences_file);
-    SharedPreferences navPrefs = getSharedPreferences(prefFile, MODE_PRIVATE);
-    SharedPreferences.Editor navEditor = navPrefs.edit();
-    navEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    navEditor.putString("password", "ahmedmesbah");
-    navEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    navEditor.putString("server_port", "44");
-    navEditor.apply();
-
-    SharedPreferences apPrefs = getSharedPreferences(SHARED_PREFS_ANYPLACE, MODE_PRIVATE);
-    SharedPreferences.Editor apEditor = apPrefs.edit();
-    apEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    apEditor.putString("password", "ahmedmesbah");
-    apEditor.putString("access_token", "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap");
-    apEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    apEditor.putString("server_port", "44");
-    apEditor.apply();
-
-    SharedPreferences defPrefs = PreferenceManager.getDefaultSharedPreferences(this);
-    SharedPreferences.Editor defEditor = defPrefs.edit();
-    defEditor.putString("username", "ahmedmesbah1230_20260809_133321_local");
-    defEditor.putString("password", "ahmedmesbah");
-    defEditor.putString("access_token", "apLocal_32fcXaEx8C9p7SyVyll4azWVBzLmVgF503dkiHO1kWPGItK9pXeOxdQC5eZB3KY5qAzvAlv6lrCNZaypMkiCwlzCxbETqrVkhezGnJ4TUyadGXDmuahcVVX9gdY6UficdgFX27mj3t9wKghRe8IVsQMJibHsAOry2xrAM0ACmpXmSjlvyrZk0x6q8rzHvmqhcykScHH4r3IW1M3EjKt7Q0eWlmZwoFzvjFuynYGK0Yifz3hkIZmdkY7JkiNMPNRTJ6bCy2lTPmcfkKrK54YQWV3CSkILCogT8qhKmDXyQHmekefHnIjkuUeel1j7RHQPUxwJkyTdbKaG7ZgXlgg4UFfdR6Lkn6PvbqtFFv2ciKpu6gcRPPp3sR67JTofZYWB1naocPdKrPrNMnoauarFlEAD6DBDY9910LF3QMg3eh7lMpbeBrCQWYucNFQEaEZh3sqH8OiKbplaQ0fr04oz1rIr7ycxdrXFmZ3K590EG0ZkutRmKu4Iap");
-    defEditor.putString("server_ip_address", "ap.cs.ucy.ac.cy");
-    defEditor.putString("server_port", "44");
-    defEditor.apply();
-
-    SharedPreferences preferences = apPrefs;
+    SharedPreferences preferences = getSharedPreferences(SHARED_PREFS_ANYPLACE, MODE_PRIVATE);
     preferences.registerOnSharedPreferenceChangeListener(this);
     lpTracker.setAlgorithm(preferences.getString("TrackingAlgorithm", "WKNN"));
 
@@ -908,7 +871,10 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
     // Sets the map type to be NORMAL - ROAD mode
     mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
 
-    mMap.setBuildingsEnabled(false);
+    mMap.setBuildingsEnabled(true);
+    mMap.getUiSettings().setTiltGesturesEnabled(true);
+    mMap.getUiSettings().setCompassEnabled(true);
+    mMap.getUiSettings().setRotateGesturesEnabled(true);
   }
 
 
@@ -917,54 +883,68 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
     if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) {
 
+      // Should we show an explanation?
       if (ActivityCompat.shouldShowRequestPermissionRationale(this,
               Manifest.permission.ACCESS_FINE_LOCATION)) {
 
+        // Show an explanation to the user *asynchronously* -- don't block
+        // this thread waiting for the user's response! After the user
+        // sees the explanation, try again to request the permission.
         new AlertDialog.Builder(this)
                 .setTitle("Location Permission Needed")
                 .setMessage("This app needs the Location permission, please accept to use location functionality")
                 .setPositiveButton("OK", new DialogInterface.OnClickListener() {
                   @Override
                   public void onClick(DialogInterface dialogInterface, int i) {
+                    //Prompt the user once explanation has been shown
                     ActivityCompat.requestPermissions(UnifiedNavigationActivity.this,
                             new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                            REQUEST_PERMISSION_LOCATION);
+                            MY_PERMISSIONS_REQUEST_LOCATION );
                   }
                 })
                 .create()
                 .show();
 
+
       } else {
+        // No explanation needed, we can request the permission.
         ActivityCompat.requestPermissions(this,
                 new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                REQUEST_PERMISSION_LOCATION);
+                MY_PERMISSIONS_REQUEST_LOCATION );
       }
     }
 
     if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
             != PackageManager.PERMISSION_GRANTED) {
 
+      // Should we show an explanation?
       if (ActivityCompat.shouldShowRequestPermissionRationale(this,
               Manifest.permission.ACCESS_COARSE_LOCATION)) {
 
+        // Show an explanation to the user *asynchronously* -- don't block
+        // this thread waiting for the user's response! After the user
+        // sees the explanation, try again to request the permission.
         new AlertDialog.Builder(this)
                 .setTitle("Location Permission Needed")
                 .setMessage("This app needs the Location permission, please accept to use location functionality")
                 .setPositiveButton("OK", new DialogInterface.OnClickListener() {
                   @Override
                   public void onClick(DialogInterface dialogInterface, int i) {
+                    //Prompt the user once explanation has been shown
                     ActivityCompat.requestPermissions(UnifiedNavigationActivity.this,
                             new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
-                            REQUEST_PERMISSION_LOCATION);
+                            MY_PERMISSIONS_REQUEST_LOCATION );
                   }
                 })
                 .create()
                 .show();
 
+
       } else {
+        // No explanation needed, we can request the permission.
         ActivityCompat.requestPermissions(this,
                 new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
-                REQUEST_PERMISSION_LOCATION);
+                MY_PERMISSIONS_REQUEST_LOCATION );
       }
     }
 
@@ -977,11 +957,6 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
       return;
     }
     checkLocationPermission();
-    if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-        ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-      Log.w(TAG, "Location permissions not granted yet for initCamera");
-      return;
-    }
     CancellationTokenSource source = new CancellationTokenSource();
     CancellationToken token = source.getToken();
 
@@ -991,7 +966,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
       public void onComplete(@NonNull Task<Location> task) {
         if (!task.isSuccessful() || task.getResult() == null) {
           if (AnyplaceDebug.DEBUG_MESSAGES){
-            Log.d(TAG, "Location task returned null or failed: " + task.getException());
+            Log.d(TAG, "Location returned is null or task failed");
           }
           return;
         }
@@ -1022,12 +997,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
       }
     });
 
-    try {
-      checkLocationPermission();
-      mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, Looper.getMainLooper());
-    } catch (Exception e) {
-      Log.d(TAG, "Error starting location updates: " + e.getMessage());
-    }
+    // mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, Looper.myLooper());
 
 
   }
@@ -1279,35 +1249,26 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
 
   private void bypassSelectBuildingActivity(final BuildingModel b, final String floor_number, final Boolean force) {
     // Load Building
-    AnyplaceServerAPI.fetchFloors(getApplicationContext(), b.buid, new FetchFloorsByBuidTaskListener() {
+    b.loadFloors(new FetchFloorsByBuidTaskListener() {
 
       @Override
       public void onSuccess(String result, List<FloorModel> floors) {
-        if (floors != null && !floors.isEmpty()) {
-          try {
-            if (b.getFloors() != null) {
-              b.getFloors().clear();
-              b.getFloors().addAll(floors);
-            }
-          } catch (Exception ignored) {}
-        }
 
         // Force loading of floor_number
-        FloorModel floor = b.getFloorFromNumber(floor_number);
-        if (floor == null) {
-          floor = b.getSelectedFloor();
-        }
-        if (floor == null && floors != null && !floors.isEmpty()) {
-          floor = floors.get(0);
-        }
+        FloorModel floor;
+        if ((floor = b.getFloorFromNumber(floor_number)) != null || !force) {
+          if (floor == null) {
+            floor = b.getSelectedFloor();
+          }
 
-        if (floor != null) {
           ArrayList<BuildingModel> list = new ArrayList<BuildingModel>(1);
           list.add(b);
+          // Set building for Select Dialog
           mAnyplaceCache.setSelectedBuildingIndex(0);
           mAnyplaceCache.setSpinnerBuildings(getApplicationContext(), list);
 
           bypassSelectBuildingActivity(b, floor);
+
         } else {
           Toast.makeText(getBaseContext(), "Building's Floor Not Found", Toast.LENGTH_SHORT).show();
         }
@@ -1318,40 +1279,31 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         Toast.makeText(getBaseContext(), result, Toast.LENGTH_SHORT).show();
 
       }
-    });
+    }, UnifiedNavigationActivity.this, false, true);
   }
 
   private void bypassSelectBuildingActivity(final BuildingModel b, final String floor_number, final Boolean force, final PoisModel poi) {
     // Load Building
-    AnyplaceServerAPI.fetchFloors(getApplicationContext(), b.buid, new FetchFloorsByBuidTaskListener() {
+    b.loadFloors(new FetchFloorsByBuidTaskListener() {
 
       @Override
       public void onSuccess(String result, List<FloorModel> floors) {
-        if (floors != null && !floors.isEmpty()) {
-          try {
-            if (b.getFloors() != null) {
-              b.getFloors().clear();
-              b.getFloors().addAll(floors);
-            }
-          } catch (Exception ignored) {}
-        }
 
         // Force loading of floor_number
-        FloorModel floor = b.getFloorFromNumber(floor_number);
-        if (floor == null) {
-          floor = b.getSelectedFloor();
-        }
-        if (floor == null && floors != null && !floors.isEmpty()) {
-          floor = floors.get(0);
-        }
+        FloorModel floor;
+        if ((floor = b.getFloorFromNumber(floor_number)) != null || !force) {
+          if (floor == null) {
+            floor = b.getSelectedFloor();
+          }
 
-        if (floor != null) {
           ArrayList<BuildingModel> list = new ArrayList<BuildingModel>(1);
           list.add(b);
+          // Set building for Select Dialog
           mAnyplaceCache.setSelectedBuildingIndex(0);
           mAnyplaceCache.setSpinnerBuildings(getApplicationContext(), list);
 
           bypassSelectBuildingActivity(b, floor, poi);
+
         } else {
           Toast.makeText(getBaseContext(), "Building's Floor Not Found", Toast.LENGTH_SHORT).show();
         }
@@ -1362,16 +1314,13 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         Toast.makeText(getBaseContext(), result, Toast.LENGTH_SHORT).show();
 
       }
-    });
+    }, UnifiedNavigationActivity.this, false, true);
   }
 
   private void bypassSelectBuildingActivity(final BuildingModel b, final FloorModel f) {
-    if (b == null || f == null || f.floor_number == null) {
-      Toast.makeText(getBaseContext(), "Invalid building or floor selection", Toast.LENGTH_SHORT).show();
-      return;
-    }
 
-    AnyplaceServerAPI.fetchFloorPlan(UnifiedNavigationActivity.this, b.buid, f.floor_number, new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
+    final FetchFloorPlanTask fetchFloorPlanTask = new FetchFloorPlanTask(UnifiedNavigationActivity.this, b.buid, f.floor_number);
+    fetchFloorPlanTask.setCallbackInterface(new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
 
       private ProgressDialog dialog;
 
@@ -1397,18 +1346,22 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         dialog.setMessage("Please be patient...");
         dialog.setCancelable(true);
         dialog.setCanceledOnTouchOutside(false);
+        dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
+          @Override
+          public void onCancel(DialogInterface dialog) {
+            fetchFloorPlanTask.cancel(true);
+          }
+        });
         dialog.show();
       }
     });
+    fetchFloorPlanTask.execute();
   }
 
   private void bypassSelectBuildingActivity(final BuildingModel b, final FloorModel f, final PoisModel pm) {
-    if (b == null || f == null || f.floor_number == null) {
-      Toast.makeText(getBaseContext(), "Invalid building or floor selection", Toast.LENGTH_SHORT).show();
-      return;
-    }
 
-    AnyplaceServerAPI.fetchFloorPlan(UnifiedNavigationActivity.this, b.buid, f.floor_number, new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
+    final FetchFloorPlanTask fetchFloorPlanTask = new FetchFloorPlanTask(UnifiedNavigationActivity.this, b.buid, f.floor_number);
+    fetchFloorPlanTask.setCallbackInterface(new FetchFloorPlanTask.FetchFloorPlanTaskListener() {
 
       private ProgressDialog dialog;
 
@@ -1434,9 +1387,16 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         dialog.setMessage("Please be patient...");
         dialog.setCancelable(true);
         dialog.setCanceledOnTouchOutside(false);
+        dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
+          @Override
+          public void onCancel(DialogInterface dialog) {
+            fetchFloorPlanTask.cancel(true);
+          }
+        });
         dialog.show();
       }
     });
+    fetchFloorPlanTask.execute();
   }
 
   private void selectPlaceActivityResult(final BuildingModel b, final FloorModel f, final PoisModel pm) {
@@ -1508,82 +1468,8 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
     // clean the map in case there are overlays
     mMap.clear();
 
-    try {
-      File destDir = new File(getBaseContext().getExternalFilesDir(null), "floor_plans/" + b.buid + "/" + f.floor_number);
-      File pngFile = new File(destDir, "floor_plan.png");
-      if (!pngFile.exists()) {
-        pngFile = new File(destDir, "tiles_archive.zip");
-      }
-
-      if (pngFile.exists() && pngFile.isFile()) {
-        android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
-        options.inJustDecodeBounds = true;
-        android.graphics.BitmapFactory.decodeFile(pngFile.getAbsolutePath(), options);
-
-        int maxDim = 2048;
-        int inSampleSize = 1;
-        if (options.outHeight > maxDim || options.outWidth > maxDim) {
-          int heightRatio = Math.round((float) options.outHeight / (float) maxDim);
-          int widthRatio = Math.round((float) options.outWidth / (float) maxDim);
-          inSampleSize = Math.max(heightRatio, widthRatio);
-        }
-
-        android.graphics.BitmapFactory.Options decodeOptions = new android.graphics.BitmapFactory.Options();
-        decodeOptions.inSampleSize = Math.max(1, inSampleSize);
-        android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeFile(pngFile.getAbsolutePath(), decodeOptions);
-
-        if (bm != null) {
-          double blLat = 0, blLng = 0, trLat = 0, trLng = 0;
-          boolean hasCoords = false;
-          if (f.bottom_left_lat != null && !f.bottom_left_lat.isEmpty() &&
-              f.bottom_left_lng != null && !f.bottom_left_lng.isEmpty() &&
-              f.top_right_lat != null && !f.top_right_lat.isEmpty() &&
-              f.top_right_lng != null && !f.top_right_lng.isEmpty()) {
-            try {
-              blLat = Double.parseDouble(f.bottom_left_lat);
-              blLng = Double.parseDouble(f.bottom_left_lng);
-              trLat = Double.parseDouble(f.top_right_lat);
-              trLng = Double.parseDouble(f.top_right_lng);
-              if (Math.abs(trLat - blLat) > 0.00001 && Math.abs(trLng - blLng) > 0.00001) {
-                hasCoords = true;
-              }
-            } catch (Exception ignored) {}
-          }
-
-          if (!hasCoords && b != null && b.getPosition() != null) {
-            double centerLat = b.getPosition().latitude;
-            double centerLng = b.getPosition().longitude;
-            if (centerLat != 0.0 || centerLng != 0.0) {
-              blLat = centerLat - 0.0004;
-              blLng = centerLng - 0.0004;
-              trLat = centerLat + 0.0004;
-              trLng = centerLng + 0.0004;
-              hasCoords = true;
-            }
-          }
-
-          if (hasCoords) {
-            LatLngBounds bounds = new LatLngBounds(
-                new LatLng(Math.min(blLat, trLat), Math.min(blLng, trLng)),
-                new LatLng(Math.max(blLat, trLat), Math.max(blLng, trLng))
-            );
-
-            mMap.addGroundOverlay(new GroundOverlayOptions()
-                .image(BitmapDescriptorFactory.fromBitmap(bm))
-                .positionFromBounds(bounds)
-                .zIndex(0));
-          }
-        }
-      }
-
-      File tilesDir = new File(destDir, "tiles_archive");
-      if (tilesDir.exists() && tilesDir.isDirectory()) {
-        mMap.addTileOverlay(
-            new TileOverlayOptions().tileProvider(new MapTileProvider(getBaseContext(), b.buid, f.floor_number)).zIndex(0));
-      }
-    } catch (Exception e) {
-      Log.e(TAG, "Error in selectPlaceActivityResult_HELP floorplan render: " + e.getMessage(), e);
-    }
+    // add the Tile Provider that uses our Building tiles over Google Maps
+    TileOverlay mTileOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(new MapTileProvider(getBaseContext(), b.buid, f.floor_number)));
 
     mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(b.getPosition(), 19.0f), new CancelableCallback() {
 
@@ -1630,18 +1516,8 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
           onErrorOrCancel("");
           return;
         }
-        try {
-          File root = AnyplaceUtils.getRadioMapFolder(UnifiedNavigationActivity.this, b.buid, userData.getSelectedFloorNumber());
-          File meanFile = new File(root, AnyplaceUtils.getRadioMapFileName(userData.getSelectedFloorNumber()));
-          if (meanFile.exists()) {
-            lpTracker.setRadiomapFile(meanFile.getAbsolutePath());
-          }
-        } catch (Exception e) {
-          Log.e(TAG, "Error setting radiomap file for tracker: " + e.getMessage());
-        }
         // start the tracker
         enableAnyplaceTracker();
-        new HeatmapTask().execute();
 
         // Download All Building Floors and Radiomaps
         if (AnyplaceDebug.PLAY_STORE) {
@@ -1704,32 +1580,53 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
 
     }
 
-    AnyplaceServerAPI.downloadRadioMapForFloor(this, userData.getSelectedBuildingId(), userData.getSelectedFloorNumber(), new Callback());
+    if (downloadRadioMapTaskBuid != null) {
+      ((PreviousRunningTask) downloadRadioMapTaskBuid.getCallbackInterface()).disableSuccess();
+    }
+
+    downloadRadioMapTaskBuid = new DownloadRadioMapTaskBuid(new Callback(), this, trackedPositionLat, trackedPositionLon, userData.getSelectedBuildingId(), userData.getSelectedFloorNumber(), false);
+
+    int currentapiVersion = android.os.Build.VERSION.SDK_INT;
+    if (currentapiVersion >= android.os.Build.VERSION_CODES.HONEYCOMB) {
+      // Execute task parallel with others and multiple instances of
+      // itself
+      downloadRadioMapTaskBuid.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    } else {
+      downloadRadioMapTaskBuid.execute();
+    }
   }
   LocationCallback mLocationCallback = new LocationCallback() {
     @Override
     public void onLocationResult(LocationResult locationResult) {
-      if (locationResult == null) return;
       List<Location> locationList = locationResult.getLocations();
-      if (locationList != null && locationList.size() > 0) {
+      if (locationList.size() > 0) {
+        //The last location in the list is the newest
         Location location = locationList.get(locationList.size() - 1);
+        if (AnyplaceDebug.DEBUG_LOCATION){
+          Log.i(TAG, "Location: " + location.getLatitude() + " " + location.getLongitude());
+        }
+
         mLastLocation = location;
 
-        if (userData.getPositionWifi() == null) {
-          LatLng newPos = new LatLng(location.getLatitude(), location.getLongitude());
-          if (userMarker != null) {
-            userMarker.setPosition(newPos);
-            userMarker.setRotation(sensorsMain.getRAWHeading() - bearing);
-          } else if (mMap != null) {
-            MarkerOptions marker = new MarkerOptions();
-            marker.position(newPos);
-            marker.title("User").snippet("Estimated Position");
-            marker.icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_icon));
-            marker.rotation(sensorsMain.getRAWHeading() - bearing);
-            userMarker = mMap.addMarker(marker);
-          }
-          updatePathProgress(newPos);
+
+        if (userMarker != null) {
+          // draw the location of the new position
+          userMarker.remove();
+
         }
+
+          MarkerOptions marker = new MarkerOptions();
+          marker.position(new LatLng(locationResult.getLastLocation().getLatitude(), locationResult.getLastLocation().getLongitude()));
+          marker.title("User").snippet("Estimated Position");
+          marker.icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_icon));
+
+          marker.rotation(sensorsMain.getRAWHeading() - bearing);
+          userMarker = mMap.addMarker(marker);
+
+
+          //mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(userMarker.getPosition(), mInitialZoomLevel));
+
+
       }
     }
   };
@@ -1826,11 +1723,9 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
           int[] grantResults) {
     switch (requestCode) {
       case REQUEST_PERMISSION_LOCATION:
-      case MY_PERMISSIONS_REQUEST_LOCATION:
         if (grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
           Toast.makeText(UnifiedNavigationActivity.this, "Permission Granted!", Toast.LENGTH_SHORT).show();
-          initCamera();
         } else {
           Toast.makeText(UnifiedNavigationActivity.this, "Permission Denied!", Toast.LENGTH_SHORT).show();
         }
@@ -1857,9 +1752,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
       mFusedLocationClient.getLastLocation().addOnCompleteListener(new OnCompleteListener<Location>() {
         @Override
         public void onComplete(@NonNull Task<Location> task) {
-          if (!task.isSuccessful() || task.getResult() == null) {
-            return;
-          }
+          if (!task.isSuccessful() || task.getResult() == null) return;
           Location location = task.getResult();
           onLocationChanged(location);
         }
@@ -1921,23 +1814,6 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
 
         PoisModel _entrance = null;
         GeoPoint pos = userData.getPositionWifi();
-        if (pos == null && userMarker != null && userMarker.getPosition() != null) {
-            pos = new GeoPoint(userMarker.getPosition().latitude, userMarker.getPosition().longitude);
-        }
-        if (pos == null) {
-            GeoPoint gpsPos = userData.getLocationGPSorIP();
-            if (gpsPos != null && b != null) {
-                try {
-                    double bLat = Double.parseDouble(b.getLatitudeString());
-                    double bLon = Double.parseDouble(b.getLongitudeString());
-                    double distMeters = GeoPoint.getDistanceBetweenPoints(gpsPos.dlon, gpsPos.dlat, bLon, bLat, "");
-                    if (distMeters <= 500.0) {
-                        pos = gpsPos;
-                    }
-                } catch (Exception ignored) {}
-            }
-        }
-
         if (pos == null) {
             // Find The nearest building entrance from the destination poi
             PoisModel _entranceGlobal = null;
@@ -2015,10 +1891,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         }, userData.getLocationGPSorIP(), (_entrance != null) ? new GeoPoint(_entrance.lat(), _entrance.lng()) : null);
 
         // start the navigation task
-        GeoPoint reqPos = (pos == null) ? new GeoPoint(_entrance.lat(), _entrance.lng()) : pos;
-        String reqFloor = (pos == null) ? _entrance.floor_number : currentFloor;
-
-        AnyplaceServerAPI.fetchNavRouteXY(this, b.buid, id, reqPos.lat, reqPos.lng, reqFloor, new NavIndoorTask.NavRouteListener() {
+        final AsyncTask<Void, Void, String> async2f = new NavIndoorTask(new NavIndoorTask.NavRouteListener() {
             @Override
             public void onNavRouteSuccess(String result, List<PoisNav> points) {
                 onNavDirectiosFinished();
@@ -2047,16 +1920,19 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
                     clearNavigationData();
                 }
             }
-        });
+
+        }, this, id, (pos == null) ? new GeoPoint(_entrance.lat(), _entrance.lng()) : pos, (pos == null) ? _entrance.floor_number : currentFloor, b.buid);
 
         dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
             @Override
             public void onCancel(DialogInterface dialog) {
                 async1f.cancel(true);
+                async2f.cancel(true);
             }
         });
         dialog.show();
         async1f.execute();
+        async2f.execute();
     }
 
     private void removeNavOverlays() {
@@ -2095,11 +1971,8 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         }
     }
 
-    private int mCurrentPathIndex = 0;
-
     // draws the navigation route for the loaded floor
     private void handleIndoorPath(List<PoisNav> puids) {
-        mCurrentPathIndex = 0;
         List<LatLng> p = new ArrayList<LatLng>();
         String selectedFloor = userData.getSelectedFloorNumber();
         for (PoisNav pt : puids) {
@@ -2149,12 +2022,13 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
     }
 //TODO: move to android lib.
     private void handleBuildingsOnMap(boolean forceReload) {
-        AnyplaceServerAPI.fetchBuildings(UnifiedNavigationActivity.this, new FetchBuildingsTaskListener() {
+        AnyplaceCache mAnyplaceCache = AnyplaceCache.getInstance(UnifiedNavigationActivity.this);
+        mAnyplaceCache.loadWorldBuildings(new FetchBuildingsTaskListener() {
 
             @Override
             public void onSuccess(String result, List<BuildingModel> buildings) {
                 List<BuildingModel> collection = new ArrayList<BuildingModel>(buildings);
-                builds = buildings;
+              builds = buildings;
                 mClusterManager.clearItems();
                 BuildingModel buid = userData.getSelectedBuilding();
                 if (buid != null)
@@ -2163,13 +2037,16 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
                 mClusterManager.cluster();
                 // HACK. This dumps all the cached icons & recreates everything.
                 mClusterManager.setRenderer(new MyBuildingsRenderer(UnifiedNavigationActivity.this, mMap, mClusterManager));
+
+
             }
 
             @Override
             public void onErrorOrCancel(String result) {
-
+                Toast.makeText(UnifiedNavigationActivity.this, "Server response: " + result, Toast.LENGTH_LONG).show();
             }
-        });
+
+        }, this, forceReload);
     }
     // /> NAVIGATION FUNCTIONS
 
@@ -2201,7 +2078,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         if (mAnyplaceCache.checkPoisBUID(buid)) {
             l.onSuccess("Pois read from cache", mAnyplaceCache.getPoisMap());
         } else {
-            AnyplaceServerAPI.fetchPoisByBuid(getApplicationContext(), buid, new FetchPoisByBuidTask.FetchPoisListener() {
+            FetchPoisByBuidTask fetchPoisByBuidFloorTask = new FetchPoisByBuidTask(new FetchPoisByBuidTask.FetchPoisListener() {
                 @Override
                 public void onSuccess(String result, Map<String, PoisModel> poisMap) {
                     mAnyplaceCache.setPois(getApplicationContext(),poisMap, buid);
@@ -2217,7 +2094,9 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
                     mAnyplaceCache.setPois(getApplicationContext(),new HashMap<String, PoisModel>(), "");
                     l.onErrorOrCancel(result);
                 }
-            });
+            }, this, buid);
+
+            fetchPoisByBuidFloorTask.execute();
         }
     }
     // />POIS
@@ -2244,6 +2123,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
                    @Override
                    public void onComplete(@NonNull Task<Location> task) {
                      if (!task.isSuccessful() || task.getResult() == null) {
+                       loadSelectBuildingActivity(null, true);
                        return;
                      }
                      Location location = task.getResult();
@@ -2257,93 +2137,9 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
         }
     }
 
-    private float mSmoothedHeading = -1.0f;
-
-    private float getSmoothedHeading(float rawHeading) {
-        if (mSmoothedHeading < 0) {
-            mSmoothedHeading = rawHeading;
-            return rawHeading;
-        }
-        float delta = (rawHeading - mSmoothedHeading + 540.0f) % 360.0f - 180.0f;
-        float alpha = 0.25f; // Low-pass filter weight for compass rotation
-        mSmoothedHeading = (mSmoothedHeading + alpha * delta + 360.0f) % 360.0f;
-        return mSmoothedHeading;
-    }
-
-    private LatLng getSnappedPosition(LatLng rawPos) {
-        if (rawPos == null) return null;
-        List<PoisNav> puids = userData.getNavPois();
-        if (puids == null || puids.isEmpty()) return rawPos;
-
-        String selectedFloor = userData.getSelectedFloorNumber();
-        List<LatLng> floorPath = new ArrayList<>();
-        for (PoisNav pt : puids) {
-            if (pt.floor_number.equalsIgnoreCase(selectedFloor)) {
-                try {
-                    floorPath.add(new LatLng(Double.parseDouble(pt.lat), Double.parseDouble(pt.lon)));
-                } catch (Exception ignored) {}
-            }
-        }
-        if (floorPath.size() < 2) return rawPos;
-
-        LatLng bestSnapPoint = rawPos;
-        double minDistance = Double.MAX_VALUE;
-
-        for (int i = 0; i < floorPath.size() - 1; i++) {
-            LatLng a = floorPath.get(i);
-            LatLng b = floorPath.get(i + 1);
-            LatLng projection = getClosestPointOnSegment(rawPos, a, b);
-            double dist = GeoPoint.getDistanceBetweenPoints(rawPos.longitude, rawPos.latitude, projection.longitude, projection.latitude, "");
-            if (dist < minDistance) {
-                minDistance = dist;
-                bestSnapPoint = projection;
-            }
-        }
-
-        // Snap to active route segment if within 6.0 meters threshold
-        if (minDistance <= 6.0) {
-            return bestSnapPoint;
-        }
-        return rawPos;
-    }
-
-    private LatLng getClosestPointOnSegment(LatLng p, LatLng a, LatLng b) {
-        double ax = a.longitude, ay = a.latitude;
-        double bx = b.longitude, by = b.latitude;
-        double px = p.longitude, py = p.latitude;
-
-        double dx = bx - ax;
-        double dy = by - ay;
-
-        if (dx == 0 && dy == 0) return a;
-
-        double t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
-        t = Math.max(0.0, Math.min(1.0, t));
-
-        return new LatLng(ay + t * dy, ax + t * dx);
-    }
-
     @Override
     public void onNewLocation(final LatLng pos) {
-        if (pos != null) {
-            GeoPoint prevPos = userData.getPositionWifi();
-            double finalLat = pos.latitude;
-            double finalLng = pos.longitude;
-            if (prevPos != null) {
-                double distMeters = GeoPoint.getDistanceBetweenPoints(prevPos.dlon, prevPos.dlat, pos.longitude, pos.latitude, "");
-                // Outlier Rejection: Clamp sudden unrealistic location jumps (> 5.0m per scan)
-                if (distMeters > 5.0) {
-                    double ratio = 5.0 / distMeters;
-                    finalLat = prevPos.dlat + ratio * (pos.latitude - prevPos.dlat);
-                    finalLng = prevPos.dlon + ratio * (pos.longitude - prevPos.dlon);
-                } else {
-                    double alpha = 0.45; // Low-pass smoothing factor
-                    finalLat = alpha * pos.latitude + (1.0 - alpha) * prevPos.dlat;
-                    finalLng = alpha * pos.longitude + (1.0 - alpha) * prevPos.dlon;
-                }
-            }
-            userData.setPositionWifi(finalLat, finalLng);
-        }
+        userData.setPositionWifi(pos.latitude, pos.longitude);
         this.runOnUiThread(new Runnable() {
 
             @Override
@@ -2440,124 +2236,43 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
     }
 
     private void updateLocation() {
-        BuildingModel b = userData.getSelectedBuilding();
-        boolean isNearBuilding = false;
-        if (b != null && mLastLocation != null) {
+
+        // GeoPoint location = userData.getLatestUserPosition();
+      try {
+        checkLocationPermission();
+        mFusedLocationClient.getLastLocation().addOnCompleteListener(new OnCompleteListener<Location>() {
+          @Override
+          public void onComplete(@NonNull Task<Location> task) {
             try {
-                double bLat = Double.parseDouble(b.getLatitudeString());
-                double bLon = Double.parseDouble(b.getLongitudeString());
-                double dist = GeoPoint.getDistanceBetweenPoints(mLastLocation.getLongitude(), mLastLocation.getLatitude(), bLon, bLat, "");
-                if (dist <= 150.0) {
-                    isNearBuilding = true;
+              if (!task.isSuccessful() || task.getResult() == null) return;
+              Location loc = task.getResult();
+
+              GeoPoint location = new GeoPoint(loc.getLatitude(), loc.getLongitude());
+              if (location != null) {
+                // draw the location of the new position
+                if (userMarker != null) {
+                  userMarker.remove();
                 }
-            } catch (Exception ignored) {}
-        }
-
-        GeoPoint wifiPos = userData.getPositionWifi();
-        LatLng activePos = null;
-
-        if (isNearBuilding && wifiPos != null) {
-            activePos = new LatLng(wifiPos.dlat, wifiPos.dlon);
-        } else if (mLastLocation != null) {
-            activePos = new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude());
-        } else if (wifiPos != null) {
-            activePos = new LatLng(wifiPos.dlat, wifiPos.dlon);
-        }
-
-        if (activePos != null) {
-            activePos = getSnappedPosition(activePos);
-            float currentHeading = getSmoothedHeading(sensorsMain.getRAWHeading());
-            if (userMarker != null) {
-                userMarker.setPosition(activePos);
-                userMarker.setRotation(currentHeading - bearing);
-            } else if (mMap != null) {
                 MarkerOptions marker = new MarkerOptions();
-                marker.position(activePos);
+                marker.position(new LatLng(location.dlat, location.dlon));
                 marker.title("User").snippet("Estimated Position");
                 marker.icon(BitmapDescriptorFactory.fromResource(R.drawable.marker_icon));
-                marker.rotation(currentHeading - bearing);
+                marker.rotation(sensorsMain.getRAWHeading() - bearing);
                 userMarker = mMap.addMarker(marker);
+              }
+
+
             }
-            updatePathProgress(activePos);
-        }
-    }
-
-    private void updatePathProgress(LatLng userPos) {
-        if (pathLineInside == null || userPos == null) return;
-
-        // 1. Move green start marker to follow live user position
-        if (visiblePois != null && visiblePois.getFromMarker() != null) {
-            visiblePois.getFromMarker().setPosition(userPos);
-        }
-
-        List<PoisNav> puids = userData.getNavPois();
-        if (puids == null || puids.isEmpty()) {
-            mCurrentPathIndex = 0;
-            return;
-        }
-
-        String selectedFloor = userData.getSelectedFloorNumber();
-        List<LatLng> fullFloorPath = new ArrayList<>();
-        for (PoisNav pt : puids) {
-            if (pt.floor_number.equalsIgnoreCase(selectedFloor)) {
-                try {
-                    fullFloorPath.add(new LatLng(Double.parseDouble(pt.lat), Double.parseDouble(pt.lon)));
-                } catch (Exception ignored) {}
+            catch(Exception e){
+              Log.d(TAG, e.getMessage());
             }
-        }
+          }
+        });
 
-        if (fullFloorPath.isEmpty()) return;
-
-        // 2. Arrival Check
-        LatLng destPoint = fullFloorPath.get(fullFloorPath.size() - 1);
-        double distToDest = GeoPoint.getDistanceBetweenPoints(userPos.longitude, userPos.latitude, destPoint.longitude, destPoint.latitude, "");
-        if (distToDest < 3.0) {
-            Toast.makeText(this, "You have arrived at your destination!", Toast.LENGTH_LONG).show();
-            clearNavigationData();
-            mCurrentPathIndex = 0;
-            return;
-        }
-
-        // 3. Advance mCurrentPathIndex forward as user moves along route
-        int bestIdx = mCurrentPathIndex;
-        double minDistance = Double.MAX_VALUE;
-        for (int i = mCurrentPathIndex; i < fullFloorPath.size(); i++) {
-            LatLng pt = fullFloorPath.get(i);
-            double dist = GeoPoint.getDistanceBetweenPoints(userPos.longitude, userPos.latitude, pt.longitude, pt.latitude, "");
-            if (dist < minDistance) {
-                minDistance = dist;
-                bestIdx = i;
-            }
-        }
-
-        if (bestIdx > mCurrentPathIndex && minDistance <= 15.0) {
-            mCurrentPathIndex = bestIdx;
-        }
-
-        int nextWaypointIdx = mCurrentPathIndex;
-        if (nextWaypointIdx < fullFloorPath.size()) {
-            LatLng curWaypoint = fullFloorPath.get(nextWaypointIdx);
-            double distToCur = GeoPoint.getDistanceBetweenPoints(userPos.longitude, userPos.latitude, curWaypoint.longitude, curWaypoint.latitude, "");
-            if (distToCur < 2.5 && nextWaypointIdx + 1 < fullFloorPath.size()) {
-                nextWaypointIdx++;
-                mCurrentPathIndex = nextWaypointIdx;
-            }
-        }
-
-        // 4. Construct clean remaining line starting directly from userPos to remaining waypoints
-        List<LatLng> cleanPath = new ArrayList<>();
-        cleanPath.add(userPos); // Route line connects directly to live user pin
-        for (int i = nextWaypointIdx; i < fullFloorPath.size(); i++) {
-            LatLng pt = fullFloorPath.get(i);
-            double dist = GeoPoint.getDistanceBetweenPoints(userPos.longitude, userPos.latitude, pt.longitude, pt.latitude, "");
-            if (dist > 0.8) {
-                cleanPath.add(pt);
-            }
-        }
-
-        if (cleanPath.size() >= 2) {
-            pathLineInside.setPoints(cleanPath);
-        }
+      }
+      catch (Exception e){
+        Log.d(TAG, e.getMessage());
+      }
     }
 
 
@@ -2742,7 +2457,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
                 break;
             case GooglePlace:
 
-                AnyplaceServerAPI.fetchBuildings(UnifiedNavigationActivity.this, new FetchBuildingsTaskListener() {
+                mAnyplaceCache.loadWorldBuildings(new FetchBuildingsTaskListener() {
 
                     @Override
                     public void onSuccess(String result, List<BuildingModel> allBuildings) {
@@ -2762,7 +2477,7 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
                     public void onErrorOrCancel(String result) {
                         showGooglePoi(place);
                     }
-                });
+                }, UnifiedNavigationActivity.this, false);
 
                 break;
         }
@@ -2958,118 +2673,5 @@ private static final String TAG = UnifiedNavigationActivity.class.getSimpleName(
 
     interface PreviousRunningTask {
         void disableSuccess();
-    }
-
-    private class HeatmapTask extends AsyncTask<File, Integer, List<LatLng>> {
-        private void parseRadiomapFile(File targetFile, List<LatLng> list) {
-            if (targetFile == null || !targetFile.exists() || targetFile.length() == 0) return;
-            try {
-                java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(targetFile));
-                String line;
-                while ((line = br.readLine()) != null) {
-                    if (line.startsWith("#") || line.trim().isEmpty()) continue;
-                    String[] tokens = line.trim().split("[,\\s]+");
-                    try {
-                        if (tokens.length >= 3 && tokens[0].length() > 9) {
-                            double lat = Double.parseDouble(tokens[1]);
-                            double lng = Double.parseDouble(tokens[2]);
-                            list.add(new LatLng(lat, lng));
-                        } else if (tokens.length >= 2) {
-                            double lat = Double.parseDouble(tokens[0]);
-                            double lng = Double.parseDouble(tokens[1]);
-                            list.add(new LatLng(lat, lng));
-                        }
-                    } catch (Exception ignored) {}
-                }
-                br.close();
-            } catch (Exception e) {
-                Log.e(TAG, "Error parsing radiomap file: " + e.getMessage());
-            }
-        }
-
-        @Override
-        protected List<LatLng> doInBackground(File... params) {
-            List<LatLng> list = new ArrayList<>();
-            File primaryFile = null;
-            if (params != null && params.length > 0 && params[0] != null) {
-                primaryFile = params[0];
-                parseRadiomapFile(primaryFile, list);
-            }
-
-            if (userData.getSelectedBuilding() != null && userData.getSelectedFloorNumber() != null) {
-                try {
-                    File cachedServerMap = new File(getBaseContext().getExternalFilesDir(null), "radiomaps/" + userData.getSelectedBuildingId() + "/" + userData.getSelectedFloorNumber() + "/indoor-radiomap-mean.txt");
-                    if (cachedServerMap.exists() && !cachedServerMap.equals(primaryFile)) {
-                        parseRadiomapFile(cachedServerMap, list);
-                    }
-                    File internalMap = new File(AnyplaceUtils.getRadioMapFolder(UnifiedNavigationActivity.this, userData.getSelectedBuildingId(), userData.getSelectedFloorNumber()), AnyplaceUtils.getRadioMapFileName(userData.getSelectedFloorNumber()));
-                    if (internalMap.exists() && !internalMap.equals(primaryFile)) {
-                        parseRadiomapFile(internalMap, list);
-                    }
-                } catch (Exception ignored) {}
-            }
-            return list;
-        }
-
-        @Override
-        protected void onPostExecute(List<LatLng> result) {
-            if (result == null || result.isEmpty()) {
-                Log.d(TAG, "No fingerprint radiomap records available for display.");
-                return;
-            }
-
-            if (mHeatmapOverlay != null) {
-                mHeatmapOverlay.remove();
-                mHeatmapOverlay = null;
-            }
-            for (Circle c : mFingerprintCircles) {
-                if (c != null) {
-                    c.remove();
-                }
-            }
-            mFingerprintCircles.clear();
-
-            if (mMap != null) {
-                for (LatLng latLng : result) {
-                    if (latLng != null) {
-                        Circle circle = mMap.addCircle(new CircleOptions()
-                                .center(latLng)
-                                .radius(1.0)
-                                .strokeColor(android.graphics.Color.rgb(0, 180, 255))
-                                .fillColor(android.graphics.Color.argb(220, 0, 150, 255))
-                                .strokeWidth(3.0f)
-                                .zIndex(10));
-                        mFingerprintCircles.add(circle);
-                    }
-                }
-
-                try {
-                    List<WeightedLatLng> weightedList = new ArrayList<>();
-                    for (LatLng latLng : result) {
-                        weightedList.add(new WeightedLatLng(latLng));
-                    }
-
-                    int[] colors = {
-                            android.graphics.Color.rgb(0, 150, 255),
-                            android.graphics.Color.rgb(0, 230, 255),
-                            android.graphics.Color.rgb(50, 255, 100),
-                            android.graphics.Color.rgb(255, 200, 0)
-                    };
-                    float[] startPoints = { 0.2f, 0.5f, 0.8f, 1.0f };
-                    Gradient gradient = new Gradient(colors, startPoints);
-
-                    mProvider = new HeatmapTileProvider.Builder()
-                            .weightedData(weightedList)
-                            .gradient(gradient)
-                            .radius(35)
-                            .opacity(0.75)
-                            .build();
-
-                    mHeatmapOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider).zIndex(1));
-                } catch (Exception e) {
-                    Log.e(TAG, "Error displaying heatmap tile overlay: " + e.getMessage());
-                }
-            }
-        }
     }
 }
