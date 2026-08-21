@@ -31,7 +31,13 @@ android {
         versionName = flutter.versionName
 
         // Google Maps API key injected via manifestPlaceholders
-        manifestPlaceholders["MAPS_API_KEY"] = localProperties.getProperty("MAPS_API_KEY", "")
+        // Source order: android/local.properties -> MAPS_API_KEY env var
+        // local.properties is gitignored; on a fresh clone set MAPS_API_KEY here
+        // or export it as an environment variable before building.
+        manifestPlaceholders["MAPS_API_KEY"] =
+            localProperties.getProperty("MAPS_API_KEY")
+                ?: System.getenv("MAPS_API_KEY")
+                ?: ""
     }
 
     buildTypes {
