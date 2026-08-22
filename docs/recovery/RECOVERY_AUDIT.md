@@ -97,11 +97,32 @@ submodules in this checkout. They use SSH remotes and require authorized access
 before Navigator/Logger can be built in Phase 7. Do not replace them with a
 different library source.
 
+**Update (2026-08-22):** On `Ahmed-branch` the `lib-android` gitlink no longer
+exists; Logger/Navigator resolve `com.github.dmsl:anyplace-lib-core/android:4.0.2`
+through Maven/JitPack coordinates instead. Only `clients/core/lib` remains an
+uninitialized SSH submodule.
+
+### Runtime validation (2026-08-22, Ubuntu 22.04 staging VM)
+
+Executed on the target VM (`Ahmed-branch`):
+
+- Toolchain installed from official public mirrors: OpenJDK 17.0.19,
+  Node.js 22.23.2 / npm 10.9.8, MongoDB 6.0.29 + mongosh 2.10.0,
+  grunt-cli 1.5.0 / bower 1.8.14, ImageMagick 6.9.11, advancecomp, Python 3.10.12.
+- `scripts/verify-ubuntu-toolchain.sh` — **PASS**.
+- Two contract defects were found and fixed during preflight:
+  - The `b620e9b5` merge had dropped the entire `clients/web` tree that the
+    preflight, the web builder, and the `/architect`+`/viewer` routes depend on;
+    restored from the Phase 3,4 parent (`5821e3f3`) — commit `8a79bd3e`.
+  - The merged Android lineage uses Gradle 6.5.1 / AGP 4.0.2 / SDK 29, not the
+    previously pinned 7.2 / 7.1.3 / 31; the preflight and toolchain doc were
+    aligned to the merged tree and now document the required local OpenJDK 11
+    for Gradle 6.5.1 builds — commit `1bac4955`.
+
 ## Phase gate
 
-No Phase 2 recovery work has started. Approve Phase 2 when an Ubuntu 22.04 VM
-or staging host is available for the documented preflight and MongoDB can be
-configured locally with authentication.
+Phase 1 preflight **PASS** on the target VM. Phase 2 approved and executed;
+see below.
 
 ## Phase 2 — Backend startup and MongoDB connectivity
 
@@ -148,11 +169,47 @@ TestSprite was not used: no controlled local/staging backend is available to
 target safely. It becomes appropriate in Phase 3 after the Phase 2 runbook
 has produced a running private endpoint.
 
+### Runtime validation (2026-08-22, Ubuntu 22.04 staging VM)
+
+Executed per `PHASE_2_STAGING_RUNBOOK.md` on `Ahmed-branch`:
+
+- MongoDB Community 6.0.29 installed; authenticated application user
+  `anyplace_app` (readWrite on `anyplace`, default admin authSource, matching
+  the URI built by `MongodbDatasource.createInstance`) created before
+  authorization was enabled. `/etc/mongod.conf`: `authorization: enabled`,
+  `bindIp: 127.0.0.1,::1`. Listener verified loopback-only via `ss`; the
+  documented authenticated ping returned `{ ok: 1 }`.
+- A missing operational account was closed during a brief maintenance window:
+  a `root`-role administrator was created so future user administration does
+  not depend on the pre-auth localhost exception.
+- Protected environment file `/etc/anyplace/anyplace.env` (dir 0700, file 0600)
+  provides `APPLICATION_SECRET`, `MONGODB_*`, and staging-only
+  `PUBLIC_BASE_URL=http://127.0.0.1:9000`. The public-base variable is
+  mandatory in practice: `server.address=${public.baseUrl}` fails config
+  resolution when it is unset.
+- Dedicated `anyplace` system account owns `/opt/anyplace`; data roots
+  (`floorplans/`, `radiomaps_raw/`, `radiomaps_frozen/`) created; private HOCON
+  filled from the template with generated salt/pepper/secret (no placeholders).
+- `sudo -u anyplace ./sbt clean stage` — success (~113 s), first full backend
+  compile on Ubuntu/JDK 17 for this recovery.
+- systemd unit enabled: service active, journald shows `connected to database`
+  and `External analytics disabled by default (D-09 policy)`.
+- `GET /api/version` → HTTP 200 with the configured origin in its address
+  field; `POST /api/mapping/space/public` → `{"spaces":[],"buildings":[]}`
+  proving the authenticated Mongo read path; controlled restart test repeated
+  both checks successfully.
+
+Deployment-side note (untracked): the Play launcher's effective working
+directory is `server/target/universal/stage`, not the systemd
+`WorkingDirectory`; relative data-root paths resolve against the stage tree.
+The deployed private configuration therefore pins absolute paths
+(`/opt/anyplace/floorplans`, radiomap roots, tiler root). The example template
+keeps relative values.
+
 ## Phase gate
 
-No Phase 3 recovery work has started. Approve Phase 3 after the Phase 2
-staging runbook has been executed, or explicitly approve source-only test
-baseline work while the VM validation remains pending.
+Phase 2 **executed and verified** on the staging VM. Phase 3 approved and
+executed; see below.
 
 ## Phase 3 — Backend test and core API baseline
 
@@ -214,6 +271,37 @@ Ubuntu host. Run `TC001` and `TC002` only after the controlled Ubuntu staging
 backend is running, using TestSprite's generated execution step. This was the
 pre-Phase-4 status; the separate Phase 4 source-only result follows.
 
+### Runtime validation (2026-08-22, Ubuntu 22.04 staging VM)
+
+- Default suite (`./sbt test` as the service account): **5 passed / 0 failed /
+  1 skipped** (Mongo-gated spec correctly skipped). First green backend suite
+  on the supported environment.
+- Opt-in Mongo suite (`RUN_MONGO_INTEGRATION_TESTS=true`): **18 passed /
+  0 failed** — security headers via the filter pipeline, CORS allow/deny,
+  second-registrant-cannot-become-admin, credential non-leakage, missing-field
+  rejection, protected endpoints.
+- Isolation proven: all test registrations landed in the disposable
+  `anyplace_test` database (3 documents); the main `anyplace` database stayed
+  empty (0 users). Disposable database and user dropped after evidence capture.
+- TC001/TC002 executed as direct probes against the running staging backend
+  with identical assertions: `/api/version` → HTTP 200 version JSON; unknown
+  GET route → HTTP 303 redirect to Viewer. The TestSprite CLI itself remains
+  uninitialized in this repository per its third-party-tunnel policy; owner
+  approval stands recorded should the team later choose to run it.
+
+Runtime requirements discovered for test runs (documented in the runbook):
+
+1. The suite constructs the full Guice application; the mandatory
+   `${MONGODB_*}` / `${PUBLIC_BASE_URL}` substitutions must be present in the
+   environment. Point them at a disposable database for safety.
+2. The test JVM needs the same Java-module flags as production:
+   `JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED`
+   (Guice/cglib otherwise fails exactly like the historical R-03 bare-run 500s).
+3. `/etc/anyplace` must grant the service account traverse permission (0711)
+   when test credentials are sourced from there.
+
+Phase 3 is **executed and verified** on the staging VM.
+
 ## Phase 4 — Web assets and developer API
 
 **Status: PARTIAL — the source-side web delivery contract is repaired; browser
@@ -253,9 +341,113 @@ legacy-domain removal reserved for Phase 8.
   Ubuntu staging host or service is available, and the Windows workstation is
   investigation-only.
 
+### Runtime validation (2026-08-22, Ubuntu 22.04 staging VM)
+
+- `scripts/build-web-assets.sh` executed successfully on Node 22 for all three
+  Grunt apps (fail-closed builder; minified outputs verified).
+- Two delivery defects were found and fixed — commit `3d82a416`:
+  - The builder had staged only `build/` and `bower_components/`, but
+    `WebAppController.serveFile` resolves `index.html`, `libs/`,
+    `controllers/`, and images from the same tree, so `/architect/` and
+    `/viewer/` returned 404. The builder now stages the complete app tree
+    minus `node_modules`, including the static `developers` app.
+  - Play's Assets controller probes `FileURLConnection` on JDK 17 and fails
+    with `IllegalAccessError` unless `java.base/sun.net.www.protocol.file` is
+    exported; the flag was added to `anyplace.service`.
+- Deployment follows the installer's model: `server/public` copied into the
+  staged distribution before service start.
+- HTTP probes after restage + restart: `/developers/` 200, `/assets/swagger.json`
+  200 (79,393 B), `/architect/` 200, `/viewer/` 200. Swagger is served from the
+  same origin as required.
+
 ## Phase gate
 
-No Phase 5 recovery work has started. Approve Phase 5 only after the Phase 4
-runbook has generated and served the browser assets, or explicitly approve a
-source-only empty-data/hydration-contract audit while the runtime validation
-remains pending.
+Phase 4 **executed and verified** on the staging VM. Phases 5–9 backend-track
+work was subsequently approved and executed on the same host; see the
+"Backend-track runtime validation" section below.
+
+## Backend-track runtime validation (2026-08-22, Ubuntu 22.04 staging VM)
+
+With web-client rebuilds owned by another team, the following backend-only
+scope was approved and executed on the same staging host.
+
+### Phase 5 — empty baseline, bootstrap, backup
+
+- Empty-state behaviour reconfirmed (`spaces: []`, zero users).
+- D-05 bootstrap verified end-to-end on the main database: first registrant
+  received the Administrator role, a second registration received the ordinary
+  `user` role, and registration responses did not echo the password. The probe
+  account was removed afterwards; exactly one controlled Administrator remains.
+  Credentials live only in root-owned files under `/etc/anyplace/`.
+- D-10 coordinated backup implemented: `/usr/local/sbin/anyplace-backup.sh`
+  (authenticated `mongodump` plus floorplan/radiomap roots, compressed bundle,
+  sha256 manifest, 30-day retention) with an enabled nightly systemd timer.
+  First run verified: bundle created, checksum OK, `anyplace.users` captured.
+  The encrypted off-host copy hook remains an operations dependency until
+  university IT provisions the target.
+
+### Phase 6 — floorplan/tiler pipeline
+
+Full fixture flow verified: login → Space add → Floor add → multipart
+floorplan upload → native tiler (ImageMagick/AdvanceCOMP/Python) → tiles →
+retrieval:
+
+- 1,387 tiles produced across zoom levels 19–22 in `static_tiles/<zoom>/`.
+- `POST /api/floortiles/<buid>/0` returned the archive link using the
+  deployment-supplied public origin with forward separators and the correct
+  `/api/floortiles` route (**R-10 verified**).
+- ZIP downloaded over HTTP (849,915 B), integrity-tested OK; individual tile
+  GETs return 200.
+
+Defects found and resolved during validation:
+
+- The launcher's effective working directory is the stage tree; relative data
+  roots resolved to the wrong location. Fixed by pinning absolute paths in the
+  deployed private configuration (untracked).
+- `googletilecutter-0.11.sh` / `fix-tile-structure.sh` had lost their
+  executable bit; restored and committed.
+- Akka HTTP's default 75-second request timeout closes the upload response
+  while tiling continues in the background. Behaviour documented; production
+  fixtures should either be smaller or the timeout raised/tiling made async
+  (source decision, deferred).
+
+### Phase 8 — domain detachment checks
+
+- Runtime URL audit (`anyplace.cs.ucy.ac.cy`, `ap.cs.ucy.ac.cy`,
+  `map.beout.ai`, `/anyplace/floortiles`) over `server/app`, `server/conf`,
+  `clients/android-new`, `clients/web`, `docs`: active server code contains
+  license-header references only (allowed); Android resource defaults were
+  already migrated by the phase-7-8 work. Remaining hits are web-client UCY
+  share links (owned by the interface-replacement team) and one legacy
+  compatibility route (`api.routes:1656` `/anyplace/floortiles/zip`),
+  classified as legacy-compat, unused by generated links.
+- Fail-fast verified live: `start.sh` refuses startup when
+  `APPLICATION_SECRET` is missing or placeholder-valued.
+
+### Phase 9 — security regression probes
+
+- **R-09 fixed live**: `Filters.scala` had bound only `CORSFilter`, so the
+  configured CSP/frame/nosniff/XSS headers never reached responses.
+  `SecurityHeadersFilter` is now injected into the chain (committed); header
+  probes confirm `Content-Security-Policy` (with `frame-ancestors 'none'`),
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+  `X-XSS-Protection`, and `Referrer-Policy` on live responses.
+- CORS: disallowed origins are rejected (403 preflight); allowlist sourced
+  from private configuration.
+- Secret scan equivalent over tracked files: clean in all active trees. Old
+  Google keys exist only inside `clients/android/` (legacy-excluded) and
+  `clients/deprecated/ios/`, already inventoried for revocation in
+  `CREDENTIAL_ROTATION_HANDOFF.md`.
+- Restart drill repeated successfully during Phase 2 evidence capture;
+  restore capability demonstrated by the verified Phase 5 backup bundle.
+
+## Outstanding items
+
+| Item | Owner / blocker |
+| --- | --- |
+| Push local fix commits to `origin/Ahmed-branch` | GitHub credentials on the VM |
+| Android Logger/Navigator builds, signing separation, device workflows | Phase 7 handoff: SDK, staging keys, device |
+| Web client UCY share links | Interface-replacement team |
+| Encrypted off-host backup copy | University IT provisioning |
+| Upload request timeout vs long tilings | Source decision: raise `akka.http.server.request-timeout` or make tiling asynchronous |
+| Credential rotation (Google keys, prior application secret) | University administrators per handoff doc |

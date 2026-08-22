@@ -35,11 +35,26 @@ origin. Then use the browser console/network panel to confirm the documented
 specification is `/assets/swagger.json`, not a legacy UCY host. Record the
 HTTP status, asset failures, and browser version in the staging evidence.
 
-## Current limitation
+## Execution status
 
-No browser build or HTTP probe has been run in this phase. These commands
-remain pending until the Ubuntu host and the Phase 2 MongoDB/service runbook
-are available. The accompanying PowerShell contract check is source-only:
+**Executed successfully on the Ubuntu 22.04 staging VM on 2026-08-22**
+(`Ahmed-branch`): all three Grunt apps built fail-closed on Node 22, assets
+staged into `server/public` and copied into the staged distribution per the
+installer model, and after a service restart every probe returned HTTP 200:
+`/developers/`, `/assets/swagger.json`, `/architect/`, `/viewer/`. Swagger is
+served same-origin.
+
+Two fixes were required (commit `3d82a416`):
+
+- The builder now stages the complete app tree minus `node_modules`
+  (`WebAppController.serveFile` needs `index.html`, `libs/`, `controllers/`,
+  images — not only `build/` and `bower_components/`) plus the static
+  `developers` app.
+- `anyplace.service` exports
+  `--add-exports=java.base/sun.net.www.protocol.file=ALL-UNNAMED`; without it
+  Play's Assets controller fails on JDK 17 with `IllegalAccessError`.
+
+The accompanying PowerShell contract check remains source-only:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test-WebAssetContract.ps1

@@ -1,5 +1,12 @@
 # Phase 1 Completion Notes
 
+**Status (2026-08-22): COMPLETED on the Ubuntu 22.04 staging VM.**
+Toolchain installed from official public mirrors; `scripts/verify-ubuntu-toolchain.sh`
+prints PASS. Versions and the two contract reconciliations made during
+preflight are recorded in RECOVERY_AUDIT.md. The remaining Phase 1 external
+dependency is authorized access for the `clients/core/lib` SSH submodule,
+needed only before Android builds.
+
 Phase 1 is partially complete in source control. To fully complete it, run the
 following on a private E-JUST staging VM. Do not use the Windows workstation as
 the production host and do not paste passwords, API keys, or private keys into

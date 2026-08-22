@@ -2,6 +2,8 @@
 
 This checklist is for the Linux validation/signing machine. It assumes Java, MongoDB, the Android SDK, device access, and staging or production secrets are available there.
 
+**Status (2026-08-22):** Server-side sections are verified on the Ubuntu 22.04 staging VM — `sbt test`/`compile`, the three HTTP probes (version JSON with configured origin, public spaces array, protected endpoint rejection), tile/archive links using `$PUBLIC_BASE_URL/api/floortiles/...` with `/` separators, and the runtime URL audit (active trees clean; see RECOVERY_AUDIT.md for classification). Remaining: Android build validation and device workflow tests on this machine, plus production-origin substitution when university IT supplies DNS/TLS.
+
 ## Required Local Configuration
 
 Create `server/conf/app.private.conf` from `server/conf/app.private.example.conf` and set:
