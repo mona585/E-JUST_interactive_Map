@@ -8,7 +8,7 @@ Type=simple
 User=anyplace
 Group=anyplace
 WorkingDirectory=/opt/anyplace
-Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
+Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-exports=java.base/sun.net.www.protocol.file=ALL-UNNAMED"
 Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
 # Create /etc/anyplace/anyplace.env with mode 0600 before starting this unit.
 # It must provide APPLICATION_SECRET and the MONGODB_* variables in
