@@ -11,6 +11,7 @@ import '../data/models/floor_model.dart';
 import '../data/models/floorplan_model.dart';
 import '../data/models/navigation_route_model.dart';
 import '../data/models/poi_model.dart';
+import '../data/models/position_estimate.dart';
 import '../data/models/quick_access_item.dart';
 import '../data/models/space_model.dart';
 import '../data/repositories/floorplan_repository.dart';
@@ -24,6 +25,7 @@ import '../data/models/user_location.dart';
 import '../services/search_service.dart';
 import '../services/cache_service.dart';
 import '../utils/category_deriver.dart';
+import '../utils/poi_classification.dart';
 import 'location_provider.dart';
 
 /// Status of RadioMap acquisition and native engine readiness for the selected floor.
@@ -182,6 +184,12 @@ class SpaceProvider extends ChangeNotifier {
   void setLocationProvider(LocationProvider? locationProvider) {
     _locationProvider = locationProvider;
     _syncLocationProvider();
+  }
+
+  bool Function()? _isNavigationActive;
+
+  void setIsNavigationActive(bool Function()? predicate) {
+    _isNavigationActive = predicate;
   }
 
   /// Access to the custom route repository for map rendering and queries.
@@ -490,7 +498,9 @@ class SpaceProvider extends ChangeNotifier {
     );
     _selectedFloor = floor;
     _selectedPoi = null;
-    _resetNavigationRouteState();
+    if (!(_isNavigationActive?.call() ?? false)) {
+      _resetNavigationRouteState();
+    }
     _syncLocationProvider();
     notifyListeners();
 
@@ -712,6 +722,72 @@ class SpaceProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('[SpaceProvider] POI cross-building router failed: $e');
         // Fall through to existing cascade
+      }
+    }
+
+    // ── Cross-floor detection: destination POI on a different floor ──
+    //
+    // Never send the user's coordinates together with the DESTINATION floor to
+    // /api/navigation/route/coordinates: the server snaps coordinates to the
+    // nearest POI on the requested floor, which silently produces a route that
+    // starts on the destination floor and skips stairs/elevators.
+    final userFloor = _effectiveCurrentFloor();
+    final knownFloors = _floors.map((f) => f.floorNumber).toSet();
+    final isCrossFloor = userFloor != null &&
+        poi.floorNumber.isNotEmpty &&
+        userFloor != poi.floorNumber &&
+        knownFloors.contains(userFloor) &&
+        knownFloors.contains(poi.floorNumber);
+
+    if (isCrossFloor) {
+      debugPrint(
+        '[SpaceProvider] Cross-floor route requested: Floor $userFloor → Floor ${poi.floorNumber} (${poi.name})',
+      );
+      try {
+        final route = await _routeCrossFloorToSelectedPoi(
+          from: currentLocation,
+          originFloorNumber: userFloor,
+          targetPoi: poi,
+        );
+        if (requestId != _navigationRouteRequestId ||
+            _selectedPoi?.puid != poi.puid) {
+          return;
+        }
+        if (route.hasRenderablePath) {
+          debugPrint(
+            '[SpaceProvider] Cross-floor route ready (${route.points.length} points)',
+          );
+          _navigationRouteStatus = NavigationRouteStatus.ready;
+          _activeNavigationRoute = route;
+          _navigationRouteErrorMessage = null;
+          notifyListeners();
+          return;
+        }
+        throw _CrossFloorRoutingFailure(
+          'Could not build a route from Floor $userFloor to Floor ${poi.floorNumber}.',
+        );
+      } on _CrossFloorRoutingFailure catch (e) {
+        if (requestId != _navigationRouteRequestId ||
+            _selectedPoi?.puid != poi.puid) {
+          return;
+        }
+        _navigationRouteStatus = NavigationRouteStatus.error;
+        _activeNavigationRoute = null;
+        _navigationRouteErrorMessage = e.message;
+        notifyListeners();
+        return;
+      } catch (e) {
+        debugPrint('[SpaceProvider] Cross-floor routing failed: $e');
+        if (requestId != _navigationRouteRequestId ||
+            _selectedPoi?.puid != poi.puid) {
+          return;
+        }
+        _navigationRouteStatus = NavigationRouteStatus.error;
+        _activeNavigationRoute = null;
+        _navigationRouteErrorMessage =
+            'Error planning a route across floors: $e';
+        notifyListeners();
+        return;
       }
     }
 
@@ -1153,6 +1229,373 @@ class SpaceProvider extends ChangeNotifier {
       floorNumber: poi.floorNumber,
       poisType: poi.poisType,
     );
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Cross-floor indoor routing (user floor → connector → destination floor)
+  // ──────────────────────────────────────────────────────────────
+
+  /// Maximum horizontal distance (m) between two connectors on adjacent
+  /// routes' floors for them to be treated as the same vertical shaft
+  /// (stairs/elevators are physically stacked).
+  static const double _stackedConnectorMaxDistance = 20.0;
+
+  /// The user's effective current floor.
+  ///
+  /// Indoor Wi-Fi: the floor of the latest valid native estimate.
+  /// GPS-only (current reality): the existing ground-floor convention —
+  /// `'0'` when mapped, otherwise the lowest mapped floor.
+  String? _effectiveCurrentFloor() {
+    final provider = _locationProvider;
+    if (provider != null && provider.isIndoorWifiActive) {
+      final PositionEstimate? estimate = provider.latestIndoorEstimate;
+      if (estimate != null &&
+          estimate.isValid &&
+          estimate.floor.trim().isNotEmpty) {
+        return estimate.floor.trim();
+      }
+    }
+    if (_floors.isEmpty) return null;
+    for (final f in _floors) {
+      if (f.floorNumber == '0') return '0';
+    }
+    final sorted = [..._floors]..sort();
+    return sorted.first.floorNumber;
+  }
+
+  /// POIs for an arbitrary floor of [buid], reusing the loaded selection
+  /// when it already matches, otherwise fetching through the repository.
+  Future<List<PoiModel>> _floorPois(String buid, String floorNumber) async {
+    if (_selectedSpace?.buid == buid &&
+        _selectedFloor?.floorNumber == floorNumber &&
+        _pois.isNotEmpty) {
+      return _pois;
+    }
+    return _poiRepository.getPoisByFloor(buid, floorNumber);
+  }
+
+  NavigationRoutePoint _userPositionPoint(
+    UserLocation from,
+    String buid,
+    String floorNumber,
+  ) {
+    return NavigationRoutePoint(
+      latitude: from.latitude,
+      longitude: from.longitude,
+      puid: '__position__',
+      buid: buid,
+      floorNumber: floorNumber,
+      poisType: 'None',
+    );
+  }
+
+  bool _hasRenderablePoints(List<NavigationRoutePoint> points) =>
+      points.length >= 2;
+
+  /// Stitches legs in order, dropping consecutive duplicate joints so shared
+  /// connector POIs appear once. Per-point `floor_number` values are kept.
+  List<NavigationRoutePoint> _stitchLegs(
+    List<List<NavigationRoutePoint>> legs,
+  ) {
+    final stitched = <NavigationRoutePoint>[];
+    for (final leg in legs) {
+      for (final point in leg) {
+        if (stitched.isNotEmpty &&
+            stitched.last.puid.isNotEmpty &&
+            stitched.last.puid == point.puid) {
+          continue;
+        }
+        stitched.add(point);
+      }
+    }
+    return stitched;
+  }
+
+  /// Selects the origin/destination connector pair for a cross-floor route.
+  ///
+  /// Candidates are restricted to vertical-connector POIs
+  /// (`PoiClassification.getFloorConnectors`), never arbitrary POIs.
+  /// Preferred pairing is a "stacked" match: origin and destination
+  /// connectors within [_stackedConnectorMaxDistance] horizontally, i.e. the
+  /// same physical stair/elevator shaft. The tightest stack wins; distance to
+  /// the user breaks ties. Without any stacked pair, falls back to nearest-to-
+  /// user / nearest-to-destination as an unpaired guess ([_ConnectorPair.stackedMatch]
+  /// == false), which forbids straight-line leg substitution later.
+  _ConnectorPair? _selectCrossFloorConnectorPair({
+    required List<PoiModel> originFloorPois,
+    required List<PoiModel> destFloorPois,
+    required String originFloorNumber,
+    required String destFloorNumber,
+    required UserLocation from,
+    required PoiModel targetPoi,
+  }) {
+    final originCandidates = PoiClassification.getFloorConnectors(
+      originFloorPois,
+      originFloorNumber,
+    ).where((p) => p.puid.isNotEmpty).toList();
+    final destCandidates = PoiClassification.getFloorConnectors(
+      destFloorPois,
+      destFloorNumber,
+    ).where((p) => p.puid.isNotEmpty).toList();
+
+    if (originCandidates.isEmpty || destCandidates.isEmpty) {
+      debugPrint(
+        '[SpaceProvider] cross-floor: no connectors on '
+        'F$originFloorNumber (${originCandidates.length}) / '
+        'F$destFloorNumber (${destCandidates.length})',
+      );
+      return null;
+    }
+
+    _ConnectorPair? bestStacked;
+    double bestStackScore = double.infinity;
+    for (final origin in originCandidates) {
+      PoiModel? nearestDest;
+      double nearestDist = double.infinity;
+      for (final dest in destCandidates) {
+        final dist = Geolocator.distanceBetween(
+          origin.latitude,
+          origin.longitude,
+          dest.latitude,
+          dest.longitude,
+        );
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestDest = dest;
+        }
+      }
+      if (nearestDest == null) continue;
+      if (nearestDist > _stackedConnectorMaxDistance) continue;
+
+      final userDist = Geolocator.distanceBetween(
+        from.latitude,
+        from.longitude,
+        origin.latitude,
+        origin.longitude,
+      );
+      final score = nearestDist * 1000.0 + userDist;
+      if (score < bestStackScore) {
+        bestStackScore = score;
+        bestStacked = _ConnectorPair(
+          origin: origin,
+          destination: nearestDest,
+          stackingDistance: nearestDist,
+          stackedMatch: true,
+        );
+      }
+    }
+    if (bestStacked != null) {
+      debugPrint(
+        '[SpaceProvider] cross-floor: stacked pair ${bestStacked.origin.name}/'
+        '${bestStacked.destination.name} '
+        '(${bestStacked.stackingDistance.toStringAsFixed(1)}m apart)',
+      );
+      return bestStacked;
+    }
+
+    PoiModel? nearestToUser;
+    double minUserDist = double.infinity;
+    for (final c in originCandidates) {
+      final dist = Geolocator.distanceBetween(
+        from.latitude,
+        from.longitude,
+        c.latitude,
+        c.longitude,
+      );
+      if (dist < minUserDist) {
+        minUserDist = dist;
+        nearestToUser = c;
+      }
+    }
+    PoiModel? nearestToTarget;
+    double minTargetDist = double.infinity;
+    for (final c in destCandidates) {
+      final dist = Geolocator.distanceBetween(
+        targetPoi.latitude,
+        targetPoi.longitude,
+        c.latitude,
+        c.longitude,
+      );
+      if (dist < minTargetDist) {
+        minTargetDist = dist;
+        nearestToTarget = c;
+      }
+    }
+    if (nearestToUser == null || nearestToTarget == null) return null;
+    debugPrint(
+      '[SpaceProvider] cross-floor: unpaired fallback '
+      '${nearestToUser.name} → ${nearestToTarget.name}',
+    );
+    return _ConnectorPair(
+      origin: nearestToUser,
+      destination: nearestToTarget,
+      stackingDistance: Geolocator.distanceBetween(
+        nearestToUser.latitude,
+        nearestToUser.longitude,
+        nearestToTarget.latitude,
+        nearestToTarget.longitude,
+      ),
+      stackedMatch: false,
+    );
+  }
+
+  /// LEG 1 fallback: user position → origin connector via the nearest
+  /// current-floor connector hop (existing connector-routing pattern).
+  Future<List<NavigationRoutePoint>> _legViaNearestConnectorHop({
+    required UserLocation from,
+    required List<PoiModel> originFloorPois,
+    required String originFloorNumber,
+    required PoiModel originConnector,
+    required String buid,
+  }) async {
+    final userPoint = _userPositionPoint(from, buid, originFloorNumber);
+    final connector = _poiToRoutePoint(originConnector);
+
+    final hopCandidates = originFloorPois
+        .where((p) => PoiClassification.isConnector(p) && p.puid.isNotEmpty)
+        .toList();
+    PoiModel? nearestHop;
+    double minDist = double.infinity;
+    for (final c in hopCandidates) {
+      final dist = Geolocator.distanceBetween(
+        from.latitude,
+        from.longitude,
+        c.latitude,
+        c.longitude,
+      );
+      if (dist < minDist) {
+        minDist = dist;
+        nearestHop = c;
+      }
+    }
+
+    if (nearestHop == null || nearestHop.puid == originConnector.puid) {
+      return [userPoint, connector];
+    }
+
+    try {
+      final hopRoute = await _navigationRepository.getRouteBetweenPois(
+        fromPuid: nearestHop.puid,
+        toPuid: originConnector.puid,
+      );
+      if (hopRoute.hasRenderablePath) {
+        return [
+          userPoint,
+          ...hopRoute.points,
+          if (hopRoute.points.last.puid != originConnector.puid) connector,
+        ];
+      }
+    } catch (e) {
+      debugPrint('[SpaceProvider] cross-floor: connector hop failed: $e');
+    }
+    return [userPoint, connector];
+  }
+
+  /// Builds a staged multi-floor indoor route:
+  ///
+  ///   current position → origin-floor connector (LEG 1)
+  ///     → matching destination-floor connector (LEG 2)
+  ///     → destination POI (LEG 3)
+  ///
+  /// All coordinates sent to `/api/navigation/route/coordinates` carry the
+  /// USER's floor, never the destination floor.
+  ///
+  /// Throws [_CrossFloorRoutingFailure] when routing cannot be completed
+  /// honestly (no connectors exist, or no honest path between floors);
+  /// callers surface that message instead of silently producing a wrong-floor
+  /// route.
+  Future<NavigationRouteModel> _routeCrossFloorToSelectedPoi({
+    required UserLocation from,
+    required String originFloorNumber,
+    required PoiModel targetPoi,
+  }) async {
+    final buid = targetPoi.buid;
+    final originFloorPois = await _floorPois(buid, originFloorNumber);
+    final destFloorPois = await _floorPois(buid, targetPoi.floorNumber);
+
+    final pair = _selectCrossFloorConnectorPair(
+      originFloorPois: originFloorPois,
+      destFloorPois: destFloorPois,
+      originFloorNumber: originFloorNumber,
+      destFloorNumber: targetPoi.floorNumber,
+      from: from,
+      targetPoi: targetPoi,
+    );
+    if (pair == null) {
+      throw _CrossFloorRoutingFailure(
+        'No stairs or elevator connectors are mapped on Floor $originFloorNumber '
+        'or Floor ${targetPoi.floorNumber}, so no cross-floor route can be built.',
+      );
+    }
+
+    // ── LEG 1: current position → origin-floor connector ──
+    List<NavigationRoutePoint> leg1 = const [];
+    try {
+      final route = await _navigationRepository.getRouteFromCoordinates(
+        latitude: from.latitude,
+        longitude: from.longitude,
+        floorNumber: originFloorNumber,
+        destinationPuid: pair.origin.puid,
+      );
+      if (route.hasRenderablePath) leg1 = route.points;
+    } catch (e) {
+      debugPrint('[SpaceProvider] cross-floor: LEG1 coordinate route failed: $e');
+    }
+    if (!_hasRenderablePoints(leg1)) {
+      leg1 = await _legViaNearestConnectorHop(
+        from: from,
+        originFloorPois: originFloorPois,
+        originFloorNumber: originFloorNumber,
+        originConnector: pair.origin,
+        buid: buid,
+      );
+    }
+
+    // ── LEG 2: origin-floor connector → destination-floor connector ──
+    List<NavigationRoutePoint> leg2 = const [];
+    try {
+      final route = await _navigationRepository.getRouteBetweenPois(
+        fromPuid: pair.origin.puid,
+        toPuid: pair.destination.puid,
+      );
+      if (route.hasRenderablePath) leg2 = route.points;
+    } catch (e) {
+      debugPrint('[SpaceProvider] cross-floor: LEG2 route failed: $e');
+    }
+    if (!_hasRenderablePoints(leg2)) {
+      if (!pair.stackedMatch ||
+          pair.stackingDistance > _stackedConnectorMaxDistance) {
+        throw _CrossFloorRoutingFailure(
+          'No indoor path was found between Floor $originFloorNumber and '
+          'Floor ${targetPoi.floorNumber}. Vertical connections may be missing '
+          'from the map data.',
+        );
+      }
+      leg2 = [_poiToRoutePoint(pair.origin), _poiToRoutePoint(pair.destination)];
+    }
+
+    // ── LEG 3: destination-floor connector → destination POI ──
+    List<NavigationRoutePoint> leg3 = const [];
+    try {
+      final route = await _navigationRepository.getRouteBetweenPois(
+        fromPuid: pair.destination.puid,
+        toPuid: targetPoi.puid,
+      );
+      if (route.hasRenderablePath) leg3 = route.points;
+    } catch (e) {
+      debugPrint('[SpaceProvider] cross-floor: LEG3 route failed: $e');
+    }
+    if (!_hasRenderablePoints(leg3)) {
+      leg3 = [_poiToRoutePoint(pair.destination), _poiToRoutePoint(targetPoi)];
+    }
+
+    final stitched = _stitchLegs([leg1, leg2, leg3]);
+    if (!_hasRenderablePoints(stitched)) {
+      throw _CrossFloorRoutingFailure(
+        'Could not build a route from Floor $originFloorNumber to Floor ${targetPoi.floorNumber}.',
+      );
+    }
+    return NavigationRouteModel(points: stitched);
   }
 
   /// Builds a combined route: OSRM from user to nearest custom vertex,
@@ -2081,5 +2524,35 @@ class _FloorFetchResult {
   final List<FloorModel> floors;
   final Object? error;
   _FloorFetchResult(this.buid, this.floors, this.error);
+}
+
+/// Cross-floor routing could not be completed honestly (missing connectors
+/// or no path between floors). The message is user-presentable.
+class _CrossFloorRoutingFailure implements Exception {
+  final String message;
+  const _CrossFloorRoutingFailure(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// A matched pair of vertical connectors on two different floors.
+class _ConnectorPair {
+  final PoiModel origin;
+  final PoiModel destination;
+
+  /// Horizontal distance between the two connectors.
+  final double stackingDistance;
+
+  /// True when the pair is within stacking distance (same physical shaft);
+  /// false for the nearest-to-user/target fallback guess.
+  final bool stackedMatch;
+
+  const _ConnectorPair({
+    required this.origin,
+    required this.destination,
+    required this.stackingDistance,
+    required this.stackedMatch,
+  });
 }
 

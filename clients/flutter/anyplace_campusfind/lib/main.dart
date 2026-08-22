@@ -26,6 +26,7 @@ Future<void> main() async {
     spaceProvider: spaceProvider,
     locationProvider: locationProvider,
   );
+  spaceProvider.setIsNavigationActive(() => navigationController.isActive);
 
   runApp(
     provider.MultiProvider(
