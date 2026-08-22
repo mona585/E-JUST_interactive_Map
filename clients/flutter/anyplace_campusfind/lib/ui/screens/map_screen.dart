@@ -12,6 +12,7 @@ import '../../config/map_config.dart';
 import '../../config/navigation_config.dart';
 import '../../config/theme.dart';
 import '../../data/models/route_segment.dart';
+import '../../data/models/navigation_route_model.dart';
 import '../../data/models/space_model.dart';
 import '../../data/models/user_location.dart';
 import '../../state/location_provider.dart';
@@ -42,6 +43,7 @@ class _MapScreenState extends State<MapScreen>
   // Marker icon caches (generated once from widget screenshots)
   BitmapDescriptor? _buildingIcon;
   BitmapDescriptor? _buildingSelectedIcon;
+  BitmapDescriptor? _userLocationIcon;
 
   // Bearing tracking for Google Maps-style camera rotation
   double _currentBearing = 0.0;    // Smoothed bearing applied to camera
@@ -92,6 +94,31 @@ class _MapScreenState extends State<MapScreen>
     // Generate building marker icons using default Google Maps marker with custom hue
     _buildingIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
     _buildingSelectedIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
+    _userLocationIcon = await _createUserLocationDot();
+  }
+
+  /// Renders the Google Maps-style blue location dot (blue fill, white ring)
+  /// used for the user-position marker.
+  static Future<BitmapDescriptor> _createUserLocationDot() async {
+    const double density = 3.0;
+    const double size = 22.0 * density;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final center = Offset(size / 2, size / 2);
+
+    // White outline/ring
+    canvas.drawCircle(center, 10.5 * density, Paint()..color = Colors.white);
+    // Blue filled circle
+    canvas.drawCircle(
+      center,
+      8.0 * density,
+      Paint()..color = const Color(0xFF4285F4),
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.round(), size.round());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
   }
 
   /// Connector POIs (elevators, stairs, or `pois_type == "None"`) are hidden
@@ -502,13 +529,14 @@ class _MapScreenState extends State<MapScreen>
       }
     }
 
-    // User location marker (using default blue dot)
-    // Note: Custom UserLocationMarker with animation will be added as overlay in Phase 4
+    // User location marker (Google Maps-style blue dot, centered on the fix)
     if (locationProvider.currentLocation != null) {
       markers.add(Marker(
         markerId: const MarkerId('user_location'),
         position: locationProvider.currentLocation!.latLng,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        icon: _userLocationIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        anchor: const Offset(0.5, 0.5),
       ));
     }
 
@@ -548,48 +576,9 @@ class _MapScreenState extends State<MapScreen>
     }
 
     final route = spaceProvider.activeNavigationRoute;
-    if (route == null) return polylines;
-
-    // Segment-based rendering (cross-building navigation)
-    if (route.hasSegments) {
-      for (var i = 0; i < route.segments.length; i++) {
-        final seg = route.segments[i];
-        if (seg.isEmpty) continue;
-
-        final style = _segmentStyles[seg.type];
-        if (style != null) {
-          polylines.add(Polyline(
-            polylineId: PolylineId('route_segment_$i'),
-            points: seg.points,
-            width: style.width,
-            color: style.color,
-            patterns: style.patterns ?? [],
-          ));
-        }
-      }
-      return polylines;
-    }
-
-    // Legacy rendering (non-segment routes)
-    // Outdoor segment (dotted blue)
-    if (route.hasOutdoorSegment) {
-      polylines.add(Polyline(
-        polylineId: const PolylineId('route_outdoor'),
-        points: route.outdoorPolylinePoints,
-        width: 5,
-        color: const Color(0xFF1E88E5).withValues(alpha: 0.9),
-        patterns: [PatternItem.dot, PatternItem.gap(10)],
-      ));
-    }
-
-    // Indoor segment (solid red)
-    if (route.hasIndoorSegment) {
-      polylines.add(Polyline(
-        polylineId: const PolylineId('route_indoor'),
-        points: route.indoorPolylinePoints,
-        width: 6,
-        color: AppTheme.primary.withValues(alpha: 0.85),
-      ));
+    if (route != null) {
+      final displayedFloor = spaceProvider.selectedFloor?.floorNumber;
+      polylines.addAll(routePolylinesForFloor(route, displayedFloor));
     }
 
     return polylines;
@@ -1097,4 +1086,78 @@ class _SegmentStyle {
     required this.width,
     this.patterns,
   });
+}
+
+/// Builds the navigation-route polylines visible for [displayedFloorNumber]
+/// (`SpaceProvider.selectedFloor.floorNumber`, the floor whose floorplan and
+/// POIs are currently displayed).
+///
+/// Floor-independent geometry — outdoor GPS waypoints and unfloored route
+/// segments — always renders. Floored geometry renders only for the displayed
+/// floor, so multi-floor routes no longer overlay geometry from other floors.
+///
+/// A displayed floor without route geometry intentionally renders nothing
+/// beyond the outdoor portion; the navigation status UI (floor chip /
+/// positioning status) conveys where the route continues. Routes rendered
+/// with no floor selection ([displayedFloorNumber] == null) fall back to the
+/// legacy unfiltered rendering.
+Set<Polyline> routePolylinesForFloor(
+  NavigationRouteModel route,
+  String? displayedFloorNumber,
+) {
+  final polylines = <Polyline>{};
+
+  // Segment-based rendering (cross-building navigation)
+  if (route.hasSegments) {
+    for (var i = 0; i < route.segments.length; i++) {
+      final seg = route.segments[i];
+      if (seg.isEmpty) continue;
+      if (displayedFloorNumber != null &&
+          seg.floorNumber != null &&
+          seg.floorNumber != displayedFloorNumber) {
+        continue;
+      }
+
+      final style = _MapScreenState._segmentStyles[seg.type];
+      if (style != null) {
+        polylines.add(Polyline(
+          polylineId: PolylineId('route_segment_$i'),
+          points: seg.points,
+          width: style.width,
+          color: style.color,
+          patterns: style.patterns ?? [],
+        ));
+      }
+    }
+    return polylines;
+  }
+
+  // Legacy rendering (non-segment routes)
+  // Outdoor segment (dotted blue) — GPS geometry is floor-independent.
+  if (route.hasOutdoorSegment) {
+    polylines.add(Polyline(
+      polylineId: const PolylineId('route_outdoor'),
+      points: route.outdoorPolylinePoints,
+      width: 5,
+      color: const Color(0xFF1E88E5).withValues(alpha: 0.9),
+      patterns: [PatternItem.dot, PatternItem.gap(10)],
+    ));
+  }
+
+  // Indoor segment (solid red) — restricted to the displayed floor.
+  if (route.hasIndoorSegment) {
+    final indoorPoints = displayedFloorNumber == null
+        ? route.indoorPolylinePoints
+        : route.polylinePointsForFloor(displayedFloorNumber);
+    if (indoorPoints.length >= 2) {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('route_indoor'),
+        points: indoorPoints,
+        width: 6,
+        color: AppTheme.primary.withValues(alpha: 0.85),
+      ));
+    }
+  }
+
+  return polylines;
 }
