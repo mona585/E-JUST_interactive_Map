@@ -59,8 +59,9 @@ rewrite only after rotation; it is not part of this phase.
 
 ## Phase 1 — Pin the Linux/Ubuntu toolchains
 
-**Status: PARTIAL — the source-side contract is verified; a clean Ubuntu VM
-execution is an external dependency.**
+**Status: EXECUTED AND VERIFIED on the Ubuntu 22.04/JDK 17 staging VM
+(2026-08-22) — preflight PASS, toolchain installed and pinned; Android SDK
+build validation is deferred to the Phase 7 handoff.**
 
 ### Audit result and repair
 
@@ -126,8 +127,9 @@ see below.
 
 ## Phase 2 — Backend startup and MongoDB connectivity
 
-**Status: PARTIAL — the source-side startup contract is verified; the required
-Ubuntu VM runtime validation is an external dependency.**
+**Status: EXECUTED AND VERIFIED on the Ubuntu 22.04/JDK 17 staging VM
+(2026-08-22) — authenticated loopback MongoDB, protected env file, staged
+build, systemd service, API probes, and restart test all pass.**
 
 ### Audit result and repair
 
@@ -213,8 +215,9 @@ executed; see below.
 
 ## Phase 3 — Backend test and core API baseline
 
-**Status: PARTIAL — the test baseline is repaired in source; execution on the
-supported Ubuntu/JDK 17 staging environment remains required.**
+**Status: EXECUTED AND VERIFIED on the Ubuntu 22.04/JDK 17 staging VM
+(2026-08-22) — default suite 5 passed / 1 skipped, opt-in Mongo suite 18
+passed / 0 failed, TC001/TC002 probes green.**
 
 ### Audit result and repair
 
@@ -304,8 +307,9 @@ Phase 3 is **executed and verified** on the staging VM.
 
 ## Phase 4 — Web assets and developer API
 
-**Status: PARTIAL — the source-side web delivery contract is repaired; browser
-and HTTP verification require the Ubuntu staging environment.**
+**Status: EXECUTED AND VERIFIED on the Ubuntu 22.04/JDK 17 staging VM
+(2026-08-22) — fail-closed web build succeeded; `/developers/`,
+`/assets/swagger.json`, `/architect/`, and `/viewer/` all return HTTP 200.**
 
 ### Audit result and repair
 
@@ -445,7 +449,6 @@ Defects found and resolved during validation:
 
 | Item | Owner / blocker |
 | --- | --- |
-| Push local fix commits to `origin/Ahmed-branch` | GitHub credentials on the VM |
 | Android Logger/Navigator builds, signing separation, device workflows | Phase 7 handoff: SDK, staging keys, device |
 | Web client UCY share links | Interface-replacement team |
 | Encrypted off-host backup copy | University IT provisioning |
