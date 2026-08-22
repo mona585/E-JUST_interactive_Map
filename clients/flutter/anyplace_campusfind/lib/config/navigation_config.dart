@@ -84,17 +84,36 @@ class NavigationConfig {
 
   // -- Camera bearing --
 
-  /// Minimum speed (m/s) to compute movement bearing (filters stationary GPS noise).
-  static const double bearingSpeedThreshold = 0.5;
+  /// Minimum speed (m/s) to accept a movement-derived bearing (filters GPS noise).
+  static const double bearingSpeedThreshold = 0.2;
 
-  /// Exponential moving average factor for bearing smoothing (0..1). Lower = smoother.
-  static const double bearingSmoothingFactor = 0.25;
+  /// Minimum movement (m) since the last bearing sample to accept a
+  /// movement-derived bearing. Deliberately small so indoor turns are detected.
+  static const double bearingMinMovementMeters = 0.15;
 
-  /// Minimum time (ms) between bearing-driven camera updates (prevents jitter at high GPS rates).
-  static const int bearingUpdateIntervalMs = 300;
+  /// Exponential moving average factor for heading smoothing (0..1).
+  /// Higher = faster convergence to new headings.
+  static const double bearingSmoothingFactor = 0.6;
 
-  /// When standing still, hold the last bearing for this duration (ms) before resetting to 0.
-  static const int bearingHoldDurationMs = 3000;
+  /// Minimum time (ms) between heading-driven camera updates (prevents jitter at high event rates).
+  static const int bearingUpdateIntervalMs = 200;
+
+  /// When standing still, hold the last heading for this duration (ms) before resetting to 0.
+  static const int bearingHoldDurationMs = 1000;
+
+  /// Age (ms) after which a device compass reading is considered stale and the
+  /// movement-derived bearing fallback takes over.
+  static const int compassStaleMs = 2000;
+
+  // -- Camera follow gating --
+
+  /// Minimum user movement (m) from the last applied camera target before a new
+  /// follow animation is issued.
+  static const double cameraMoveThresholdMeters = 0.3;
+
+  /// Minimum heading change (degrees) from the last applied camera bearing before
+  /// a new rotation animation is issued.
+  static const double cameraBearingThresholdDegrees = 1.5;
 
   // -- Floor transition --
 

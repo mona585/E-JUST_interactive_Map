@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' show cos, pi, sin, atan2;
 import 'dart:typed_data';
@@ -11,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../../config/map_config.dart';
 import '../../config/navigation_config.dart';
 import '../../config/theme.dart';
+import '../../data/datasources/device_heading_service.dart';
 import '../../data/models/route_segment.dart';
 import '../../data/models/space_model.dart';
 import '../../data/models/user_location.dart';
@@ -23,7 +25,10 @@ import '../widgets/map_controls.dart';
 
 /// Main Map Screen displaying Anyplace buildings, indoor floorplans, indoor POIs, and device GPS on Google Maps.
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  const MapScreen({super.key, DeviceHeadingService? deviceHeadingService})
+      : _deviceHeadingService = deviceHeadingService;
+
+  final DeviceHeadingService? _deviceHeadingService;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -43,12 +48,39 @@ class _MapScreenState extends State<MapScreen>
   BitmapDescriptor? _buildingIcon;
   BitmapDescriptor? _buildingSelectedIcon;
 
-  // Bearing tracking for Google Maps-style camera rotation
-  double _currentBearing = 0.0;    // Smoothed bearing applied to camera
-  double _lastBearing = 0.0;       // Raw bearing from last position delta
-  LatLng? _lastPositionForBearing; // Previous position for bearing computation
+  // Navigation-style user location icons (blue dot + heading cone).
+  // Two variants: directional (cone visible) and dot-only, used when the
+  // heading is unavailable so we never imply a false direction.
+  BitmapDescriptor? _userDotIcon;
+  BitmapDescriptor? _userDirectionalIcon;
+
+  // Device-orientation heading stream (independent of GPS / Wi-Fi position).
+  // Drives the marker's direction arrow; updates while standing still.
+  late final DeviceHeadingService _deviceHeadingService =
+      widget._deviceHeadingService ?? MethodChannelDeviceHeadingService();
+  StreamSubscription<double>? _headingSubscription;
+  double? _deviceHeading;
+  final ValueNotifier<double?> _markerHeadingNotifier = ValueNotifier(null);
+
+  // Cached non-user markers so heading-only updates don't rebuild everything.
+  Set<Marker> _baseMarkersCache = <Marker>{};
+  String? _baseMarkersSignature;
+
+  // Heading tracking for Google Maps-style camera rotation
+  double _currentHeading = 0.0;      // Smoothed heading applied to camera + marker
+  LatLng? _lastPositionForBearing;   // Previous position for movement-derived bearing
   DateTime _lastBearingUpdateTime = DateTime.now();
   DateTime _lastMovingTime = DateTime.now();
+  double? _lastCompassHeading;       // Latest usable device compass reading
+  DateTime _lastCompassAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // Camera follow state (coalescing: never queue overlapping animations)
+  bool _cameraAnimating = false;
+  LatLng? _lastAppliedCameraTarget;
+  double _lastAppliedCameraBearing = 0.0;
+  LatLng? _pendingCameraTarget;
+  double? _pendingCameraZoom;
+  double? _pendingCameraBearing;
   bool _isUserGesture = false;     // True when user is manually panning
   bool _isProgrammaticMove = false;
 
@@ -59,6 +91,15 @@ class _MapScreenState extends State<MapScreen>
 
     // Generate marker icons from widgets
     _generateMarkerIcons();
+
+    // Device-orientation heading stream: rotates the direction arrow
+    // independently of position updates (works while standing still).
+    _headingSubscription = _deviceHeadingService.headingStream.listen((deg) {
+      _deviceHeading = deg;
+      debugPrint('[MapScreen] device heading: ${deg.toStringAsFixed(1)}°');
+      // Notifier drives only the map subtree rebuild — not the whole screen.
+      _markerHeadingNotifier.value = deg;
+    });
 
     // Trigger initial loading of spaces and bind location provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -89,9 +130,78 @@ class _MapScreenState extends State<MapScreen>
   }
 
   Future<void> _generateMarkerIcons() async {
-    // Generate building marker icons using default Google Maps marker with custom hue
+    // Building markers: default Google Maps marker with custom hue.
     _buildingIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
     _buildingSelectedIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
+
+    // User location indicator: navigation-style (blue dot + heading cone).
+    // Rendered once as PNG bitmaps; the cone points north at rotation = 0 so
+    // the Google Maps `rotation` parameter aligns it with the heading.
+    try {
+      final results = await Future.wait([
+        _renderUserLocationIcon(withHeadingCone: false),
+        _renderUserLocationIcon(withHeadingCone: true),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _userDotIcon = BitmapDescriptor.bytes(results[0]);
+        _userDirectionalIcon = BitmapDescriptor.bytes(results[1]);
+      });
+    } catch (e) {
+      debugPrint('[MapScreen] Failed to render user location icons: $e');
+    }
+  }
+
+  /// Renders the user-location indicator bitmap.
+  ///
+  /// Design: a solid blue position dot with a white ring, optionally topped by
+  /// a translucent heading cone sweeping [headingConeHalfAngleDegrees] to each
+  /// side of "north". Everything is centered in the canvas so the marker
+  /// anchor (0.5, 0.5) sits exactly on the geographic position; rotating the
+  /// flat marker spins the cone around that fixed point.
+  static Future<Uint8List> _renderUserLocationIcon({
+    required bool withHeadingCone,
+  }) async {
+    // 170px bitmap renders as a compact navigation dot (the previous 240px
+    // canvas displayed as an oversized marker on device).
+    const canvasSize = 170.0;
+    final dotColor = AppTheme.primary; // App red accent
+    final coneColor = dotColor.withValues(alpha: 0.20);
+    const headingConeHalfAngleDegrees = 26.0;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final center = Offset(canvasSize / 2, canvasSize / 2);
+
+    if (withHeadingCone) {
+      final sweep = headingConeHalfAngleDegrees * 2 * pi / 180.0;
+      final radius = canvasSize * 0.46;
+      final rect = Rect.fromCircle(center: center, radius: radius);
+      canvas.drawArc(
+        rect,
+        -pi / 2 - sweep / 2,
+        sweep,
+        true,
+        ui.Paint()..color = coneColor,
+      );
+    }
+
+    // Small modern navigation dot.
+    final dotRadius = canvasSize * 0.085;
+    final ringRadius = dotRadius + canvasSize * 0.016;
+
+    // White ring around the dot for contrast on any map style.
+    canvas.drawCircle(center, ringRadius, ui.Paint()..color = Colors.white);
+    canvas.drawCircle(center, dotRadius, ui.Paint()..color = dotColor);
+
+    final picture = recorder.endRecording();
+    final image =
+        await picture.toImage(canvasSize.toInt(), canvasSize.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    picture.dispose();
+
+    return byteData!.buffer.asUint8List();
   }
 
   /// Connector POIs (elevators, stairs, or `pois_type == "None"`) are hidden
@@ -157,6 +267,8 @@ class _MapScreenState extends State<MapScreen>
 
   @override
   void dispose() {
+    _headingSubscription?.cancel();
+    _markerHeadingNotifier.dispose();
     _mapController?.dispose();
     _mapController = null;
     WidgetsBinding.instance.removeObserver(this);
@@ -167,8 +279,13 @@ class _MapScreenState extends State<MapScreen>
       final navController = context.read<NavigationController>();
       navController.removeListener(_onNavigationChanged);
     } catch (_) {}
-    _currentBearing = 0.0;
+    _currentHeading = 0.0;
     _lastPositionForBearing = null;
+    _lastCompassHeading = null;
+    _lastAppliedCameraTarget = null;
+    _pendingCameraTarget = null;
+    _pendingCameraZoom = null;
+    _pendingCameraBearing = null;
     _isUserGesture = false;
     super.dispose();
   }
@@ -185,7 +302,8 @@ class _MapScreenState extends State<MapScreen>
       // Re-center camera on user position after resume
       final location = context.read<LocationProvider>().currentLocation;
       if (location != null && nav.followMode) {
-        _followUserPosition(location.latLng, nav.subState);
+        _followUserPosition(location.latLng, nav.subState,
+            bearing: _currentHeading);
       }
     }
   }
@@ -198,21 +316,22 @@ class _MapScreenState extends State<MapScreen>
     final now = DateTime.now();
 
     if (!nav.isActive) {
-      _currentBearing = 0.0;
+      _currentHeading = 0.0;
       _lastPositionForBearing = null;
+      _lastCompassHeading = null;
       _lastFollowMode = false;
       return;
     }
 
     if (nav.followMode && location != null) {
-      final bearing = _updateBearing(location, now);
-      _followUserPosition(location.latLng, nav.subState, bearing: bearing);
+      final heading = _updateHeading(location, now);
+      _followUserPosition(location.latLng, nav.subState, bearing: heading);
     }
 
     // Detect follow mode turning on (e.g. re-center tap)
     if (nav.followMode && !_lastFollowMode && location != null) {
-      final bearing = _updateBearing(location, now);
-      _followUserPosition(location.latLng, nav.subState, bearing: bearing);
+      final heading = _updateHeading(location, now);
+      _followUserPosition(location.latLng, nav.subState, bearing: heading);
     }
     _lastFollowMode = nav.followMode;
   }
@@ -226,55 +345,87 @@ class _MapScreenState extends State<MapScreen>
     return (atan2(y, x) * 180 / pi + 360) % 360;
   }
 
-  double _smoothBearing(double raw, double current) {
+  double _smoothHeading(double raw, double current) {
     double diff = raw - current;
     if (diff > 180) diff -= 360;
     if (diff < -180) diff += 360;
     return (current + NavigationConfig.bearingSmoothingFactor * diff + 360) % 360;
   }
 
-  double _updateBearing(UserLocation location, DateTime now) {
+  /// Updates the effective user heading.
+  ///
+  /// Source preference:
+  /// 1. Device compass ([UserLocation.heading]) when it reports a usable value
+  ///    and has been seen recently (see [NavigationConfig.compassStaleMs]).
+  /// 2. Movement-derived bearing from consecutive position fixes — the primary
+  ///    fallback for Wi-Fi estimates, which carry no heading.
+  ///
+  /// Both sources are smoothed with the same EMA so the camera converges fast
+  /// without snapping.
+  double _updateHeading(UserLocation location, DateTime now) {
     final currentPos = location.latLng;
+
+    // Track device compass availability.
+    final compass = location.heading;
+    if (compass > 0 && compass <= 360) {
+      _lastCompassHeading = compass;
+      _lastCompassAt = now;
+    }
+    final compassFresh =
+        _lastCompassAt.difference(now).inMilliseconds.abs() <=
+            NavigationConfig.compassStaleMs;
 
     if (_lastPositionForBearing == null) {
       _lastPositionForBearing = currentPos;
-      _currentBearing = 0.0;
       _lastMovingTime = now;
-      return _currentBearing;
+      if (compassFresh && _lastCompassHeading != null) {
+        _currentHeading = _smoothHeading(_lastCompassHeading!, _currentHeading);
+      }
+      return _currentHeading;
     }
 
-    // Check update interval
+    // Rate-limit heading recomputation.
     final elapsed = now.difference(_lastBearingUpdateTime).inMilliseconds;
     if (elapsed < NavigationConfig.bearingUpdateIntervalMs) {
-      return _currentBearing;
+      return _currentHeading;
     }
 
     final distance = Geolocator.distanceBetween(
-      _lastPositionForBearing!.latitude, _lastPositionForBearing!.longitude,
-      currentPos.latitude, currentPos.longitude,
+      _lastPositionForBearing!.latitude,
+      _lastPositionForBearing!.longitude,
+      currentPos.latitude,
+      currentPos.longitude,
     );
 
     final speed = location.speed;
+    final isMoving = speed > NavigationConfig.bearingSpeedThreshold &&
+        distance > NavigationConfig.bearingMinMovementMeters;
 
-    // Only update bearing if moving above threshold
-    if (speed > NavigationConfig.bearingSpeedThreshold && distance > 0.5) {
-      _lastBearing = _computeBearing(_lastPositionForBearing!, currentPos);
-      _currentBearing = _smoothBearing(_lastBearing, _currentBearing);
+    if (isMoving) {
+      // Compass preferred while fresh; movement bearing as fallback.
+      if (compassFresh && _lastCompassHeading != null) {
+        _currentHeading = _smoothHeading(_lastCompassHeading!, _currentHeading);
+      } else {
+        final rawBearing =
+            _computeBearing(_lastPositionForBearing!, currentPos);
+        _currentHeading = _smoothHeading(rawBearing, _currentHeading);
+      }
       _lastMovingTime = now;
     } else {
-      // Standing still — hold last bearing briefly, then fade to 0
+      // Stationary: hold last heading briefly, then ease back to north.
       final stationaryMs = now.difference(_lastMovingTime).inMilliseconds;
       if (stationaryMs > NavigationConfig.bearingHoldDurationMs) {
-        _currentBearing = _smoothBearing(0.0, _currentBearing);
+        _currentHeading = _smoothHeading(0.0, _currentHeading);
       }
     }
 
     _lastPositionForBearing = currentPos;
     _lastBearingUpdateTime = now;
-    return _currentBearing;
+    return _currentHeading;
   }
 
-  void _followUserPosition(LatLng userPosition, NavigationSubState subState, {double bearing = 0.0}) {
+  void _followUserPosition(LatLng userPosition, NavigationSubState subState,
+      {double bearing = 0.0}) {
     if (!mounted || _mapController == null) return;
     final targetZoom = subState == NavigationSubState.indoor
         ? NavigationConfig.indoorFollowZoom
@@ -282,13 +433,84 @@ class _MapScreenState extends State<MapScreen>
 
     // Lower-third positioning
     final screenHeight = MediaQuery.of(context).size.height;
-    final latOffset = (screenHeight * (1.0 - NavigationConfig.followLowerThirdFraction)) * 0.000008;
+    final latOffset =
+        (screenHeight * (1.0 - NavigationConfig.followLowerThirdFraction)) *
+            0.000008;
 
-    _animatedMapMove(
+    _animateFollowCamera(
       LatLng(userPosition.latitude - latOffset, userPosition.longitude),
       targetZoom,
       bearing: bearing,
     );
+  }
+
+  /// Follow-mode camera update with change-gating and animation coalescing.
+  ///
+  /// A new follow animation is only issued when the user moved at least
+  /// [NavigationConfig.cameraMoveThresholdMeters] or the heading changed by at
+  /// least [NavigationConfig.cameraBearingThresholdDegrees] since the last
+  /// applied camera. If an animation is still in flight, the latest target is
+  /// coalesced and applied once the current animation settles — never queued
+  /// as overlapping animations.
+  void _animateFollowCamera(LatLng target, double zoom,
+      {required double bearing}) {
+    final lastTarget = _lastAppliedCameraTarget;
+    if (lastTarget != null) {
+      final moved = Geolocator.distanceBetween(
+        lastTarget.latitude,
+        lastTarget.longitude,
+        target.latitude,
+        target.longitude,
+      );
+      var bearingDelta = (bearing - _lastAppliedCameraBearing).abs();
+      if (bearingDelta > 180) bearingDelta = 360 - bearingDelta;
+      if (moved < NavigationConfig.cameraMoveThresholdMeters &&
+          bearingDelta < NavigationConfig.cameraBearingThresholdDegrees) {
+        return; // Not a meaningful change — skip.
+      }
+    }
+
+    if (_cameraAnimating) {
+      // Coalesce: remember the newest target; it replaces anything pending.
+      _pendingCameraTarget = target;
+      _pendingCameraZoom = zoom;
+      _pendingCameraBearing = bearing;
+      return;
+    }
+
+    _cameraAnimating = true;
+    _lastAppliedCameraTarget = target;
+    _lastAppliedCameraBearing = bearing;
+
+    _isProgrammaticMove = true;
+    _mapController!
+        .animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: target, zoom: zoom, bearing: bearing),
+          ),
+        )
+        .whenComplete(() {
+      if (!mounted) {
+        _cameraAnimating = false;
+        _pendingCameraTarget = null;
+        return;
+      }
+      _cameraAnimating = false;
+      _isProgrammaticMove = false;
+
+      // Apply the most recent coalesced target, if any.
+      final pendingTarget = _pendingCameraTarget;
+      if (pendingTarget != null) {
+        final pendingZoom = _pendingCameraZoom ?? zoom;
+        final pendingBearing = _pendingCameraBearing ?? bearing;
+        _pendingCameraTarget = null;
+        _pendingCameraZoom = null;
+        _pendingCameraBearing = null;
+        _lastAppliedCameraTarget = null; // Force re-apply regardless of gate.
+        _animateFollowCamera(pendingTarget, pendingZoom,
+            bearing: pendingBearing);
+      }
+    });
   }
 
   void _onBuildingTapped(SpaceModel space) {
@@ -462,8 +684,20 @@ class _MapScreenState extends State<MapScreen>
     });
   }
 
-  /// Build markers for the map
-  Set<Marker> _buildMarkers(SpaceProvider spaceProvider, LocationProvider locationProvider, SpaceModel? selectedSpace) {
+  /// Build the non-user markers (buildings + POIs).
+  ///
+  /// Cached by a lightweight state signature so heading-stream updates can
+  /// rebuild only the user marker without recomputing everything.
+  Set<Marker> _buildBaseMarkers(
+      SpaceProvider spaceProvider, SpaceModel? selectedSpace) {
+    final signature =
+        '${spaceProvider.spaces.length}|${selectedSpace?.buid ?? ''}|'
+        '${(spaceProvider.hasPois ? spaceProvider.pois.length : 0)}|'
+        '${spaceProvider.selectedPoi?.puid ?? ''}';
+    if (_baseMarkersSignature == signature) {
+      return _baseMarkersCache;
+    }
+
     final markers = <Marker>{};
 
     // Building markers
@@ -502,17 +736,41 @@ class _MapScreenState extends State<MapScreen>
       }
     }
 
-    // User location marker (using default blue dot)
-    // Note: Custom UserLocationMarker with animation will be added as overlay in Phase 4
-    if (locationProvider.currentLocation != null) {
-      markers.add(Marker(
-        markerId: const MarkerId('user_location'),
-        position: locationProvider.currentLocation!.latLng,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-      ));
-    }
-
+    _baseMarkersSignature = signature;
+    _baseMarkersCache = markers;
     return markers;
+  }
+
+  /// The user-location indicator: small dot + directional cone.
+  ///
+  /// Heading source priority:
+  ///   1. Device-orientation sensor stream ([_deviceHeading]) — updates
+  ///      instantly, even while standing still, independent of GPS/Wi-Fi.
+  ///   2. Movement-derived heading ([_currentHeading]) as fallback when the
+  ///      sensor is unavailable.
+  /// When neither has a real direction (> 0.5°), the dot-only icon is used so
+  /// a false due-north orientation is never implied.
+  Marker? _buildUserMarker(LocationProvider locationProvider) {
+    final location = locationProvider.currentLocation;
+    if (location == null) return null;
+
+    final deviceHeading = _deviceHeading;
+    final double? effectiveHeading = (deviceHeading != null && deviceHeading > 0.5)
+        ? deviceHeading
+        : (_currentHeading > 0.5 ? _currentHeading : null);
+
+    final fallbackAzure =
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
+    return Marker(
+      markerId: const MarkerId('user_location'),
+      position: location.latLng,
+      icon: effectiveHeading == null
+          ? (_userDotIcon ?? fallbackAzure)
+          : (_userDirectionalIcon ?? fallbackAzure),
+      rotation: effectiveHeading ?? 0.0,
+      flat: true,
+      anchor: const Offset(0.5, 0.5),
+    );
   }
 
   /// Build polylines for navigation routes and custom KMZ routes
@@ -741,46 +999,59 @@ class _MapScreenState extends State<MapScreen>
         return Scaffold(
           body: Stack(
             children: [
-              // 1. Google Map
-              GoogleMap(
-                initialCameraPosition: CameraPosition(
-                  target: initialTarget,
-                  zoom: MapConfig.defaultZoom,
-                ),
-                onMapCreated: (controller) {
-                  _mapController = controller;
-                  // If location was already acquired before map creation, center now
-                  _checkInitialCentering();
-                  _centerOnCustomRoutesIfNeeded();
+              // 1. Google Map.
+              //
+              // Wrapped in a ValueListenableBuilder on the device-heading
+              // stream so the direction arrow updates at sensor rate without
+              // rebuilding the rest of the screen. Base markers are cached
+              // (_buildBaseMarkers) so heading-only rebuilds stay cheap.
+              ValueListenableBuilder<double?>(
+                valueListenable: _markerHeadingNotifier,
+                builder: (context, heading, _) {
+                  return GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: initialTarget,
+                      zoom: MapConfig.defaultZoom,
+                    ),
+                    onMapCreated: (controller) {
+                      _mapController = controller;
+                      // If location was already acquired before map creation, center now
+                      _checkInitialCentering();
+                      _centerOnCustomRoutesIfNeeded();
+                    },
+                    onTap: (LatLng latLng) {
+                      if (spaceProvider.selectedPoi != null) {
+                        spaceProvider.clearSelectedPoi();
+                      } else if (selectedSpace != null) {
+                        spaceProvider.clearSelection();
+                      }
+                    },
+                    onCameraMove: (CameraPosition position) {
+                      final nav = context.read<NavigationController>();
+                      if (nav.isActive && nav.followMode && !_isProgrammaticMove) {
+                        // User is manually panning — exit follow mode
+                        _isUserGesture = true;
+                        nav.exitFollowMode();
+                      }
+                    },
+                    onCameraIdle: () {
+                      // Camera movement complete
+                    },
+                    myLocationEnabled: false,
+                    myLocationButtonEnabled: false,
+                    zoomControlsEnabled: false,
+                    compassEnabled: false,
+                    mapToolbarEnabled: false,
+                    markers: {
+                      ..._buildBaseMarkers(spaceProvider, selectedSpace),
+                      if (_buildUserMarker(locationProvider)
+                          case final Marker userMarker)
+                        userMarker,
+                    },
+                    polylines: _buildPolylines(spaceProvider),
+                    groundOverlays: _buildGroundOverlays(spaceProvider),
+                  );
                 },
-                onTap: (LatLng latLng) {
-                  if (spaceProvider.selectedPoi != null) {
-                    spaceProvider.clearSelectedPoi();
-                  } else if (selectedSpace != null) {
-                    spaceProvider.clearSelection();
-                  }
-                },
-                onCameraMove: (CameraPosition position) {
-                  final nav = context.read<NavigationController>();
-                  if (nav.isActive && nav.followMode && !_isProgrammaticMove) {
-                    // User is manually panning — exit follow mode
-                    _isUserGesture = true;
-                    nav.exitFollowMode();
-                  }
-                },
-                onCameraIdle: () {
-                  // Camera movement complete
-                },
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                compassEnabled: false,
-                mapToolbarEnabled: false,
-                
-                
-                markers: _buildMarkers(spaceProvider, locationProvider, selectedSpace),
-                polylines: _buildPolylines(spaceProvider),
-                groundOverlays: _buildGroundOverlays(spaceProvider),
               ),
 
               // 2. Top Header Bar
