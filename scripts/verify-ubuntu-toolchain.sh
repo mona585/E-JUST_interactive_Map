@@ -53,13 +53,12 @@ for app in anyplace_architect anyplace_viewer anyplace_viewer_campus; do
   [[ -f "$ROOT_DIR/clients/web/$app/package-lock.json" ]] || { echo "FAIL: missing npm lockfile for $app" >&2; exit 1; }
 done
 
-grep -q 'gradle-7.2-bin.zip' "$ROOT_DIR/clients/android-new/gradle/wrapper/gradle-wrapper.properties" || { echo "FAIL: unexpected Android Gradle wrapper" >&2; exit 1; }
+grep -q 'gradle-6.5.1-all.zip' "$ROOT_DIR/clients/android-new/gradle/wrapper/gradle-wrapper.properties" || { echo "FAIL: unexpected Android Gradle wrapper" >&2; exit 1; }
 
 if [[ "$WITH_ANDROID" == true ]]; then
   : "${ANDROID_SDK_ROOT:?FAIL: set ANDROID_SDK_ROOT before Android preflight}"
-  [[ -d "$ANDROID_SDK_ROOT/platforms/android-31" ]] || { echo "FAIL: Android platform 31 is missing" >&2; exit 1; }
-  [[ -d "$ANDROID_SDK_ROOT/build-tools/30.0.3" ]] || { echo "FAIL: Android Build-Tools 30.0.3 is missing" >&2; exit 1; }
-  [[ -f "$ROOT_DIR/clients/android-new/lib-android/build.gradle" ]] || { echo "FAIL: Android lib-android submodule is not initialized" >&2; exit 1; }
+  [[ -d "$ANDROID_SDK_ROOT/platforms/android-29" ]] || { echo "FAIL: Android platform 29 is missing" >&2; exit 1; }
+  [[ -d "$ANDROID_SDK_ROOT/build-tools/29.0.2" ]] || { echo "FAIL: Android Build-Tools 29.0.2 is missing" >&2; exit 1; }
   [[ -f "$ROOT_DIR/clients/core/lib/build.gradle" ]] || { echo "FAIL: core library submodule is not initialized" >&2; exit 1; }
 fi
 

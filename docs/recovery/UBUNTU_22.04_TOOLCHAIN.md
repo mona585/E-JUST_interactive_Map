@@ -15,12 +15,20 @@ systemd unit, Nginx, MongoDB, or tiler there.
 | Node / npm | Node.js 22 LTS / npm 10 | committed npm lockfiles use lockfile v3 |
 | Web tools | Grunt CLI 1.5.0; Bower 1.8.14 | legacy AngularJS/Grunt applications |
 | Tiler | Python 3.10+, ImageMagick 6, AdvanceCOMP (`advpng`) | `server/anyplace_tiler/` |
-| Android (Linux build host) | Gradle 7.2, Android SDK API 31, Build-Tools 30.0.3 | `clients/android-new/` |
+| Android (Linux build host) | Gradle 6.5.1, AGP 4.0.2, SDK platform API 29, Build-Tools 29.0.2 | `clients/android-new/` (merged phase-7-8 lineage) |
 
 The Node 22 line is intentionally used for the legacy web build because it is
 currently supported; package resolution must always use `npm ci`, never
 unlocked `npm install`. Do not substitute a newer major version without a
 separate compatibility test.
+
+The backend pins OpenJDK 17. The merged `clients/android-new` tree uses the
+Gradle 6.5.1 wrapper, which cannot run on JDK 17; Android builds therefore
+additionally require a local OpenJDK 11 (`sudo apt install openjdk-11-jdk`)
+selected only for Gradle invocations (for example `JAVA_HOME` or
+`org.gradle.java.home`). The original contract's Gradle 7.2 / AGP 7.1.3 /
+API 31 pin belonged to a lineage that was replaced by the phase-7-8 merge and
+is no longer authoritative for this branch.
 
 ## VM preparation
 
