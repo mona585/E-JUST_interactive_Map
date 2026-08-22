@@ -37,5 +37,8 @@ abstract class LocationService {
   Future<UserLocation?> getCurrentPosition();
 
   /// Returns a stream of real-time GPS location updates.
-  Stream<UserLocation> getPositionStream({int distanceFilter = 2});
+  ///
+  /// [distanceFilter] is in meters; small values (e.g. 0.3) maximize
+  /// navigation responsiveness at the cost of more callbacks.
+  Stream<UserLocation> getPositionStream({double distanceFilter = 0.3});
 }

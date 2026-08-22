@@ -2090,10 +2090,12 @@ class SpaceProvider extends ChangeNotifier {
       }
 
       // Load radiomap into native Kotlin positioning engine
+      String? loadFailureReason;
       final loadedSuccessfully = await _nativePositioningService.loadRadioMap(
         radiomapContent,
         targetBuid,
         targetFloor,
+        onFailureDetail: (detail) => loadFailureReason = detail,
       );
 
       if (loadedSuccessfully) {
@@ -2107,7 +2109,8 @@ class SpaceProvider extends ChangeNotifier {
         );
       } else {
         _radioMapStatus = RadioMapStatus.error;
-        _radioMapErrorMessage = 'Native engine rejected RadioMap format.';
+        _radioMapErrorMessage =
+            loadFailureReason ?? 'Native engine rejected RadioMap format.';
         await _nativePositioningService.clearRadioMap();
       }
     } on ApiException catch (e) {

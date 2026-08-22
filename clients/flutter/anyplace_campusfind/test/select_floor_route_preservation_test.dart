@@ -207,13 +207,18 @@ class _FakeLocationService implements LocationService {
   Future<UserLocation?> getCurrentPosition() async => null;
 
   @override
-  Stream<UserLocation> getPositionStream({int distanceFilter = 2}) =>
+  Stream<UserLocation> getPositionStream({double distanceFilter = 0.3}) =>
       const Stream.empty();
 }
 
 class _FakeNativePositioningService implements NativePositioningService {
   @override
-  Future<bool> loadRadioMap(String text, String buid, String floor) async =>
+  Future<bool> loadRadioMap(
+    String text,
+    String buid,
+    String floor, {
+    void Function(String detail)? onFailureDetail,
+  }) async =>
       false;
 
   @override

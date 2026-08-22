@@ -27,8 +27,6 @@ void main() {
 
     setUpAll(() {
       final file = File(
-        'C:/Users/mona mohamed/Downloads/anyplace for android part/'
-        'anyplace_EJUST/clients/flutter/anyplace_campusfind/'
         'assets/navigation/university roads.kmz',
       );
       kmzBytes = file.readAsBytesSync();
@@ -86,8 +84,6 @@ void main() {
     setUp(() {
       repository = CustomRouteRepository();
       final file = File(
-        'C:/Users/mona mohamed/Downloads/anyplace for android part/'
-        'anyplace_EJUST/clients/flutter/anyplace_campusfind/'
         'assets/navigation/university roads.kmz',
       );
       repository.loadFromBytes(file.readAsBytesSync());
@@ -122,8 +118,6 @@ void main() {
     setUp(() {
       repository = CustomRouteRepository();
       final file = File(
-        'C:/Users/mona mohamed/Downloads/anyplace for android part/'
-        'anyplace_EJUST/clients/flutter/anyplace_campusfind/'
         'assets/navigation/university roads.kmz',
       );
       repository.loadFromBytes(file.readAsBytesSync());
@@ -183,8 +177,6 @@ void main() {
     setUp(() {
       repository = CustomRouteRepository();
       final file = File(
-        'C:/Users/mona mohamed/Downloads/anyplace for android part/'
-        'anyplace_EJUST/clients/flutter/anyplace_campusfind/'
         'assets/navigation/university roads.kmz',
       );
       repository.loadFromBytes(file.readAsBytesSync());

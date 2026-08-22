@@ -437,7 +437,12 @@ class _FakeNavigationRepository implements NavigationRepository {
 
 class _FakeNativePositioningService implements NativePositioningService {
   @override
-  Future<bool> loadRadioMap(String text, String buid, String floor) async =>
+  Future<bool> loadRadioMap(
+    String text,
+    String buid,
+    String floor, {
+    void Function(String detail)? onFailureDetail,
+  }) async =>
       true;
 
   @override

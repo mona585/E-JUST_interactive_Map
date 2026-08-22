@@ -7,7 +7,15 @@ import '../models/position_estimate.dart';
 /// Abstract interface communicating with the native Kotlin positioning engine.
 abstract class NativePositioningService {
   /// Loads and validates a RadioMap plaintext into the native positioning engine.
-  Future<bool> loadRadioMap(String text, String buid, String floor);
+  ///
+  /// [onFailureDetail], when provided, receives a human-readable reason for a
+  /// `false` return (e.g. platform channel unavailable vs. rejected format).
+  Future<bool> loadRadioMap(
+    String text,
+    String buid,
+    String floor, {
+    void Function(String detail)? onFailureDetail,
+  });
 
   /// Clears the active RadioMap from the native engine.
   Future<bool> clearRadioMap();
@@ -49,7 +57,12 @@ class MethodChannelNativePositioningService implements NativePositioningService 
   }
 
   @override
-  Future<bool> loadRadioMap(String text, String buid, String floor) async {
+  Future<bool> loadRadioMap(
+    String text,
+    String buid,
+    String floor, {
+    void Function(String detail)? onFailureDetail,
+  }) async {
     try {
       final dynamic result = await _channel.invokeMethod<bool>('loadRadioMap', {
         'text': text,
@@ -65,16 +78,20 @@ class MethodChannelNativePositioningService implements NativePositioningService 
       debugPrint(
         '[NativePositioningService] Platform channel not available on this host platform',
       );
+      onFailureDetail?.call(
+          'Indoor positioning engine is unavailable on this device build.');
       return false;
     } on PlatformException catch (e) {
       debugPrint(
         '[NativePositioningService] PlatformException in loadRadioMap: ${e.message}',
       );
+      onFailureDetail?.call('Native engine error: ${e.message}');
       return false;
     } catch (e) {
       debugPrint(
         '[NativePositioningService] Unexpected error in loadRadioMap: $e',
       );
+      onFailureDetail?.call('Unexpected native engine error: $e');
       return false;
     }
   }
