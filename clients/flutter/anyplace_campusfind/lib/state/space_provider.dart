@@ -188,6 +188,20 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     _locationProvider = locationProvider;
   }
 
+  /// Injected liveness probe (MASTER PLAN PHASE 3, INV-4): while it returns
+  /// true, the six browsing APIs suppress their legacy navigation-field
+  /// resets so browsing can never destroy a live session. Wired in the
+  /// composition root to `navigationController.isActive`.
+  bool Function()? isNavigationSessionLive;
+
+  /// Temporary Phase-3 retarget bridge: invoked by [navigateToPoi] when a
+  /// session is live so the run ends cleanly instead of being silently
+  /// destroyed by cross-tab navigation. Phase 4 replaces this with the
+  /// explicit retarget protocol.
+  void Function()? terminateActiveSessionForRetarget;
+
+  bool get _sessionLive => isNavigationSessionLive?.call() ?? false;
+
   /// Access to the custom route repository for map rendering and queries.
   @override
   CustomRouteRepository get customRouteRepository => _customRouteRepository;
@@ -424,8 +438,23 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   }
 
   /// Selects a space, clears previous floor & POI selections, and automatically loads available floors.
+  ///
+  /// INV-4 (Phase 3): during a live navigation session the legacy
+  /// navigation-field reset is suppressed; browsing state still changes.
   @override
-  void selectSpace(SpaceModel space) {
+  void selectSpace(SpaceModel space) =>
+      _selectSpaceInternal(space, resetNavigationFields: true);
+
+  /// Navigation-driven building selection (INV-5): preloads residency
+  /// context for the session without ever touching route/destination fields.
+  @override
+  void selectSpaceForNavigation(SpaceModel space) =>
+      _selectSpaceInternal(space, resetNavigationFields: false);
+
+  void _selectSpaceInternal(
+    SpaceModel space, {
+    required bool resetNavigationFields,
+  }) {
     if (_selectedSpace?.buid != space.buid) {
       debugPrint(
         '[SpaceProvider] selectSpace: ${space.name} (buid: ${space.buid})',
@@ -438,8 +467,10 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       _resetRadioMapState();
       _resetFloorplanState();
       _resetPoiState();
-      _resetNavigationRouteState();
-      _batchPaused = true; // Pause background batch Ã¢â‚¬â€ user action takes priority
+      if (resetNavigationFields && !_sessionLive) {
+        _resetNavigationRouteState();
+      }
+      _batchPaused = true; // Pause background batch — user action takes priority
       notifyListeners();
 
       // Automatically fetch floors for newly selected space
@@ -448,6 +479,8 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   }
 
   /// Clears the currently selected space, floor, RadioMap, floorplan, and POIs.
+  ///
+  /// INV-4 (Phase 3): navigation fields survive when a session is live.
   @override
   void clearSelection() {
     if (_selectedSpace != null || _selectedFloor != null) {
@@ -465,15 +498,32 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       _resetRadioMapState();
       _resetFloorplanState();
       _resetPoiState();
-      _resetNavigationRouteState();
+      if (!_sessionLive) {
+        _resetNavigationRouteState();
+      }
       _batchPaused = false; // Resume background batch
       notifyListeners();
     }
   }
 
   /// Selects a floor for the currently selected space and triggers RadioMap, Floorplan, and POI downloads.
+  ///
+  /// INV-4 (Phase 3): during a live session the navigation-field reset is
+  /// suppressed; the selection itself proceeds unchanged.
   @override
-  void selectFloor(FloorModel floor) {
+  void selectFloor(FloorModel floor) =>
+      _selectFloorInternal(floor, resetNavigationFields: true);
+
+  /// Navigation-driven floor selection (INV-5): connector-proximity and
+  /// transition completion use this so guidance geometry is never reset.
+  @override
+  void selectFloorForNavigation(FloorModel floor) =>
+      _selectFloorInternal(floor, resetNavigationFields: false);
+
+  void _selectFloorInternal(
+    FloorModel floor, {
+    required bool resetNavigationFields,
+  }) {
     if (_selectedSpace == null) {
       debugPrint('[SpaceProvider] Cannot select floor: no space selected');
       return;
@@ -496,7 +546,9 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     );
     _selectedFloor = floor;
     _selectedPoi = null;
-    _resetNavigationRouteState();
+    if (resetNavigationFields && !_sessionLive) {
+      _resetNavigationRouteState();
+    }
     notifyListeners();
 
     // Trigger RadioMap, Floorplan, and POI acquisitions for the selected floor
@@ -506,6 +558,8 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   }
 
   /// Clears the current floor selection and resets active RadioMap, Floorplan, and POIs.
+  ///
+  /// INV-4 (Phase 3): navigation fields survive live sessions.
   void clearFloorSelection() {
     if (_selectedFloor != null) {
       debugPrint('[SpaceProvider] clearFloorSelection');
@@ -517,7 +571,9 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       _resetRadioMapState();
       _resetFloorplanState();
       _resetPoiState();
-      _resetNavigationRouteState();
+      if (!_sessionLive) {
+        _resetNavigationRouteState();
+      }
       notifyListeners();
     }
   }
@@ -526,7 +582,8 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   void selectPoi(PoiModel? poi) {
     if (_selectedPoi?.puid != poi?.puid &&
         _navigationDestinationPuid != null &&
-        _navigationDestinationPuid != poi?.puid) {
+        _navigationDestinationPuid != poi?.puid &&
+        !_sessionLive) {
       _resetNavigationRouteState();
     }
     _selectedPoi = poi;
@@ -537,14 +594,27 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   void clearSelectedPoi() {
     if (_selectedPoi != null) {
       _selectedPoi = null;
-      _resetNavigationRouteState();
+      if (!_sessionLive) {
+        _resetNavigationRouteState();
+      }
       notifyListeners();
     }
   }
 
   /// Orchestrates selectSpace -> selectFloor -> selectPoi from a [PoiModel].
   /// Used by cross-tab navigation (search results, recent waypoints).
+  ///
+  /// PHASE 3 temporary bridge: with a live session this ends the run
+  /// cleanly via the injected callback instead of silently destroying it;
+  /// the legacy idle path then proceeds. Phase 4 introduces the explicit
+  /// retarget protocol.
   Future<bool> navigateToPoi(PoiModel targetPoi) async {
+    if (_sessionLive) {
+      debugPrint(
+        '[SpaceProvider] navigateToPoi during live session — clean-restart bridge',
+      );
+      terminateActiveSessionForRetarget?.call();
+    }
     return _navigateToIdentifier(
       buid: targetPoi.buid,
       floorNumber: targetPoi.floorNumber,
@@ -1276,6 +1346,29 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       _resetNavigationRouteState();
       notifyListeners();
     }
+  }
+
+  /// Building-exit context release (MASTER PLAN PHASE 3, INV-9 route-safety
+  /// half; full policy lands in Phases 10–11).
+  ///
+  /// Clears indoor BROWSING residency — floor selection, POIs, floorplan,
+  /// radiomap — without ever touching route/session/destination fields.
+  /// Unlike [clearSelection] this keeps the selected building so map context
+  /// and exit-detection fallbacks remain stable.
+  @override
+  void releaseIndoorContextForNavigation() {
+    debugPrint(
+      '[SpaceProvider] releaseIndoorContextForNavigation (route preserved)',
+    );
+    _radioMapRequestId++;
+    _floorplanRequestId++;
+    _poiRequestId++;
+    _selectedFloor = null;
+    _selectedPoi = null;
+    _resetRadioMapState();
+    _resetFloorplanState();
+    _resetPoiState();
+    notifyListeners();
   }
 
   /// Session write-through (MASTER PLAN PHASE 2, INV-1/2/6).

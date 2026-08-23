@@ -194,6 +194,16 @@ abstract class NavigationRouteScope implements Listenable {
   void selectFloor(FloorModel floor);
   void clearSelection();
 
+  /// Navigation-driven selection variants (MASTER PLAN PHASE 3, INV-5):
+  /// used exclusively by the controller so residency preloads never reset
+  /// navigation fields, whatever browsing APIs do elsewhere.
+  void selectFloorForNavigation(FloorModel floor);
+  void selectSpaceForNavigation(SpaceModel space);
+
+  /// Route-safe building-exit context release (INV-9 route-safety half):
+  /// clears indoor browsing residency while preserving the route store.
+  void releaseIndoorContextForNavigation();
+
   /// The ONLY way a live session writes the route store (MASTER PLAN PHASE 2,
   /// INV-1/2/6). Implementations must set the store atomically for observers:
   /// assign + status ready + a single [notifyListeners], touching nothing

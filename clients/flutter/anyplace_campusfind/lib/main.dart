@@ -27,6 +27,12 @@ Future<void> main() async {
     locationProvider: locationProvider,
   );
 
+  // PHASE 3 wiring (INV-4/INV-5): browsing APIs stay navigation-neutral
+  // during live sessions; cross-tab destination opens end the run cleanly.
+  spaceProvider.isNavigationSessionLive = () => navigationController.isActive;
+  spaceProvider.terminateActiveSessionForRetarget =
+      navigationController.endNavigation;
+
   runApp(
     provider.MultiProvider(
       providers: [

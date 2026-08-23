@@ -234,7 +234,7 @@ class _Bug1Fixture {
   late final CacheService cache;
   late final SpaceProvider spaceProvider;
   late final LocationProvider locationProvider;
-  late final NavigationController controller;
+  NavigationController? controller;
 
   static Future<_Bug1Fixture> build() async {
     SharedPreferences.setMockInitialValues({});
@@ -302,15 +302,18 @@ class _Bug1Fixture {
       locationProvider: locationProvider,
       navigationRepository: navRepo,
     );
-    controller.startRoutePreview(
+    // PHASE 3 wiring: browsing APIs must stay neutral while this runs.
+    spaceProvider.isNavigationSessionLive = () => controller!.isActive;
+    spaceProvider.terminateActiveSessionForRetarget = () {};
+    controller!.startRoutePreview(
       destinationPuid: 'room104',
       destinationSpace: seedRepo.spaces[0],
     );
-    controller.startActiveNavigation();
+    controller!.startActiveNavigation();
   }
 
   void dispose() {
-    controller.dispose();
+    controller?.dispose();
     locationProvider.dispose();
   }
 }
@@ -362,6 +365,24 @@ class _FakeScope extends ChangeNotifier implements NavigationRouteScope {
     activeNavigationRoute = null;
     notifyListeners();
   }
+  @override
+  void selectFloorForNavigation(FloorModel floor) {
+    selectedFloor = floor;
+    notifyListeners();
+  }
+
+  @override
+  void selectSpaceForNavigation(SpaceModel space) {
+    selectedSpace = space;
+    notifyListeners();
+  }
+
+  @override
+  void releaseIndoorContextForNavigation() {
+    selectedFloor = null;
+    activeFloorplan = null;
+    notifyListeners();
+  }
 
   @override
   void adoptNavigatedRoute(NavigationRouteModel route) {
@@ -402,122 +423,76 @@ final NavigationRouteModel _replacementRoute = NavigationRouteModel(points: [
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('CHARACTERIZATION BUG-1 (copy-divergence killed in Phase 2; '
-      'store-nulling flips in Phase 3): '
-      'every browsing API nulls the rendered route during a live session',
-      () {
-    testWidgets('selectFloor nulls the scope route while session is live',
-        (tester) async {
+  // PHASE 3 FLIP of BUG-1: live-session neutrality is covered comprehensively
+  // in test/browsing_neutrality_test.dart (route object, destination, session
+  // id and revision preserved across all six browsing APIs). This group pins
+  // the complementary, permanently-true half: WITHOUT a live session every
+  // browsing API still resets navigation fields exactly as before Phase 3.
+  group('CHARACTERIZATION BUG-1 (idle-parity half, permanent): browsing APIs '
+      'still reset navigation fields when NO session is live', () {
+    Future<_Bug1Fixture> seeded() async {
       final f = await _Bug1Fixture.build();
-      addTearDown(f.dispose);
       await f.seedRoute();
       expect(f.spaceProvider.activeNavigationRoute, isNotNull);
-      f.startActiveNavigation();
-      expect(f.controller.navigationState, NavigationState.activeOutdoor);
+      return f;
+    }
 
+    testWidgets('selectFloor resets the seeded route while idle',
+        (tester) async {
+      final f = await seeded();
+      addTearDown(f.dispose);
       f.spaceProvider.selectFloor(_floor('bA', '1'));
-
-      expect(f.spaceProvider.activeNavigationRoute, isNull,
-          reason: 'BUG-1 pin (store-nulling half): STILL TRUE until Phase 3');
-      expect(f.controller.isActive, isTrue);
-      // PHASE 2 FLIP (INV-1/INV-2): the private copy is gone — evaluation
-      // reads the same store rendering does.
-      expect(f.controller.activeRoute,
-          same(f.spaceProvider.activeNavigationRoute));
+      expect(f.spaceProvider.activeNavigationRoute, isNull);
       await tester.pump(const Duration(seconds: 30));
     });
 
-    testWidgets('clearFloorSelection nulls the scope route while live',
+    testWidgets('clearFloorSelection resets the seeded route while idle',
         (tester) async {
-      final f = await _Bug1Fixture.build();
+      final f = await seeded();
       addTearDown(f.dispose);
-      await f.seedRoute();
-      f.startActiveNavigation();
-
       f.spaceProvider.clearFloorSelection();
-
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.isActive, isTrue);
-      expect(f.controller.activeRoute,
-          same(f.spaceProvider.activeNavigationRoute),
-          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
 
-    testWidgets('selectSpace nulls the scope route while live',
+    testWidgets('selectSpace resets the seeded route while idle',
         (tester) async {
-      final f = await _Bug1Fixture.build();
+      final f = await seeded();
       addTearDown(f.dispose);
-      await f.seedRoute();
-      f.startActiveNavigation();
-
       f.spaceProvider.selectSpace(f.seedRepo.spaces[1]);
-
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.isActive, isTrue);
-      expect(f.controller.activeRoute,
-          same(f.spaceProvider.activeNavigationRoute),
-          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
-  });
 
-  group('CHARACTERIZATION BUG-1 (flips in Phase 2/3): remaining browsing APIs',
-      () {
-    testWidgets('clearSelection nulls the scope route while live',
+    testWidgets('clearSelection resets the seeded route while idle',
         (tester) async {
-      final f = await _Bug1Fixture.build();
+      final f = await seeded();
       addTearDown(f.dispose);
-      await f.seedRoute();
-      f.startActiveNavigation();
-
       f.spaceProvider.clearSelection();
-
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.isActive, isTrue);
-      expect(f.controller.activeRoute,
-          same(f.spaceProvider.activeNavigationRoute),
-          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
 
-    testWidgets('selectPoi (different POI) nulls the scope route while live',
+    testWidgets('selectPoi (different POI) resets the seeded route while idle',
         (tester) async {
-      final f = await _Bug1Fixture.build();
+      final f = await seeded();
       addTearDown(f.dispose);
-      await f.seedRoute();
-      f.startActiveNavigation();
-
       f.spaceProvider.selectPoi(f.poiRepo.pois['bA_0']!
           .where((p) => p.puid == 'room105')
           .first);
-
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.isActive, isTrue);
-      expect(f.controller.activeRoute,
-          same(f.spaceProvider.activeNavigationRoute),
-          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
 
-    testWidgets('clearSelectedPoi nulls the scope route while live',
+    testWidgets('clearSelectedPoi resets the seeded route while idle',
         (tester) async {
-      final f = await _Bug1Fixture.build();
+      final f = await seeded();
       addTearDown(f.dispose);
-      await f.seedRoute();
-      f.startActiveNavigation();
-
       f.spaceProvider.clearSelectedPoi();
-
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.isActive, isTrue);
-      expect(f.controller.activeRoute,
-          same(f.spaceProvider.activeNavigationRoute),
-          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
   });
-
 testWidgets('PHASE 2 FLIP of BUG-2: a committed reroute reaches the '
     'rendered store atomically and later scope notifications can never '
     'revert it', (tester) async {

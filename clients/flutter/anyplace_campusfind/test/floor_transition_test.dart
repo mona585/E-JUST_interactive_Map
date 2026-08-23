@@ -163,6 +163,27 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
   }
 
   @override
+  void selectFloorForNavigation(FloorModel floor) {
+    selectedFloor = floor;
+    calls.add('selectFloorForNavigation:${floor.floorNumber}');
+    notifyListeners();
+  }
+
+  @override
+  void selectSpaceForNavigation(SpaceModel space) {
+    selectedSpace = space;
+    calls.add('selectSpaceForNavigation:${space.buid}');
+    notifyListeners();
+  }
+
+  @override
+  void releaseIndoorContextForNavigation() {
+    selectedFloor = null;
+    calls.add('releaseIndoorContextForNavigation');
+    notifyListeners();
+  }
+
+  @override
   void adoptNavigatedRoute(NavigationRouteModel route) {
     activeNavigationRoute = route;
     calls.add('adoptNavigatedRoute');
@@ -383,7 +404,7 @@ void main() {
         closeTo(_atConnectorLat, 0.00001));
     // Residency preload happened at the EXPECTED stage — candidacy only,
     // never physical-floor proof.
-    expect(h.scope.calls, contains('selectFloor:1'));
+    expect(h.scope.calls, contains('selectFloorForNavigation:1'));
     // Route bookkeeping must NOT have claimed the new floor yet.
     expect(h.controller.currentNavigatingFloor, '0');
 
@@ -431,7 +452,7 @@ void main() {
     expect(events[1].fromFloor, '0');
     expect(events[1].toFloor, '1');
     // Completion synced residency to the proven floor.
-    expect(h.scope.calls, contains('selectFloor:1'));
+    expect(h.scope.calls, contains('selectFloorForNavigation:1'));
 
     await h.burnTimers(tester);
   });

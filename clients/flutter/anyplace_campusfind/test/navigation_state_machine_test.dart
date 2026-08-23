@@ -163,6 +163,27 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
   }
 
   @override
+  void selectFloorForNavigation(FloorModel floor) {
+    selectedFloor = floor;
+    calls.add('selectFloorForNavigation:${floor.floorNumber}');
+    notifyListeners();
+  }
+
+  @override
+  void selectSpaceForNavigation(SpaceModel space) {
+    selectedSpace = space;
+    calls.add('selectSpaceForNavigation:${space.buid}');
+    notifyListeners();
+  }
+
+  @override
+  void releaseIndoorContextForNavigation() {
+    selectedFloor = null;
+    calls.add('releaseIndoorContextForNavigation');
+    notifyListeners();
+  }
+
+  @override
   void adoptNavigatedRoute(NavigationRouteModel route) {
     activeNavigationRoute = route;
     calls.add('adoptNavigatedRoute');
@@ -422,7 +443,7 @@ void main() {
     // Within prep threshold (<100m): building preloaded.
     h.provider.setGpsLocation(_gps(30.8657));
     expect(h.controller.navigationState, NavigationState.activeOutdoor);
-    expect(h.scope.calls, contains('selectSpace:b1'));
+    expect(h.scope.calls, contains('selectSpaceForNavigation:b1'));
 
     // At the entrance: ENTERING_BUILDING, still GPS-evidenced.
     h.provider.setGpsLocation(_gps(30.86505));
@@ -494,7 +515,7 @@ void main() {
 
     h.provider.setGpsLocation(_gps(30.8560)); // confirmation tick
     expect(h.controller.navigationState, NavigationState.activeOutdoor);
-    expect(h.scope.calls, contains('clearSelection'));
+    expect(h.scope.calls, contains('releaseIndoorContextForNavigation'));
     expect(h.controller.currentNavigatingFloor, isNull);
     expect(h.controller.positioningStatus, 'GPS active');
   });
@@ -963,7 +984,7 @@ void main() {
     expect(h.controller.currentNavigatingFloor, '2',
         reason: 'the segment the route enters the building on owns the '
             'preload choice, not the legacy ground heuristic');
-    expect(h.scope.calls, contains('selectFloor:2'));
+    expect(h.scope.calls, contains('selectFloorForNavigation:2'));
     await tester.pump();
   });
 
@@ -995,7 +1016,7 @@ void main() {
     h.provider.setGpsLocation(_gps(30.86505));
 
     expect(h.controller.currentNavigatingFloor, '1');
-    expect(h.scope.calls, contains('selectFloor:1'));
+    expect(h.scope.calls, contains('selectFloorForNavigation:1'));
     await tester.pump();
   });
 
@@ -1010,7 +1031,7 @@ void main() {
     h.provider.setGpsLocation(_gps(30.86505));
 
     expect(h.controller.currentNavigatingFloor, '0');
-    expect(h.scope.calls, contains('selectFloor:0'));
+    expect(h.scope.calls, contains('selectFloorForNavigation:0'));
     await tester.pump();
   });
 
@@ -1026,8 +1047,8 @@ void main() {
 
     expect(h.controller.currentNavigatingFloor, '2',
         reason: 'server ordering [5, 2] must not win over natural ordering');
-    expect(h.scope.calls, contains('selectFloor:2'));
-    expect(h.scope.calls, isNot(contains('selectFloor:5')));
+    expect(h.scope.calls, contains('selectFloorForNavigation:2'));
+    expect(h.scope.calls, isNot(contains('selectFloorForNavigation:5')));
     await tester.pump();
   });
 

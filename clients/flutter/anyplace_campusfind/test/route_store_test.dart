@@ -153,6 +153,24 @@ class _RecordingScope extends ChangeNotifier implements NavigationRouteScope {
     activeNavigationRoute = null;
     notifyListeners();
   }
+  @override
+  void selectFloorForNavigation(FloorModel floor) {
+    selectedFloor = floor;
+    notifyListeners();
+  }
+
+  @override
+  void selectSpaceForNavigation(SpaceModel space) {
+    selectedSpace = space;
+    notifyListeners();
+  }
+
+  @override
+  void releaseIndoorContextForNavigation() {
+    selectedFloor = null;
+    activeFloorplan = null;
+    notifyListeners();
+  }
 
   @override
   void adoptNavigatedRoute(NavigationRouteModel route) {

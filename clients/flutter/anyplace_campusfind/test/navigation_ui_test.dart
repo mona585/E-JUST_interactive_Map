@@ -149,6 +149,27 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
   }
 
   @override
+  void selectFloorForNavigation(FloorModel floor) {
+    selectedFloor = floor;
+    calls.add('selectFloorForNavigation:${floor.floorNumber}');
+    notifyListeners();
+  }
+
+  @override
+  void selectSpaceForNavigation(SpaceModel space) {
+    selectedSpace = space;
+    calls.add('selectSpaceForNavigation:${space.buid}');
+    notifyListeners();
+  }
+
+  @override
+  void releaseIndoorContextForNavigation() {
+    selectedFloor = null;
+    calls.add('releaseIndoorContextForNavigation');
+    notifyListeners();
+  }
+
+  @override
   void adoptNavigatedRoute(NavigationRouteModel route) {
     activeNavigationRoute = route;
     calls.add('adoptNavigatedRoute');

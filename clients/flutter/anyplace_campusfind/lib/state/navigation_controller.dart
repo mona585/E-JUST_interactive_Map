@@ -989,7 +989,7 @@ class NavigationController extends ChangeNotifier {
     final floors = _spaceScope.floors;
     final targetFloor = floors.where((f) => f.floorNumber == floorNumber).firstOrNull;
     if (targetFloor != null && _spaceScope.selectedFloor?.floorNumber != floorNumber) {
-      _spaceScope.selectFloor(targetFloor);
+      _spaceScope.selectFloorForNavigation(targetFloor);
     }
   }
 
@@ -1025,7 +1025,7 @@ class NavigationController extends ChangeNotifier {
     final floors = _spaceScope.floors;
     final newFloorModel = floors.where((f) => f.floorNumber == newFloor).firstOrNull;
     if (newFloorModel != null && _spaceScope.selectedFloor?.floorNumber != newFloor) {
-      _spaceScope.selectFloor(newFloorModel);
+      _spaceScope.selectFloorForNavigation(newFloorModel);
     }
 
     // CONFIRMED: evidence-gated acceptance — the only stage that represents
@@ -1146,7 +1146,7 @@ class NavigationController extends ChangeNotifier {
     _exitConfirmationCounter = 0;
 
     // Clear indoor floor selection — return to GPS-based tracking
-    _spaceScope.clearSelection();
+    _spaceScope.releaseIndoorContextForNavigation();
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -1195,7 +1195,7 @@ class NavigationController extends ChangeNotifier {
     // Auto-select the building — this triggers floor loading
     if (_spaceScope.selectedSpace?.buid != building.buid &&
         _isCurrent(sessionId: sid, revision: rev)) {
-      _spaceScope.selectSpace(building);
+      _spaceScope.selectSpaceForNavigation(building);
     }
   }
 
@@ -1291,7 +1291,7 @@ class NavigationController extends ChangeNotifier {
               sessionId: session.sessionId,
               revision: session.routeRevision)) {
         _currentNavigatingFloor = preloadFloor.floorNumber;
-        _spaceScope.selectFloor(preloadFloor);
+        _spaceScope.selectFloorForNavigation(preloadFloor);
       }
     }
 
