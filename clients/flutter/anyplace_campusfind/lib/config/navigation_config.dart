@@ -68,6 +68,12 @@ class NavigationConfig {
   /// counter (was an inline literal).
   static const double segmentAdvanceThresholdMeters = 10.0;
 
+  // ── PHASE 12: rendering & camera ──
+
+  /// Draw campus KMZ polylines during a live navigation session. Default
+  /// off: the active route's own geometry owns the visual channel.
+  static const bool showCampusRoutesDuringNavigation = false;
+
   static const double deviationThreshold = 15.0;
 
   /// Minimum time (s) between reroute attempts.

@@ -84,8 +84,6 @@ class _MapScreenState extends State<MapScreen>
   LatLng? _lastPositionForBearing;   // Previous position for movement-derived bearing
   DateTime _lastBearingUpdateTime = DateTime.now();
   DateTime _lastMovingTime = DateTime.now();
-  double? _lastCompassHeading;       // Latest usable device compass reading
-  DateTime _lastCompassAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   // Camera follow state (coalescing: never queue overlapping animations)
   bool _cameraAnimating = false;
@@ -94,8 +92,10 @@ class _MapScreenState extends State<MapScreen>
   LatLng? _pendingCameraTarget;
   double? _pendingCameraZoom;
   double? _pendingCameraBearing;
-  bool _isUserGesture = false;     // True when user is manually panning
   bool _isProgrammaticMove = false;
+  /// BUG-11: stays true after a programmatic animation completes until the
+  /// camera settles (onCameraIdle), so inertia cannot exit follow mode.
+  bool _programmaticTailPending = false;
 
   @override
   void initState() {
@@ -300,12 +300,11 @@ class _MapScreenState extends State<MapScreen>
     } catch (_) {}
     _currentHeading = 0.0;
     _lastPositionForBearing = null;
-    _lastCompassHeading = null;
     _lastAppliedCameraTarget = null;
     _pendingCameraTarget = null;
     _pendingCameraZoom = null;
     _pendingCameraBearing = null;
-    _isUserGesture = false;
+    _programmaticTailPending = false;
     super.dispose();
   }
 
@@ -342,23 +341,23 @@ class _MapScreenState extends State<MapScreen>
     if (!nav.isActive) {
       _currentHeading = 0.0;
       _lastPositionForBearing = null;
-      _lastCompassHeading = null;
       _lastFollowMode = false;
       return;
     }
 
     if (nav.followMode) {
       // ORIGINAL PHASE 7: follow the held position during floor
-      // transitions; heading still derives from the raw fix stream.
+      // transitions. PHASE 12 / BUG-16b: the heading EMA consumes the SAME
+      // displayed (held) position, so the arrow cannot swing while the dot
+      // is pinned.
       final display = displayLocationFor(
         holdFloorTransition: nav.isTransitioningFloors,
         heldPosition: nav.heldPositionDuringTransition,
         currentLocation: location,
       );
       if (display != null) {
-        final heading = location != null
-            ? _updateHeading(location, now)
-            : _currentHeading;
+        final headingSource = location ?? display;
+        final heading = _updateHeading(headingSource, now);
         _followUserPosition(display.latLng, nav.subState, bearing: heading);
       }
     }
@@ -398,33 +397,17 @@ class _MapScreenState extends State<MapScreen>
 
   /// Updates the effective user heading.
   ///
-  /// Source preference:
-  /// 1. Device compass ([UserLocation.heading]) when it reports a usable value
-  ///    and has been seen recently (see [NavigationConfig.compassStaleMs]).
-  /// 2. Movement-derived bearing from consecutive position fixes — the primary
-  ///    fallback for Wi-Fi estimates, which carry no heading.
-  ///
-  /// Both sources are smoothed with the same EMA so the camera converges fast
-  /// without snapping.
+  /// PHASE 12 / BUG-16: the dead compass-from-location branch is removed —
+  /// [UserLocation.heading] is always 0 in this pipeline, so it can never
+  /// seed a usable direction. Heading derives from (a) the device-orientation
+  /// sensor stream handled separately ([_deviceHeading]) and (b) the
+  /// movement-bearing EMA below.
   double _updateHeading(UserLocation location, DateTime now) {
     final currentPos = location.latLng;
-
-    // Track device compass availability.
-    final compass = location.heading;
-    if (compass > 0 && compass <= 360) {
-      _lastCompassHeading = compass;
-      _lastCompassAt = now;
-    }
-    final compassFresh =
-        _lastCompassAt.difference(now).inMilliseconds.abs() <=
-            NavigationConfig.compassStaleMs;
 
     if (_lastPositionForBearing == null) {
       _lastPositionForBearing = currentPos;
       _lastMovingTime = now;
-      if (compassFresh && _lastCompassHeading != null) {
-        _currentHeading = _smoothHeading(_lastCompassHeading!, _currentHeading);
-      }
       return _currentHeading;
     }
 
@@ -446,14 +429,9 @@ class _MapScreenState extends State<MapScreen>
         distance > NavigationConfig.bearingMinMovementMeters;
 
     if (isMoving) {
-      // Compass preferred while fresh; movement bearing as fallback.
-      if (compassFresh && _lastCompassHeading != null) {
-        _currentHeading = _smoothHeading(_lastCompassHeading!, _currentHeading);
-      } else {
-        final rawBearing =
-            _computeBearing(_lastPositionForBearing!, currentPos);
-        _currentHeading = _smoothHeading(rawBearing, _currentHeading);
-      }
+      final rawBearing =
+          _computeBearing(_lastPositionForBearing!, currentPos);
+      _currentHeading = _smoothHeading(rawBearing, _currentHeading);
       _lastMovingTime = now;
     } else {
       // Stationary: hold last heading briefly, then ease back to north.
@@ -540,7 +518,9 @@ class _MapScreenState extends State<MapScreen>
         return;
       }
       _cameraAnimating = false;
-      _isProgrammaticMove = false;
+      // BUG-11: keep the programmatic guard until the camera settles so
+      // scroll inertia cannot be misread as a user pan.
+      _programmaticTailPending = true;
 
       // Apply the most recent coalesced target, if any.
       final pendingTarget = _pendingCameraTarget;
@@ -717,10 +697,12 @@ class _MapScreenState extends State<MapScreen>
     final lngSpan = paddedBounds.northeast.longitude - paddedBounds.southwest.longitude;
 
     final maxSpan = latSpan > lngSpan ? latSpan : lngSpan;
-    final estimatedZoom = (19.0 - (maxSpan * 100).clamp(0.0, 15.0)).clamp(
-      MapConfig.indoorFloorplanZoom,
-      19.0,
-    );
+    // PHASE 12 / BUG-10: span-proportional zoom (meters), replacing the
+    // pinned 19.0 clamp that framed long outdoor routes absurdly close.
+    final maxSpanMeters =
+        maxSpan * 111320.0 * cos(centerLat * pi / 180);
+    final estimatedZoom =
+        routeFitZoomForSpan(maxSpanMeters).clamp(MapConfig.indoorFloorplanZoom, 19.0);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -817,80 +799,112 @@ class _MapScreenState extends State<MapScreen>
   }
 
   /// Build polylines for navigation routes and custom KMZ routes
-  Set<Polyline> _buildPolylines(SpaceProvider spaceProvider) {
+  ///
+  /// PHASE 12: rendering is a pure projection of (route store, display
+  /// context) — nothing here mutates navigation state.
+  Set<Polyline> _buildPolylines(
+      SpaceProvider spaceProvider, NavigationController? nav) {
     final polylines = <Polyline>{};
 
-    debugPrint('[MapScreen] _buildPolylines: customRouteRepository.isLoaded=${spaceProvider.customRouteRepository.isLoaded}, routes=${spaceProvider.customRouteRepository.routes.length}');
+    final route = spaceProvider.activeNavigationRoute;
+    final sessionLive = nav?.isActive ?? false;
+    final indoorEmphasis =
+        nav != null && nav.isActive && nav.subState == NavigationSubState.indoor;
+    final displayedFloor = spaceProvider.selectedFloor?.floorNumber;
 
-    // Custom KMZ routes (shown as green polylines when no active navigation)
-    if (spaceProvider.customRouteRepository.isLoaded) {
-      final customRoutes = spaceProvider.customRouteRepository.getAllRoutePolylinePoints();
-      debugPrint('[MapScreen] _buildPolylines: customRoutes count=${customRoutes.length}');
-      for (var i = 0; i < customRoutes.length; i++) {
-        final routePoints = customRoutes[i];
-        debugPrint('[MapScreen] _buildPolylines: route $i has ${routePoints.length} points, first=${routePoints.first}, last=${routePoints.last}');
-        if (routePoints.length >= 2) {
-          // White outline (wider, behind)
-          polylines.add(Polyline(
-            polylineId: PolylineId('custom_route_${i}_outline'),
-            points: routePoints,
-            width: 12,
-            color: Colors.white,
-          ));
-          // Gray fill (narrower, on top) — Google Maps road style
-          polylines.add(Polyline(
-            polylineId: PolylineId('custom_route_$i'),
-            points: routePoints,
-            width: 6,
-            color: const Color(0xFF9E9E9E),
-          ));
+    // Custom KMZ routes (BUG-9b closure): hidden during a live session by
+    // default — see [showCampusRoutes] and the config flag.
+    if (showCampusRoutes(
+      sessionLive: sessionLive,
+      routeHasOutdoorCoverage: route?.hasOutdoorSegment ?? false,
+      flagEnabled: NavigationConfig.showCampusRoutesDuringNavigation,
+    )) {
+      if (spaceProvider.customRouteRepository.isLoaded) {
+        final customRoutes =
+            spaceProvider.customRouteRepository.getAllRoutePolylinePoints();
+        for (var i = 0; i < customRoutes.length; i++) {
+          final routePoints = customRoutes[i];
+          if (routePoints.length >= 2) {
+            // White outline (wider, behind)
+            polylines.add(Polyline(
+              polylineId: PolylineId('custom_route_${i}_outline'),
+              points: routePoints,
+              width: 12,
+              color: Colors.white,
+            ));
+            // Gray fill (narrower, on top) — Google Maps road style
+            polylines.add(Polyline(
+              polylineId: PolylineId('custom_route_$i'),
+              points: routePoints,
+              width: 6,
+              color: const Color(0xFF9E9E9E),
+            ));
+          }
         }
       }
     }
 
-    final route = spaceProvider.activeNavigationRoute;
     if (route == null) return polylines;
 
-    // Segment-based rendering (cross-building navigation)
+    // Segment-based rendering (cross-building navigation), floor-scoped.
     if (route.hasSegments) {
       for (var i = 0; i < route.segments.length; i++) {
         final seg = route.segments[i];
         if (seg.isEmpty) continue;
 
         final style = _segmentStyles[seg.type];
-        if (style != null) {
-          polylines.add(Polyline(
-            polylineId: PolylineId('route_segment_$i'),
-            points: seg.points,
-            width: style.width,
-            color: style.color,
-            patterns: style.patterns ?? [],
-          ));
-        }
+        if (style == null) continue;
+
+        final vis = segmentVisibility(
+          type: seg.type,
+          floorNumber: seg.floorNumber,
+          displayedFloor: displayedFloor,
+          indoorEmphasis: indoorEmphasis,
+        );
+        if (!vis.visible) continue;
+
+        polylines.add(Polyline(
+          polylineId: PolylineId('route_segment_$i'),
+          points: seg.points,
+          width: vis.dimmed ? (style.width - 1).clamp(1, 12) : style.width,
+          color: vis.dimmed ? style.color.withValues(alpha: 0.30) : style.color,
+          patterns: style.patterns ?? [],
+        ));
       }
       return polylines;
     }
 
-    // Legacy rendering (non-segment routes)
-    // Outdoor segment (dotted blue)
+    // Legacy rendering (non-segment routes), now floor-aware for the indoor
+    // portion thanks to truthful metadata (Phase 7).
     if (route.hasOutdoorSegment) {
+      final vis = segmentVisibility(
+        type: RouteSegmentType.outdoorWalking,
+        floorNumber: null,
+        displayedFloor: displayedFloor,
+        indoorEmphasis: indoorEmphasis,
+      );
       polylines.add(Polyline(
         polylineId: const PolylineId('route_outdoor'),
         points: route.outdoorPolylinePoints,
-        width: 5,
-        color: const Color(0xFF1E88E5).withValues(alpha: 0.9),
+        width: vis.dimmed ? 4 : 5,
+        color: const Color(0xFF1E88E5)
+            .withValues(alpha: vis.dimmed ? 0.32 : 0.9),
         patterns: [PatternItem.dot, PatternItem.gap(10)],
       ));
     }
 
-    // Indoor segment (solid red)
     if (route.hasIndoorSegment) {
-      polylines.add(Polyline(
-        polylineId: const PolylineId('route_indoor'),
-        points: route.indoorPolylinePoints,
-        width: 6,
-        color: AppTheme.primary.withValues(alpha: 0.85),
-      ));
+      final indoorPoints = displayedFloor != null
+          ? route.polylinePointsForFloor(displayedFloor)
+          : route.indoorPolylinePoints;
+      if (indoorPoints.length >= 2) {
+        polylines.add(Polyline(
+          polylineId: const PolylineId('route_indoor'),
+          points: indoorPoints,
+          width: 6,
+          color: AppTheme.primary.withValues(alpha: 0.85),
+        ));
+      }
     }
 
     return polylines;
@@ -1064,14 +1078,16 @@ class _MapScreenState extends State<MapScreen>
                     },
                     onCameraMove: (CameraPosition position) {
                       final nav = context.read<NavigationController>();
-                      if (nav.isActive && nav.followMode && !_isProgrammaticMove) {
+                      if (nav.isActive &&
+                          nav.followMode &&
+                          !_isProgrammaticMove &&
+                          !_programmaticTailPending) {
                         // User is manually panning — exit follow mode
-                        _isUserGesture = true;
                         nav.exitFollowMode();
                       }
                     },
                     onCameraIdle: () {
-                      // Camera movement complete
+                      _programmaticTailPending = false;
                     },
                     myLocationEnabled: false,
                     myLocationButtonEnabled: false,
@@ -1084,7 +1100,8 @@ class _MapScreenState extends State<MapScreen>
                           case final Marker userMarker)
                         userMarker,
                     },
-                    polylines: _buildPolylines(spaceProvider),
+                    polylines: _buildPolylines(
+                        spaceProvider, context.read<NavigationController>()),
                     groundOverlays: _buildGroundOverlays(),
                   );
                 },
@@ -1231,7 +1248,7 @@ class _MapScreenState extends State<MapScreen>
                         if (nav.isActive) {
                           nav.resumeFollowMode();
                         }
-                        _isUserGesture = false;
+                        _programmaticTailPending = false;
                         _onMyLocationTapped();
                       },
                       onZoomIn: _zoomIn,

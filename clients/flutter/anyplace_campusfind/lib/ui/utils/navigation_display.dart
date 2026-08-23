@@ -1,3 +1,5 @@
+import '../../config/map_config.dart';
+import '../../data/models/route_segment.dart';
 import '../../data/models/user_location.dart';
 import '../../state/navigation_controller.dart';
 import '../../state/navigation_state_model.dart';
@@ -39,6 +41,69 @@ String navigationStatusLabel(NavigationController nav) {
       }
       return nav.positioningStatus;
   }
+}
+
+/// PHASE 12 — floor-scoped segment visibility (pure projection rule).
+///
+/// [displayedFloor] is the BROWSING-selected floor (null = none). Rules:
+///  * outdoor legs: visible unless a live indoor emphasis exists — while
+///    indoors they stay as a dimmed orientation outline ([returnsDimmed]).
+///  * indoor/transition legs with a real floor: only that floor's geometry.
+///  * entrance/exit boundaries (empty floor): follow their indoor side —
+///    shown when any floor is displayed or when outdoors.
+({bool visible, bool dimmed}) segmentVisibility({
+  required RouteSegmentType type,
+  required String? floorNumber,
+  required String? displayedFloor,
+  required bool indoorEmphasis,
+}) {
+  final floor = (floorNumber == null || floorNumber.isEmpty) ? null : floorNumber;
+  switch (type) {
+    case RouteSegmentType.outdoorWalking:
+      if (!indoorEmphasis) return (visible: true, dimmed: false);
+      return (visible: true, dimmed: true);
+    case RouteSegmentType.indoorRouting:
+    case RouteSegmentType.floorTransition:
+      return (visible: floor == null || floor == displayedFloor, dimmed: false);
+    case RouteSegmentType.exitTransition:
+    case RouteSegmentType.entranceTransition:
+      // Boundaries belong to their indoor side; keep them when any floor is
+      // displayed or when the user is outdoors.
+      return (visible: displayedFloor != null || !indoorEmphasis,
+          dimmed: false);
+  }
+}
+
+/// Whether campus KMZ polylines should render right now.
+///
+/// Hidden during a live session unless the flag is enabled explicitly or
+/// the active route carries no outdoor coverage of its own.
+bool showCampusRoutes({
+  required bool sessionLive,
+  required bool routeHasOutdoorCoverage,
+  bool flagEnabled = false,
+}) {
+  if (!sessionLive) return true;
+  if (flagEnabled) return true;
+  return !routeHasOutdoorCoverage;
+}
+
+/// PHASE 12 / BUG-10: span→zoom mapping for route framing.
+///
+/// [maxSpanMeters] is the padded bounds' larger axis in meters. Long outdoor
+/// frames zoom OUT (≤17); tight frames keep the indoor-scale close-up.
+double routeFitZoomForSpan(double maxSpanMeters) {
+  final double base;
+  if (maxSpanMeters > 2000) {
+    base = 14.0;
+  } else if (maxSpanMeters > 800) {
+    base = 15.5;
+  } else if (maxSpanMeters > 300) {
+    base = 17.0;
+  } else {
+    base = MapConfig.indoorFloorplanZoom.toDouble();
+  }
+  return base;
 }
 
 /// The position the UI should render for the user right now.
