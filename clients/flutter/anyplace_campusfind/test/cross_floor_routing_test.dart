@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -240,6 +242,7 @@ class _Harness {
   late SpaceProvider spaceProvider;
   late LocationProvider locationProvider;
   late _ScriptedNavigationRepository navRepo;
+  late _StubNativePositioningService positioningStub;
   _SpyCrossBuildingRouter? crossBuildingSpy;
 
   final space = const SpaceModel(
@@ -315,9 +318,10 @@ class _Harness {
     _SpyCrossBuildingRouter? spyRouter,
     String browseFloor = '0',
   }) async {
+    positioningStub = _StubNativePositioningService();
     locationProvider = LocationProvider(
       locationService: _StubLocationService(),
-      nativePositioningService: _StubNativePositioningService(),
+      nativePositioningService: positioningStub,
     );
     navRepo = _ScriptedNavigationRepository();
     crossBuildingSpy = spyRouter;
@@ -753,6 +757,163 @@ void main() {
       await settle(h);
     },
   );
+
+  test(
+    'floor-change prompt fires on confirmed Wi-Fi estimates; confirm anchors floor',
+    () async {
+      final h = _Harness();
+      await h.pump(browseFloor: '2', userLatitude: 30.0100, userLongitude: 32.0100);
+
+      h.navRepo.onCoordinateRoute = (lat, lon, f, d) => _routeOf([h.roomOnF0, h.connectorF0]);
+      h.navRepo.onPoiRoute = (fromPuid, toPuid) {
+        if (fromPuid == h.connectorF0.puid && toPuid == h.connectorF2.puid) {
+          return _routeOf([h.connectorF0, h.connectorF2]);
+        }
+        if (fromPuid == h.connectorF2.puid && toPuid == h.destOnF2.puid) {
+          return _routeOf([h.connectorF2, h.destOnF2]);
+        }
+        throw const ApiException('no edge', statusCode: 400);
+      };
+
+      await h.requestRoute();
+
+      final controller = NavigationController(
+        spaceProvider: h.spaceProvider,
+        locationProvider: h.locationProvider,
+        navigationRepository: h.navRepo,
+      );
+      h.spaceProvider.setIsNavigationActive(() => controller.isActive);
+      controller.startRoutePreview(
+        destinationPuid: h.destOnF2.puid,
+        destinationSpace: h.space,
+        destinationFloorNumber: h.destOnF2.floorNumber,
+      );
+      controller.startActiveNavigation();
+      expect(controller.currentNavigatingFloor, '0');
+
+      // Walk up to the ground-floor stair (within the 30 m connector radius):
+      // triggers expected-floor pre-loading + transition blackout.
+      h.locationProvider.setGpsLocation(UserLocation(
+        latitude: h.connectorF0.latitude,
+        longitude: h.connectorF0.longitude,
+        accuracy: 5.0,
+        timestamp: DateTime.now(),
+      ));
+      await pumpEventQueue();
+      expect(controller.isTransitioningFloors, isTrue);
+      expect(h.spaceProvider.selectedFloor?.floorNumber, '2',
+          reason: 'next floor is pre-loaded during the blackout');
+      expect(controller.currentNavigatingFloor, '0',
+          reason: 'navigation stays grounded until the user confirms');
+      expect(controller.pendingFloorConfirmation, isNull);
+
+      // Wi-Fi estimates confirm Floor 2 (3 consecutive, per stability config).
+      for (var i = 0; i < 3; i++) {
+        h.positioningStub.emit(PositionEstimate(
+          latitude: h.connectorF2.latitude,
+          longitude: h.connectorF2.longitude,
+          buid: _buid,
+          floor: '2',
+          matchedAps: 4,
+          totalAps: 6,
+          durationMs: 10,
+          timestamp: DateTime.now(),
+          status: 'success',
+        ));
+        await pumpEventQueue();
+      }
+
+      expect(controller.pendingFloorConfirmation, '2',
+          reason: 'the switch prompt must appear once the new floor confirms');
+      expect(controller.currentNavigatingFloor, '0',
+          reason: 'floor must NOT auto-switch without user confirmation');
+
+      // User accepts.
+      controller.confirmPendingFloorChange();
+
+      expect(controller.currentNavigatingFloor, '2');
+      expect(controller.pendingFloorConfirmation, isNull);
+      expect(controller.isTransitioningFloors, isFalse);
+
+      controller.endNavigation();
+      await settle(h);
+    },
+  );
+
+  test(
+    'dismissing the prompt clears it and allows re-offering on later estimates',
+    () async {
+      final h = _Harness();
+      await h.pump(browseFloor: '2', userLatitude: 30.0100, userLongitude: 32.0100);
+
+      h.navRepo.onCoordinateRoute = (lat, lon, f, d) => _routeOf([h.roomOnF0, h.connectorF0]);
+      h.navRepo.onPoiRoute = (fromPuid, toPuid) {
+        if (fromPuid == h.connectorF0.puid && toPuid == h.connectorF2.puid) {
+          return _routeOf([h.connectorF0, h.connectorF2]);
+        }
+        if (fromPuid == h.connectorF2.puid && toPuid == h.destOnF2.puid) {
+          return _routeOf([h.connectorF2, h.destOnF2]);
+        }
+        throw const ApiException('no edge', statusCode: 400);
+      };
+
+      await h.requestRoute();
+
+      final controller = NavigationController(
+        spaceProvider: h.spaceProvider,
+        locationProvider: h.locationProvider,
+        navigationRepository: h.navRepo,
+      );
+      h.spaceProvider.setIsNavigationActive(() => controller.isActive);
+      controller.startRoutePreview(
+        destinationPuid: h.destOnF2.puid,
+        destinationSpace: h.space,
+        destinationFloorNumber: h.destOnF2.floorNumber,
+      );
+      controller.startActiveNavigation();
+
+      PositionEstimate estimate() => PositionEstimate(
+            latitude: h.connectorF2.latitude,
+            longitude: h.connectorF2.longitude,
+            buid: _buid,
+            floor: '2',
+            matchedAps: 4,
+            totalAps: 6,
+            durationMs: 10,
+            timestamp: DateTime.now(),
+            status: 'success',
+          );
+
+      h.locationProvider.setGpsLocation(UserLocation(
+        latitude: h.connectorF0.latitude,
+        longitude: h.connectorF0.longitude,
+        accuracy: 5.0,
+        timestamp: DateTime.now(),
+      ));
+      await pumpEventQueue();
+
+      for (var i = 0; i < 3; i++) {
+        h.positioningStub.emit(estimate());
+        await pumpEventQueue();
+      }
+      expect(controller.pendingFloorConfirmation, '2');
+
+      controller.dismissPendingFloorChange();
+      expect(controller.pendingFloorConfirmation, isNull);
+      expect(controller.currentNavigatingFloor, '0');
+
+      // Later estimates re-offer the same floor.
+      for (var i = 0; i < 3; i++) {
+        h.positioningStub.emit(estimate());
+        await pumpEventQueue();
+      }
+      expect(controller.pendingFloorConfirmation, '2');
+
+      controller.endNavigation();
+      expect(controller.pendingFloorConfirmation, isNull);
+      await settle(h);
+    },
+  );
 }
 
 class _StubLocationService implements LocationService {
@@ -776,6 +937,11 @@ class _StubLocationService implements LocationService {
 }
 
 class _StubNativePositioningService implements NativePositioningService {
+  final StreamController<PositionEstimate> _estimates =
+      StreamController<PositionEstimate>.broadcast();
+
+  void emit(PositionEstimate estimate) => _estimates.add(estimate);
+
   @override
   Future<bool> loadRadioMap(
     String text,
@@ -792,5 +958,5 @@ class _StubNativePositioningService implements NativePositioningService {
   Future<Map<String, dynamic>?> getActiveRadioMapInfo() async => null;
 
   @override
-  Stream<PositionEstimate> get positionStream => const Stream.empty();
+  Stream<PositionEstimate> get positionStream => _estimates.stream;
 }

@@ -236,6 +236,7 @@ class NavigationController extends ChangeNotifier {
     _lastFloorSwitchTime = null;
     _transitionStartTime = null;
     _lastIndoorPosition = null;
+    _pendingFloorConfirmation = null;
     _customRouteProgress = null;
     notifyListeners();
   }
@@ -266,6 +267,10 @@ class NavigationController extends ChangeNotifier {
     // Handle position hold during floor transition
     if (_isTransitioningFloors) {
       _checkTransitionTimeout();
+      // Evaluate positioning estimates while climbing so the switch prompt
+      // appears as soon as the new floor is confirmed, not only after the
+      // transition timeout aborts the hold.
+      _checkEstimateDuringTransition();
       // Use cached position during transition instead of jumping to GPS
       if (_lastIndoorPosition != null) {
         notifyListeners();
@@ -546,15 +551,67 @@ class NavigationController extends ChangeNotifier {
 
         _newFloorEstimateCount++;
 
-        // Require consecutive estimates on the new floor before confirming
+        // Require consecutive estimates on the new floor before offering
+        // the switch to the user (Phase 3 prompt — confirmation is manual).
         if (_newFloorEstimateCount >= NavigationConfig.stabilityMinEstimates) {
-          _confirmFloorTransition(estimate.floor);
+          _offerFloorChangeConfirmation(estimate.floor);
           _newFloorEstimateCount = 0;
         }
       } else if (estimate != null && estimate.floor == currentFloor) {
         // Estimate is on the current floor Ã¢â‚¬â€ reset counter
         _newFloorEstimateCount = 0;
       }
+    }
+  }
+
+  /// Floor awaiting user confirmation in the switch prompt, or null.
+  String? _pendingFloorConfirmation;
+  String? get pendingFloorConfirmation => _pendingFloorConfirmation;
+
+  /// Offers the floor-change prompt (idempotent per floor).
+  void _offerFloorChangeConfirmation(String newFloor) {
+    if (_pendingFloorConfirmation == newFloor) return;
+    debugPrint(
+      '[NavigationController] Offering floor change: $_currentNavigatingFloor → $newFloor',
+    );
+    _pendingFloorConfirmation = newFloor;
+    notifyListeners();
+  }
+
+  /// User accepted the prompt — anchors navigation on the new floor.
+  void confirmPendingFloorChange() {
+    final floor = _pendingFloorConfirmation;
+    if (floor == null) return;
+    _pendingFloorConfirmation = null;
+    _confirmFloorTransition(floor);
+  }
+
+  /// User declined the prompt — keeps detecting; the offer may re-fire.
+  void dismissPendingFloorChange() {
+    if (_pendingFloorConfirmation == null) return;
+    _pendingFloorConfirmation = null;
+    _newFloorEstimateCount = 0;
+    notifyListeners();
+  }
+
+  /// Evaluates positioning estimates during a transition blackout so the
+  /// switch prompt fires as soon as the new floor is confirmed.
+  void _checkEstimateDuringTransition() {
+    final expected = _expectedNextFloor;
+    if (expected == null) return;
+
+    final estimate = _locationProvider.latestIndoorEstimate;
+    if (estimate == null || !estimate.isValid) return;
+
+    if (estimate.floor == expected) {
+      if (_pendingFloorConfirmation != null) return;
+      _newFloorEstimateCount++;
+      if (_newFloorEstimateCount >= NavigationConfig.stabilityMinEstimates) {
+        _newFloorEstimateCount = 0;
+        _offerFloorChangeConfirmation(expected);
+      }
+    } else {
+      _newFloorEstimateCount = 0;
     }
   }
 
@@ -565,6 +622,7 @@ class NavigationController extends ChangeNotifier {
     _currentNavigatingFloor = newFloor;
     _isTransitioningFloors = false;
     _expectedNextFloor = null;
+    _pendingFloorConfirmation = null;
     _exitConfirmationCounter = 0;
     _newFloorEstimateCount = 0;
     _lastFloorSwitchTime = DateTime.now();
@@ -708,6 +766,11 @@ class NavigationController extends ChangeNotifier {
     if (_phase != NavigationPhase.active) return;
     if (_subState != NavigationSubState.outdoor) return;
     if (!_buildingPreloaded) return;
+
+    // Cross-floor journeys handle the entrance approach inside their staged
+    // route (LEG 0/1); the legacy ground-floor handoff below would re-anchor
+    // navigation to Floor 0 and clobber the stair pre-load.
+    if (_activeRoute?.hasFloorTransitions ?? false) return;
 
     // Wait for ground floor POIs to be loaded
     if (!_spaceProvider.hasPois) return;

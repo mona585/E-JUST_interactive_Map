@@ -45,6 +45,13 @@ class _MapScreenState extends State<MapScreen>
   Uint8List? _cachedResizedFloorplan;
   String? _cachedResizedFloorplanPath;
 
+  // Cached GroundOverlay instance so repeated map rebuilds (GPS fires at up
+  // to ~2 Hz) reuse the identical descriptor instead of forcing the platform
+  // to re-decode the floorplan PNG every frame — the cause of flicker and
+  // transient black tiles.
+  GroundOverlay? _cachedFloorplanOverlay;
+  String? _cachedFloorplanOverlayKey;
+
   // Marker icon caches (generated once from widget screenshots)
   BitmapDescriptor? _buildingIcon;
   BitmapDescriptor? _buildingSelectedIcon;
@@ -842,7 +849,11 @@ class _MapScreenState extends State<MapScreen>
     ),
   };
 
-  /// Build ground overlays for floorplan images
+  /// Build ground overlays for floorplan images.
+  ///
+  /// The resulting [GroundOverlay] is memoized per (image path, floor, byte
+  /// length) so repeated rebuilds hand Google Maps the identical instance and
+  /// the platform never re-decodes or re-adds the tile mid-session.
   Set<GroundOverlay> _buildGroundOverlays(SpaceProvider spaceProvider) {
     final overlays = <GroundOverlay>{};
     if (!spaceProvider.hasActiveFloorplan ||
@@ -853,41 +864,43 @@ class _MapScreenState extends State<MapScreen>
     final floorplan = spaceProvider.activeFloorplan!;
     final imagePath = spaceProvider.activeFloorplanImagePath!;
 
-    if (_cachedResizedFloorplanPath == imagePath && _cachedResizedFloorplan != null) {
-      debugPrint('[MapScreen] _buildGroundOverlays: using cached resized image (${_cachedResizedFloorplan!.length} bytes)');
-      overlays.add(GroundOverlay.fromBounds(
-        groundOverlayId: GroundOverlayId('floorplan_${floorplan.buid}_${floorplan.floorNumber}'),
-        image: BitmapDescriptor.bytes(_cachedResizedFloorplan!, bitmapScaling: MapBitmapScaling.none),
+    Uint8List bytes;
+    if (_cachedResizedFloorplanPath == imagePath &&
+        _cachedResizedFloorplan != null) {
+      bytes = _cachedResizedFloorplan!;
+    } else {
+      Uint8List rawBytes;
+      try {
+        rawBytes = File(imagePath).readAsBytesSync();
+      } on FileSystemException catch (_) {
+        debugPrint('[MapScreen] _buildGroundOverlays: failed to read floorplan image file at $imagePath');
+        return overlays;
+      } catch (e) {
+        debugPrint('[MapScreen] _buildGroundOverlays: unexpected error reading floorplan: $e');
+        return overlays;
+      }
+      if (rawBytes.isEmpty) {
+        debugPrint('[MapScreen] _buildGroundOverlays: floorplan image data is empty');
+        return overlays;
+      }
+
+      _resizeFloorplanAsync(rawBytes, imagePath);
+      bytes = rawBytes;
+    }
+
+    final key =
+        '$imagePath#${floorplan.buid}#${floorplan.floorNumber}#${bytes.length}';
+    if (_cachedFloorplanOverlay == null || _cachedFloorplanOverlayKey != key) {
+      _cachedFloorplanOverlay = GroundOverlay.fromBounds(
+        groundOverlayId: GroundOverlayId(
+            'floorplan_${floorplan.buid}_${floorplan.floorNumber}'),
+        image: BitmapDescriptor.bytes(bytes, bitmapScaling: MapBitmapScaling.none),
         bounds: floorplan.bounds,
         transparency: 0.0,
-      ));
-      return overlays;
+      );
+      _cachedFloorplanOverlayKey = key;
     }
-
-    final rawBytes = <Uint8List>[];
-    try {
-      rawBytes.add(File(imagePath).readAsBytesSync());
-    } on FileSystemException catch (_) {
-      debugPrint('[MapScreen] _buildGroundOverlays: failed to read floorplan image file at $imagePath');
-      return overlays;
-    } catch (e) {
-      debugPrint('[MapScreen] _buildGroundOverlays: unexpected error reading floorplan: $e');
-      return overlays;
-    }
-
-    if (rawBytes.isEmpty || rawBytes.first.isEmpty) {
-      debugPrint('[MapScreen] _buildGroundOverlays: floorplan image data is empty');
-      return overlays;
-    }
-
-    _resizeFloorplanAsync(rawBytes.first, imagePath);
-
-    overlays.add(GroundOverlay.fromBounds(
-      groundOverlayId: GroundOverlayId('floorplan_${floorplan.buid}_${floorplan.floorNumber}'),
-      image: BitmapDescriptor.bytes(rawBytes.first, bitmapScaling: MapBitmapScaling.none),
-      bounds: floorplan.bounds,
-      transparency: 0.0,
-    ));
+    overlays.add(_cachedFloorplanOverlay!);
     return overlays;
   }
 
@@ -1254,10 +1267,83 @@ class _MapScreenState extends State<MapScreen>
                             ),
                           ],
                         ),
-                      );
-                    },
-                  ),
+                       );
+                     },
+                   ),
+                 ),
+
+              // 5b. Floor-change confirmation prompt (Phase 3)
+              Positioned(
+                left: 16,
+                right: 76,
+                bottom: 96,
+                child: Consumer<NavigationController>(
+                  builder: (context, nav, _) {
+                    final floor = nav.pendingFloorConfirmation;
+                    if (!nav.isActive || floor == null) {
+                      return const SizedBox.shrink();
+                    }
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.6),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.swap_vert,
+                            size: 18,
+                            color: Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'You appear to be on Floor $floor. Switch navigation to Floor $floor?',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textPrimary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: nav.dismissPendingFloorChange,
+                            child: const Text('Not yet'),
+                          ),
+                          const SizedBox(width: 4),
+                          ElevatedButton(
+                            onPressed: nav.confirmPendingFloorChange,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF059669),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                            ),
+                            child: Text('Floor $floor'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
+              ),
 
               // 6. Error Banner (if any)
               if (spaceProvider.hasError && selectedSpace == null)
