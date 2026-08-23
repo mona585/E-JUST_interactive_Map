@@ -111,6 +111,15 @@ class NavigationController extends ChangeNotifier {
 
   bool get rerouteFailed => _rerouteFailed;
 
+  // -- PHASE 8: O→I handoff guidance refresh --
+  /// Once-per-session latch: indoor guidance content ensured.
+  bool _indoorGuidanceEnsured = false;
+
+  /// Transient hint flag: the handoff could not produce indoor geometry.
+  bool _indoorGuidanceFailed = false;
+
+  bool get indoorGuidanceUnavailable => _indoorGuidanceFailed;
+
   // -- Custom route tracking --
   RouteProgress? _customRouteProgress;
 
@@ -391,6 +400,8 @@ class NavigationController extends ChangeNotifier {
     _deviationStreak = 0;
     _kmzOffRouteStreak = 0;
     _rerouteFailed = false;
+    _indoorGuidanceEnsured = false;
+    _indoorGuidanceFailed = false;
     _resolveArrivalAnchor();
 
     if (wasIdle) {
@@ -421,8 +432,75 @@ class NavigationController extends ChangeNotifier {
     final fix = _locationProvider.currentFix;
     if (fix?.source == PositionSource.wifi) {
       _transition(NavigationState.activeIndoor);
+      _ensureIndoorGuidance();
     } else {
       _transition(NavigationState.activeOutdoor);
+    }
+    notifyListeners();
+  }
+
+  /// PHASE 8 (BUG-7 closure): after the handoff confirms ACTIVE_INDOOR,
+  /// guidance geometry becomes genuinely indoor — fetch/refresh the indoor
+  /// route for the destination once per session.
+  ///
+  /// Contract:
+  ///  * fenced by session identity + revision (Phase 1 mechanics),
+  ///  * latched per session; the latch resets on retarget/End/new preview,
+  ///  * RadioMap readiness for the confirmed scope is gated inside the
+  ///    scope wrapper (20 s cap), then a candidate is fetched via existing
+  ///    guarded machinery,
+  ///  * success commits through [adoptNavigatedRoute] + revision bump,
+  ///  * failure keeps the old route, sets the visible hint flag, and leaves
+  ///    the latch OPEN so the next floor confirmation retries.
+  Future<void> _ensureIndoorGuidance() async {
+    if (_indoorGuidanceEnsured) return;
+    final session = _session;
+    if (session == null || !_state.isSessionLive) return;
+    if (_state != NavigationState.activeIndoor) return;
+    final destPuid = session.destinationPuid;
+    if (destPuid == null) return;
+
+    // Already carrying usable indoor guidance ending at the destination?
+    final route = _activeRoute;
+    final confirmedFloor = _currentNavigatingFloor;
+    if (route != null &&
+        route.hasIndoorSegment &&
+        route.points.isNotEmpty &&
+        route.points.last.puid == destPuid &&
+        confirmedFloor != null &&
+        route.points.last.floorNumber == confirmedFloor) {
+      _indoorGuidanceEnsured = true;
+      debugPrint('[NAV] INDOOR_GUIDANCE_ALREADY_USABLE sid='
+          '${session.sessionId}');
+      return;
+    }
+
+    final sid = session.sessionId;
+    final rev = session.routeRevision;
+
+    final indoorRoute = await _spaceScope.requestIndoorRouteForSession(
+      destinationPuid: destPuid,
+      confirmedBuid: destinationSpace?.buid ?? '',
+      confirmedFloor: confirmedFloor ?? '',
+    );
+
+    // Fenced commit: only the newest identity may write.
+    if (!_isCurrent(sessionId: sid, revision: rev)) {
+      debugPrint('[NAV] INDOOR_GUIDANCE discarded (stale session/revision)');
+      return;
+    }
+    if (indoorRoute != null && indoorRoute.hasRenderablePath) {
+      _spaceScope.adoptNavigatedRoute(indoorRoute);
+      _session!.routeRevision++;
+      _resolveArrivalAnchor();
+      _indoorGuidanceEnsured = true;
+      _indoorGuidanceFailed = false;
+      debugPrint('[NAV] INDOOR_GUIDANCE_COMMITTED sid=$sid '
+          'rev=${_session!.routeRevision}');
+    } else {
+      _indoorGuidanceFailed = true;
+      debugPrint('[NAV] INDOOR_GUIDANCE_UNAVAILABLE sid=$sid — keeping '
+          'general path; will retry on next floor confirmation');
     }
     notifyListeners();
   }
@@ -456,6 +534,8 @@ class NavigationController extends ChangeNotifier {
     _deviationStreak = 0;
     _kmzOffRouteStreak = 0;
     _rerouteFailed = false;
+    _indoorGuidanceEnsured = false;
+    _indoorGuidanceFailed = false;
     if (endedSessionId != null) {
       debugPrint('[NAV] SESSION_END sid=$endedSessionId');
     }
@@ -516,6 +596,8 @@ class NavigationController extends ChangeNotifier {
     _deviationStreak = 0;
     _kmzOffRouteStreak = 0;
     _rerouteFailed = false;
+    _indoorGuidanceEnsured = false;
+    _indoorGuidanceFailed = false;
     notifyListeners();
 
     // 3. Content second: cascade for the new target behind request ids.
@@ -692,6 +774,8 @@ class NavigationController extends ChangeNotifier {
               '[NavigationController] Building entry corroborated by WiFi');
           _entryDwellCooldownUntil = null;
           _transition(NavigationState.activeIndoor);
+          // PHASE 8: handoff completeness — refresh guidance content.
+          _ensureIndoorGuidance();
           return;
         }
         if (navigationDwellExpired(_dwellStart, _now(),
@@ -1224,6 +1308,9 @@ class NavigationController extends ChangeNotifier {
     if (_state == NavigationState.floorTransition) {
       _transition(NavigationState.activeIndoor);
     }
+    // PHASE 8: a floor confirmation is also the retry point when indoor
+    // guidance was unavailable during entry.
+    _ensureIndoorGuidance();
     notifyListeners();
   }
 
@@ -1479,7 +1566,9 @@ class NavigationController extends ChangeNotifier {
     _transition(NavigationState.enteringBuilding);
     notifyListeners();
 
-    // Indoor route refresh is deferred until corroboration completes.
+        // PHASE 8: indoor route refresh happens when corroboration completes —
+    // see _ensureIndoorGuidance(), invoked from the ACTIVE_INDOOR entry
+    // points.
   }
 
   /// The floor on which the active route enters its destination building,

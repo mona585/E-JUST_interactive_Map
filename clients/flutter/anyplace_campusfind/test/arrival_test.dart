@@ -185,6 +185,15 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
     calls.add('requestRouteForRetarget:${poi.puid}');
     return true;
   }
+  @override
+  Future<NavigationRouteModel?> requestIndoorRouteForSession({
+    required String destinationPuid,
+    required String confirmedBuid,
+    required String confirmedFloor,
+  }) async {
+    calls.add('requestIndoorRouteForSession:$destinationPuid');
+    return null;
+  }
 
   @override
   void clearNavigationRoute() {

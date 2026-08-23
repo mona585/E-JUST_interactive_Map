@@ -204,7 +204,14 @@ class _Scope extends ChangeNotifier implements NavigationRouteScope {
   }
 
   @override
-  Future<bool> requestRouteForRetarget(PoiModel poi) async => true;  @override
+  Future<bool> requestRouteForRetarget(PoiModel poi) async => true;
+  @override
+  Future<NavigationRouteModel?> requestIndoorRouteForSession({
+    required String destinationPuid,
+    required String confirmedBuid,
+    required String confirmedFloor,
+  }) async =>
+      null;  @override
   void clearNavigationRoute() {
     activeNavigationRoute = null;
     notifyListeners();

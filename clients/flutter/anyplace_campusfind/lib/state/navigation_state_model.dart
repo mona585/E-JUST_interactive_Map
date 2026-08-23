@@ -229,6 +229,20 @@ abstract class NavigationRouteScope implements Listenable {
   /// when a renderable route for [target] was committed to the store.
   Future<bool> requestRouteForRetarget(PoiModel target);
 
+  /// O→I handoff guidance refresh (MASTER PLAN PHASE 8).
+  ///
+  /// Implementations gate on RadioMap readiness for
+  /// (`confirmedBuid`,`confirmedFloor`) — capped at 20 s — then fetch the
+  /// best available indoor route TO [destinationPuid] using the existing
+  /// guarded request machinery. Returns the candidate route (NOT committed)
+  /// or null when unavailable; commit responsibility stays with the
+  /// controller's fenced write-through.
+  Future<NavigationRouteModel?> requestIndoorRouteForSession({
+    required String destinationPuid,
+    required String confirmedBuid,
+    required String confirmedFloor,
+  });
+
   /// The ONLY way a live session writes the route store (MASTER PLAN PHASE 2,
   /// INV-1/2/6). Implementations must set the store atomically for observers:
   /// assign + status ready + a single [notifyListeners], touching nothing

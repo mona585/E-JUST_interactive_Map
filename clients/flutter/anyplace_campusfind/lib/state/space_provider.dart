@@ -1406,6 +1406,64 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     return ok;
   }
 
+  /// O→I handoff guidance refresh (MASTER PLAN PHASE 8).
+  ///
+  /// Narrow wrapper reusing the cascade pieces: waits (bounded) for RadioMap
+  /// readiness of the confirmed scope, then anchors an indoor POI-to-POI
+  /// request on the nearest known POI of that scope. The candidate is
+  /// returned uncommitted — the controller owns the fenced write-through.
+  @override
+  Future<NavigationRouteModel?> requestIndoorRouteForSession({
+    required String destinationPuid,
+    required String confirmedBuid,
+    required String confirmedFloor,
+  }) async {
+    // Radiomap readiness gate: wait up to 20 s for the confirmed scope's map
+    // to be resident/ready; proceed-with-null afterwards.
+    final deadline = DateTime.now().add(const Duration(seconds: 20));
+    while (DateTime.now().isBefore(deadline)) {
+      final ready = _activeRadioMapBuid == confirmedBuid &&
+          _activeRadioMapFloor == confirmedFloor &&
+          _radioMapStatus == RadioMapStatus.ready;
+      if (ready) break;
+      // Unsupported scope will never become ready — stop waiting early.
+      if (_activeRadioMapBuid == confirmedBuid &&
+          _activeRadioMapFloor == confirmedFloor &&
+          _radioMapStatus == RadioMapStatus.unsupported) {
+        break;
+      }
+      await Future.delayed(const Duration(milliseconds: 250));
+    }
+
+    // Anchor: nearest loaded POI on the confirmed scope, else nothing usable.
+    PoiModel? anchor;
+    var best = double.infinity;
+    for (final p in _pois) {
+      if (p.buid != confirmedBuid || p.puid == destinationPuid) continue;
+      final d = Geolocator.distanceBetween(
+        _locationProvider?.currentLocation?.latitude ?? p.latitude,
+        _locationProvider?.currentLocation?.longitude ?? p.longitude,
+        p.latitude,
+        p.longitude,
+      );
+      if (d < best) {
+        best = d;
+        anchor = p;
+      }
+    }
+    if (anchor == null) return null;
+
+    try {
+      return await _navigationRepository.getRouteBetweenPois(
+        fromPuid: anchor.puid,
+        toPuid: destinationPuid,
+      );
+    } catch (e) {
+      debugPrint('[SpaceProvider] requestIndoorRouteForSession failed: $e');
+      return null;
+    }
+  }
+
   /// Session write-through (MASTER PLAN PHASE 2, INV-1/2/6).
   ///
   /// The single route store is replaced atomically for observers: one field

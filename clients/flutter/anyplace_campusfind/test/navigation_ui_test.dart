@@ -182,6 +182,15 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
     calls.add('requestRouteForRetarget:${poi.puid}');
     return true;
   }
+  @override
+  Future<NavigationRouteModel?> requestIndoorRouteForSession({
+    required String destinationPuid,
+    required String confirmedBuid,
+    required String confirmedFloor,
+  }) async {
+    calls.add('requestIndoorRouteForSession:$destinationPuid');
+    return null;
+  }
 
   @override
   void clearNavigationRoute() {
@@ -461,7 +470,13 @@ void main() {
     expect(h.controller.navigationState, NavigationState.activeIndoor);
     await tester.pump();
     await tester.pump();
-    expect(find.text('Indoor \u2022 Floor 0'), findsOneWidget);
+    // PHASE 8 flip: the scope stub serves no indoor route, so the handoff
+    // hint takes over the label while the source line itself stays
+    // verbatim on the controller getter.
+    expect(find.text('Indoor route unavailable \u2014 following general path'),
+        findsOneWidget);
+    expect(
+        h.controller.positioningStatus, 'Indoor \u2022 Floor 0');
     await h.burnStaleTimer(tester);
   });
 

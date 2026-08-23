@@ -32,6 +32,11 @@ String navigationStatusLabel(NavigationController nav) {
       if (nav.rerouteFailed && nav.isActive) {
         return 'Recalculation failed \u2014 retrying soon';
       }
+      // PHASE 8: indoor guidance could not be fetched after the handoff —
+      // the general path keeps guiding until a floor confirmation retries.
+      if (nav.indoorGuidanceUnavailable && nav.isActive) {
+        return 'Indoor route unavailable \u2014 following general path';
+      }
       return nav.positioningStatus;
   }
 }
