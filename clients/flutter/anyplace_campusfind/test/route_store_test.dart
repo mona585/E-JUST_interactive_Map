@@ -43,8 +43,7 @@ FloorModel _floor(String n) => FloorModel(buid: 'b1', floorNumber: n);
 NavigationRouteModel _routeAt(List<double> lats) =>
     NavigationRouteModel(points: [
       for (final lat in lats)
-        NavigationRoutePoint.outdoor(
-            latitude: lat, longitude: _lng, buid: 'b1', floorNumber: '0'),
+        NavigationRoutePoint.outdoor(latitude: lat, longitude: _lng),
     ]);
 
 class _FakeGpsService implements LocationService {

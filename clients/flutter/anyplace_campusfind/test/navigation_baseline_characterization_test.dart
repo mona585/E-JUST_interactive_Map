@@ -407,18 +407,14 @@ UserLocation _gpsAt(double lat, {double accuracy = 8.0}) => UserLocation(
 
 /// Collinear outdoor route along lng=_lng through every fixture latitude.
 NavigationRouteModel _outdoorRoute() => NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8750, longitude: _lng, buid: 'bA', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8560, longitude: _lng, buid: 'bA', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8750, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
 /// A clearly different geometry served by the reroute stub.
 final NavigationRouteModel _replacementRoute = NavigationRouteModel(points: [
-  NavigationRoutePoint.outdoor(
-      latitude: 30.8930, longitude: _lng + 0.004, buid: 'bA', floorNumber: '0'),
-  NavigationRoutePoint.outdoor(
-      latitude: 30.8650, longitude: _lng + 0.004, buid: 'bA', floorNumber: '0'),
+  NavigationRoutePoint.outdoor(latitude: 30.8930, longitude: _lng + 0.004),
+  NavigationRoutePoint.outdoor(latitude: 30.8650, longitude: _lng + 0.004),
 ]);
 
 void main() {
@@ -555,24 +551,22 @@ testWidgets('PHASE 2 FLIP of BUG-2: a committed reroute reaches the '
 // CHARACTERIZATION BUG-4 (flips in Phase 7): model-level metadata lies.
 // ---------------------------------------------------------------------------
 
-group('CHARACTERIZATION BUG-4 (flips in Phase 7): outdoor points lie about '
-    'identity at model level', () {
-  test('NavigationRoutePoint.outdoor retains destination building/floor '
-      'metadata instead of being identity-free', () {
-    // The hybrid builders stamp the DESTINATION building+floor onto pure
-    // GPS waypoints; the factory accepts and keeps the lie.
-    final p = NavigationRoutePoint.outdoor(
-      latitude: 30.87,
-      longitude: _lng,
-      buid: 'bDest',
-      floorNumber: '2',
-    );
+// PHASE 7 FLIP of BUG-4: the model now tells the truth.
+// ---------------------------------------------------------------------------
+
+group('PHASE 7 FLIP of BUG-4: outdoor points are identity-free and '
+    'outdoor-ness is derived, never stamped', () {
+  test('NavigationRoutePoint.outdoor carries NO building/floor identity', () {
+    final p = NavigationRoutePoint.outdoor(latitude: 30.87,
+      longitude: _lng);
     expect(p.isOutdoor, isTrue);
-    expect(p.buid, 'bDest');
-    expect(p.floorNumber, '2');
+    expect(p.buid, '',
+        reason: 'INV-7: isOutdoor => no building id');
+    expect(p.floorNumber, '',
+        reason: 'INV-7: isOutdoor => no floor');
   });
 
-  test('fromJson never derives isOutdoor from pois_type', () {
+  test('fromJson derives isOutdoor from pois_type / synthetic puid', () {
     final route = NavigationRouteModel.fromJson(const {
       'pois': [
         {
@@ -580,26 +574,28 @@ group('CHARACTERIZATION BUG-4 (flips in Phase 7): outdoor points lie about '
           'lat': '30.0',
           'lon': '29.5',
           'buid': 'bX',
-          'floor_number': '',
+          'floor_number': '2',
           'pois_type': 'None',
         },
         {
-          'puid': 'b',
+          'puid': '__outdoor__',
           'lat': '30.001',
           'lon': '29.5',
-          'buid': 'bY',
+          'buid': 'bX',
           'floor_number': '0',
           'pois_type': 'outdoor',
         },
       ],
     });
-    expect(route.points.every((p) => p.isOutdoor), isFalse,
-        reason: 'server-derived points are never outdoor-flagged today');
-    expect(route.hasOutdoorSegment, isFalse);
+    expect(route.points, hasLength(2));
+    expect(route.points[0].isOutdoor, isFalse,
+        reason: 'server POI waypoints stay indoor-flagged with real ids');
+    expect(route.points[1].isOutdoor, isTrue,
+        reason: 'outdoor markers are honored');
+    expect(route.hasOutdoorSegment, isTrue);
   });
 
-  test("derived points fabricate phantom transitions between '' and '0'",
-      () {
+  test("derived points do NOT fabricate transitions at '' boundaries", () {
     final route = NavigationRouteModel.fromSegments(
       segments: [
         RouteSegment.outdoor(points: const [
@@ -614,12 +610,10 @@ group('CHARACTERIZATION BUG-4 (flips in Phase 7): outdoor points lie about '
       ],
       status: RouteModelStatus.ready,
     );
-    // Outdoor-derived points carry empty-string floors, so a boundary vs
-    // the ground-floor indoor point is reported as a "floor transition".
-    expect(route.floorTransitionIndices, isNotEmpty);
-    final i = route.floorTransitionIndices.first;
-    expect(route.points[i].floorNumber, '');
-    expect(route.points[i + 1].floorNumber, '0');
+    expect(route.points.first.floorNumber, '');
+    expect(route.floorTransitionIndices, isEmpty,
+        reason: "the '' <-> '0' boundary is an entrance boundary, "
+            'not a floor transition');
   });
 });
 

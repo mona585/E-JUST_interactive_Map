@@ -839,13 +839,30 @@ class NavigationController extends ChangeNotifier {
     }
   }
 
-  /// Perpendicular distance from [point] to the nearest segment of [route]
-  /// on the current navigating floor only.
+  /// Perpendicular distance from [point] to the nearest segment of [route].
+  ///
+  /// PHASE 7 / INV-7: outdoors, deviation is computed over the route's
+  /// OUTDOOR geometry explicitly — floor bookkeeping is irrelevant and the
+  /// old empty-floor-filter → infinity path can no longer occur. Indoors,
+  /// the floor-filtered subset is used as before.
   double _computeMinDeviation(LatLng point, NavigationRouteModel route) {
-    final currentFloor = _currentNavigatingFloor;
-    final points = currentFloor != null
-        ? route.polylinePointsForFloor(currentFloor)
-        : route.polylinePoints;
+    List<LatLng> points;
+    if (_state == NavigationState.activeOutdoor) {
+      points = route.outdoorPolylinePoints;
+      if (points.length < 2) {
+        // Hybrid legs without outdoor-flagged geometry (legacy server
+        // routes): fall through to the full polyline rather than infinity.
+        points = route.polylinePoints;
+      }
+    } else {
+      final currentFloor = _currentNavigatingFloor;
+      points = currentFloor != null
+          ? route.polylinePointsForFloor(currentFloor)
+          : route.polylinePoints;
+      if (points.length < 2) {
+        points = route.polylinePoints;
+      }
+    }
     if (points.length < 2) return double.infinity;
 
     double minDist = double.infinity;

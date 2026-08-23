@@ -52,17 +52,13 @@ PoiModel _destPoi() => PoiModel(
     );
 
 NavigationRouteModel _route() => NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8750, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8750, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
 NavigationRouteModel _replacement() => NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8930, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8930, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
 class _FakeGpsService implements LocationService {

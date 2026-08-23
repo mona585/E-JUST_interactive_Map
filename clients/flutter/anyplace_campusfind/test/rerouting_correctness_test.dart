@@ -42,10 +42,8 @@ SpaceModel _building() => SpaceModel(
 FloorModel _floor(String n) => FloorModel(buid: 'b1', floorNumber: n);
 
 NavigationRouteModel _route() => NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8750, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8750, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
 class _GpsService implements LocationService {

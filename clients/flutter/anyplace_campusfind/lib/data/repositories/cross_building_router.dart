@@ -156,19 +156,37 @@ class CrossBuildingRouter {
     // Filter empty segments
     final validSegments = segments.where((s) => !s.isEmpty).toList();
 
-    // Cap at 6 segments
-    if (validSegments.length > 6) {
-      validSegments.removeRange(6, validSegments.length);
+    // PHASE 7 / BUG-14: never truncate silently. If a composed journey ever
+    // exceeds the maximum, keep FIRST + LAST (origin and destination ends)
+    // and surface an explicit partial warning instead of dropping the tail.
+    const kMaxComposedSegments = 8;
+    var truncated = false;
+    if (validSegments.length > kMaxComposedSegments) {
+      debugPrint(
+        '[CrossBuildingRouter] ERROR: ${validSegments.length} segments '
+        'exceed max $kMaxComposedSegments — truncating with warning',
+      );
+      final head = validSegments.first;
+      final tail = validSegments.last;
+      validSegments
+        ..clear()
+        ..add(head)
+        ..add(tail);
+      truncated = true;
     }
 
     // Determine status
-    final hasIncomplete = validSegments.any((s) => s.isIncomplete);
+    final hasIncomplete = validSegments.any((s) => s.isIncomplete) || truncated;
     final status = hasIncomplete
         ? RouteModelStatus.partial
         : RouteModelStatus.ready;
     final warning = hasIncomplete
-        ? 'Route incomplete — ${warnings.join("; ")}. '
-          'You may need to navigate manually for part of the journey.'
+        ? (truncated
+            ? 'Journey truncated — too many segments to compose. '
+                'Navigate manually for part of the trip.'
+                '${warnings.isNotEmpty ? " Details: ${warnings.join("; ")}" : ""}'
+            : 'Route incomplete — ${warnings.join("; ")}. '
+              'You may need to navigate manually for part of the journey.')
         : null;
 
     debugPrint(
@@ -253,12 +271,15 @@ class CrossBuildingRouter {
     required bool isFallback,
   }) async {
     if (isFallback) {
-      // Straight line from user position to building centroid
+      // Straight line from user position to building centroid.
+      // PHASE 7 / BUG-14: a centroid fallback IS an incomplete leg — the
+      // partial flag must reflect reality.
       return RouteSegment.fallback(
         type: RouteSegmentType.exitTransition,
         points: [userLocation, exitPoint],
         buildingId: userBuilding.buid,
         instruction: 'Exit ${userBuilding.name}',
+        isIncomplete: true,
       );
     }
 
@@ -543,21 +564,17 @@ class CrossBuildingRouter {
 
       // ── Tier 5: OSRM-only ──
       debugPrint('[CrossBuildingRouter] Outdoor: OSRM-only (${osrmPath.length} points)');
-      return RouteSegment.outdoor(
-        points: osrmPath,
+      return RouteSegment.outdoor(points: osrmPath,
         buildingId: targetBuid,
         instruction: 'Walk to destination building',
-        distance: osrmResult.distanceMeters,
-      );
+        distance: osrmResult.distanceMeters,);
     }
 
     // ── Fallback: straight line ──
-    return RouteSegment.outdoor(
-      points: [exitPoint, entrancePoint],
+    return RouteSegment.outdoor(points: [exitPoint, entrancePoint],
       buildingId: targetBuid,
       instruction: 'Walk to destination building',
-      isIncomplete: true,
-    );
+      isIncomplete: true,);
   }
 
   /// Builds a combined route: OSRM from user to a campus entrance endpoint,
@@ -803,12 +820,14 @@ class CrossBuildingRouter {
     print('[ENTRANCE_DEBUG] isFallback=$isFallback, entrancePoi=${entrancePoi?.name}(puid=${entrancePoi?.puid}), targetPuid=$targetPuid, targetSpace=${targetSpace.name}(buid=${targetSpace.buid})');
 
     if (isFallback) {
-      // Straight line from entrance to building centroid
+      // Straight line from entrance to building centroid.
+      // PHASE 7 / BUG-14: partiality is explicit (see exit-side twin).
       return RouteSegment.fallback(
         type: RouteSegmentType.entranceTransition,
         points: [entrancePoint, targetSpace.latLng],
         buildingId: targetSpace.buid,
         instruction: 'Enter ${targetSpace.name}',
+        isIncomplete: true,
       );
     }
 

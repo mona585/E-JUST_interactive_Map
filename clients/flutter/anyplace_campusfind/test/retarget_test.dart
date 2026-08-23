@@ -52,8 +52,7 @@ PoiModel _poi(String puid, double lat, {String floor = '0'}) => PoiModel(
 
 NavigationRouteModel _routeTo(double endLat) =>
     NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(
-          latitude: 30.9000, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.9000, longitude: _lng),
       NavigationRoutePoint(
           latitude: endLat,
           longitude: _lng,

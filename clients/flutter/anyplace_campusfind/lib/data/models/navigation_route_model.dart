@@ -44,18 +44,21 @@ class NavigationRoutePoint {
   LatLng get latLng => LatLng(latitude, longitude);
 
   /// Synthetic outdoor waypoint (GPS position, not from Anyplace graph).
+  ///
+  /// PHASE 7 / INV-7: an outdoor point is IDENTITY-FREE. It carries no
+  /// building id and no floor — the parameters that used to stamp the
+  /// destination's identity onto GPS waypoints were a metadata lie and have
+  /// been removed.
   factory NavigationRoutePoint.outdoor({
     required double latitude,
     required double longitude,
-    required String buid,
-    required String floorNumber,
   }) {
     return NavigationRoutePoint(
       latitude: latitude,
       longitude: longitude,
       puid: '__outdoor__',
-      buid: buid,
-      floorNumber: floorNumber,
+      buid: '',
+      floorNumber: '',
       poisType: 'outdoor',
       isOutdoor: true,
     );
@@ -80,15 +83,22 @@ class NavigationRoutePoint {
       throw FormatException('Invalid route point field "$fieldName".');
     }
 
+    final puid = parseRequiredString('puid');
+    final poisType = json['pois_type']?.toString().trim().isNotEmpty == true
+        ? json['pois_type'].toString().trim()
+        : 'None';
+    // PHASE 7 / INV-7: server-derived points derive outdoor-ness from their
+    // own markers instead of defaulting to false forever.
+    final isOutdoor = poisType.toLowerCase() == 'outdoor' || puid == '__outdoor__';
+
     return NavigationRoutePoint(
       latitude: parseRequiredDouble('lat'),
       longitude: parseRequiredDouble('lon'),
-      puid: parseRequiredString('puid'),
+      puid: puid,
       buid: parseRequiredString('buid'),
       floorNumber: parseRequiredString('floor_number'),
-      poisType: json['pois_type']?.toString().trim().isNotEmpty == true
-          ? json['pois_type'].toString().trim()
-          : 'None',
+      poisType: poisType,
+      isOutdoor: isOutdoor,
     );
   }
 }
@@ -200,15 +210,19 @@ class NavigationRouteModel {
     final allPoints = <NavigationRoutePoint>[];
     var pointIndex = 0;
     for (final seg in segments) {
+      // PHASE 7 / INV-7: outdoorWalking segments project IDENTITY-FREE
+      // points — the segment-level buildingId is journey context for
+      // instructions, never a claim about the GPS waypoint itself.
+      final isOutdoorSeg = seg.type == RouteSegmentType.outdoorWalking;
       for (final pt in seg.points) {
         allPoints.add(NavigationRoutePoint(
           latitude: pt.latitude,
           longitude: pt.longitude,
           puid: '${seg.type.name}_$pointIndex',
-          buid: seg.buildingId ?? '',
-          floorNumber: seg.floorNumber ?? '',
-          poisType: seg.type.name,
-          isOutdoor: seg.type == RouteSegmentType.outdoorWalking,
+          buid: isOutdoorSeg ? '' : (seg.buildingId ?? ''),
+          floorNumber: isOutdoorSeg ? '' : (seg.floorNumber ?? ''),
+          poisType: isOutdoorSeg ? 'outdoor' : seg.type.name,
+          isOutdoor: isOutdoorSeg,
         ));
         pointIndex++;
       }
@@ -235,12 +249,31 @@ class NavigationRouteModel {
 
   /// Indices where the floor number changes between consecutive points.
   ///
-  /// Each entry is the index of the point BEFORE the floor change (the
-  /// connector POI on the current floor). The next point is on a different floor.
+  /// PHASE 7 / INV-7: only changes between two NON-EMPTY floors count as
+  /// floor transitions. An empty floor marks an entrance/exit boundary
+  /// (outdoor leg meeting indoor leg) — those boundaries are already
+  /// represented by segment types and must never fabricate a "transition"
+  /// (the old ''↔'0' phantom).
   List<int> get floorTransitionIndices {
     final indices = <int>[];
     for (var i = 0; i < points.length - 1; i++) {
-      if (points[i].floorNumber != points[i + 1].floorNumber) {
+      final a = points[i].floorNumber;
+      final b = points[i + 1].floorNumber;
+      if (a.isEmpty || b.isEmpty) continue;
+      if (a != b) indices.add(i);
+    }
+    return indices;
+  }
+
+  /// Indices of points that act as entrance/exit markers (poiType based).
+  ///
+  /// Convenience for rendering connectors at journey boundaries without
+  /// treating them as floor transitions.
+  List<int> get entranceExitIndices {
+    final indices = <int>[];
+    for (var i = 0; i < points.length; i++) {
+      final t = points[i].poisType.toLowerCase();
+      if (t.contains('entrance') || t.contains('exit')) {
         indices.add(i);
       }
     }

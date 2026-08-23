@@ -976,22 +976,14 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     final outdoorPoints = <NavigationRoutePoint>[];
     if (outdoorPath.length >= 2) {
       for (final pt in outdoorPath) {
-        outdoorPoints.add(NavigationRoutePoint.outdoor(
-          latitude: pt.latitude,
-          longitude: pt.longitude,
-          buid: poi.buid,
-          floorNumber: poi.floorNumber,
-        ));
+        outdoorPoints.add(NavigationRoutePoint.outdoor(latitude: pt.latitude,
+          longitude: pt.longitude));
       }
     } else {
       // Fallback: straight line if OSRM fails
       outdoorPoints.addAll([
-        NavigationRoutePoint.outdoor(
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          buid: poi.buid,
-          floorNumber: poi.floorNumber,
-        ),
+        NavigationRoutePoint.outdoor(latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude),
         NavigationRoutePoint(
           latitude: destLatLng.latitude,
           longitude: destLatLng.longitude,
@@ -1656,22 +1648,14 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     final outdoorPoints = <NavigationRoutePoint>[];
     if (outdoorPath.length >= 2) {
       for (final pt in outdoorPath) {
-        outdoorPoints.add(NavigationRoutePoint.outdoor(
-          latitude: pt.latitude,
-          longitude: pt.longitude,
-          buid: destBuid,
-          floorNumber: floorNumber,
-        ));
+        outdoorPoints.add(NavigationRoutePoint.outdoor(latitude: pt.latitude,
+          longitude: pt.longitude));
       }
     } else {
       // Fallback: straight line if OSRM fails
       outdoorPoints.addAll([
-        NavigationRoutePoint.outdoor(
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          buid: destBuid,
-          floorNumber: floorNumber,
-        ),
+        NavigationRoutePoint.outdoor(latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude),
         NavigationRoutePoint(
           latitude: destLatLng.latitude,
           longitude: destLatLng.longitude,

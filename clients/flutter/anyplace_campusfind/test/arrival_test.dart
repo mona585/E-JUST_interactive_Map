@@ -260,24 +260,18 @@ PoiModel _poi({
 /// Flat collinear route ending at [endLat] (the fallback arrival anchor).
 NavigationRouteModel _route({double endLat = _endLat}) =>
     NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8750, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8700, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: endLat, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8750, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8700, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: endLat, longitude: _lng),
     ]);
 
 /// Collinear indoor corridor covering the Wi-Fi walk region so the deviation
 /// detector always sees the walker on-route.
 NavigationRouteModel _indoorCorridorRoute() =>
     NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(
-          latitude: 30.87000, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.86600, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.86400, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.87000, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.86600, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.86400, longitude: _lng),
     ]);
 
 /// Two-segment journey whose FIRST segment endpoint (30.8740) is not the
@@ -286,14 +280,10 @@ NavigationRouteModel _indoorCorridorRoute() =>
 /// filter compares against the navigating floor's projection).
 NavigationRouteModel _twoSegmentRoute() => NavigationRouteModel(
       points: [
-        NavigationRoutePoint.outdoor(
-            latitude: 30.8760, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(
-            latitude: 30.8740, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(
-            latitude: 30.8720, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(
-            latitude: 30.8700, longitude: _lng, buid: 'b1', floorNumber: '0'),
+        NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8740, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8720, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8700, longitude: _lng),
       ],
       segments: [
         RouteSegment.outdoor(

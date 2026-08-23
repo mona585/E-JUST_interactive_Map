@@ -41,14 +41,16 @@ void main() {
         route.points.map((p) => p.poisType).toList(),
         [
           'exitTransition', 'exitTransition', 'exitTransition',
-          'outdoorWalking', 'outdoorWalking',
+          // PHASE 7 FLIP: outdoor-derived points are identity-free markers.
+          'outdoor', 'outdoor',
           'entranceTransition', 'entranceTransition',
         ],
       );
       expect(route.points.where((p) => p.isOutdoor).length, 2);
       expect(route.points[0].floorNumber, '2');
       expect(route.points[3].floorNumber, '');
-      expect(route.points[3].buid, 'b2');
+      expect(route.points[3].buid, '',
+          reason: 'PHASE 7 / INV-7: outdoor points carry no building id');
       expect(route.points.last.latitude, 30.8665);
       expect(route.polylinePoints.length, 7);
     });
@@ -108,10 +110,8 @@ void main() {
       expect(partial.partialRouteWarning, 'missing leg');
 
       final plain = NavigationRouteModel(points: [
-        NavigationRoutePoint.outdoor(
-            latitude: 30.86, longitude: 29.58, buid: 'b', floorNumber: ''),
-        NavigationRoutePoint.outdoor(
-            latitude: 30.87, longitude: 29.58, buid: 'b', floorNumber: ''),
+        NavigationRoutePoint.outdoor(latitude: 30.86, longitude: 29.58),
+        NavigationRoutePoint.outdoor(latitude: 30.87, longitude: 29.58),
       ]);
       expect(plain.isPartial, isFalse);
       expect(plain.hasSegments, isFalse);
@@ -136,16 +136,17 @@ void main() {
       );
 
       // Floors along the projection: '', '', '0', '0', '3'.
+      // PHASE 7 FLIP: empty floors mark entrance boundaries and never count
+      // as transitions — only the '0' -> '3' change between two non-empty
+      // floors is a floor transition.
       expect(route.hasFloorTransitions, isTrue);
-      expect(route.floorTransitionIndices, [1, 3]);
+      expect(route.floorTransitionIndices, [3]);
     });
 
     test('legacy points-only routes keep their render accessors', () {
       final route = NavigationRouteModel(points: [
-        NavigationRoutePoint.outdoor(
-            latitude: 30.86, longitude: 29.58, buid: 'b', floorNumber: ''),
-        NavigationRoutePoint.outdoor(
-            latitude: 30.87, longitude: 29.58, buid: 'b', floorNumber: ''),
+        NavigationRoutePoint.outdoor(latitude: 30.86, longitude: 29.58),
+        NavigationRoutePoint.outdoor(latitude: 30.87, longitude: 29.58),
         NavigationRoutePoint(
           latitude: 30.88,
           longitude: 29.58,

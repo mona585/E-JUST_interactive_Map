@@ -255,8 +255,8 @@ PoiModel _entrancePoi() => PoiModel(
 
 /// Long collinear outdoor route through every fixture latitude.
 NavigationRouteModel _route() => NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(latitude: 30.8750, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(latitude: 30.8700, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8750, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8700, longitude: _lng),
       NavigationRoutePoint(
         latitude: 30.8650,
         longitude: _lng,
@@ -265,7 +265,7 @@ NavigationRouteModel _route() => NavigationRouteModel(points: [
         floorNumber: '0',
         poisType: 'entrance',
       ),
-      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
 /// A route with no indoor information at all — exercises the legacy tiers
@@ -273,8 +273,8 @@ NavigationRouteModel _route() => NavigationRouteModel(points: [
 /// floor '0' so the floor-filtered deviation corridor stays visible while
 /// the user walks the approach.
 NavigationRouteModel _pureOutdoorRoute() => NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
 /// Outdoor walk ending at lat 30.8720 (far from every fixture POI/building),
@@ -984,10 +984,10 @@ void main() {
     );
     h.scope.activeNavigationRoute = NavigationRouteModel(
       points: [
-        NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(latitude: 30.8700, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(latitude: 30.8660, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+        NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8700, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8660, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
         NavigationRoutePoint(
           latitude: 30.8559,
           longitude: _lng,
@@ -1034,7 +1034,7 @@ void main() {
     // corridor stays on-route; outdoor points carry floor '0' so the
     // floor-filtered deviation view keeps the corridor visible.
     h.scope.activeNavigationRoute = NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng),
       NavigationRoutePoint(
         latitude: 30.8660,
         longitude: _lng,
@@ -1043,7 +1043,7 @@ void main() {
         floorNumber: '1',
         poisType: 'None',
       ),
-      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
     h.startOutdoor();
@@ -1092,7 +1092,7 @@ void main() {
     final h = _Harness(withEntrancePoi: true, floors: [_floor('0')]);
     addTearDown(h.dispose);
     h.scope.activeNavigationRoute = NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng),
       NavigationRoutePoint(
         latitude: 30.8660,
         longitude: _lng,
@@ -1101,7 +1101,7 @@ void main() {
         floorNumber: '9',
         poisType: 'None',
       ),
-      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
     h.startOutdoor();

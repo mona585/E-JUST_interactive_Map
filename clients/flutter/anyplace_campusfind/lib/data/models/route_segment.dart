@@ -197,6 +197,11 @@ class RouteSegment {
   /// The [points] should contain two points: the start (user position or
   /// building centroid) and the end (building centroid or entrance location).
   /// The [isFallbackLocation] flag is automatically set to `true`.
+  ///
+  /// PHASE 7 / BUG-14: a fallback leg is by definition incomplete. Callers
+  /// MUST pass `isIncomplete: true` (the router does) so composed-route
+  /// partiality reflects reality; this factory does not force the flag in
+  /// order to keep it explicit at every call site.
   factory RouteSegment.fallback({
     required RouteSegmentType type,
     required List<LatLng> points,

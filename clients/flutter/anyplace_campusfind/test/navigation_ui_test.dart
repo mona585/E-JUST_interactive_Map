@@ -250,26 +250,19 @@ PoiModel _poi({
 
 /// Flat segmentless route ending at 30.8560.
 NavigationRouteModel _route() => NavigationRouteModel(points: [
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8750, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8700, longitude: _lng, buid: 'b1', floorNumber: '0'),
-      NavigationRoutePoint.outdoor(
-          latitude: 30.8560, longitude: _lng, buid: 'b1', floorNumber: '0'),
+      NavigationRoutePoint.outdoor(latitude: 30.8750, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8700, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: 30.8560, longitude: _lng),
     ]);
 
 /// Two-segment route carrying instructions; explicit points keep every
 /// waypoint on floor '0' so the deviation filter sees the walker on-route.
 NavigationRouteModel _twoSegmentRoute() => NavigationRouteModel(
       points: [
-        NavigationRoutePoint.outdoor(
-            latitude: 30.8760, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(
-            latitude: 30.8740, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(
-            latitude: 30.8720, longitude: _lng, buid: 'b1', floorNumber: '0'),
-        NavigationRoutePoint.outdoor(
-            latitude: 30.8700, longitude: _lng, buid: 'b1', floorNumber: '0'),
+        NavigationRoutePoint.outdoor(latitude: 30.8760, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8740, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8720, longitude: _lng),
+        NavigationRoutePoint.outdoor(latitude: 30.8700, longitude: _lng),
       ],
       segments: [
         RouteSegment.outdoor(
