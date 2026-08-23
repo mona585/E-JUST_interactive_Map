@@ -305,7 +305,7 @@ class BuildingDetailCard extends StatelessWidget {
                                     : () {
                                         if (hasRoute) {
                                           spaceProvider.clearNavigationRoute();
-                                          navController.endNavigation();
+                                          navController.terminateNavigation();
                                         } else {
                                           spaceProvider
                                               .requestRouteToBuilding(space);

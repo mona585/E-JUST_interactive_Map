@@ -157,6 +157,28 @@ class NavigationController extends ChangeNotifier {
       _session!.sessionId == sessionId &&
       _session!.routeRevision == revision;
 
+  // ── PHASE 15: structured event log ───────────────────────────────
+
+  /// Emits one canonical `[NAV] EVENT=…` line. Verbose events are dropped in
+  /// profile/release ([kDebugMode]); force=true keeps SESSION/TERMINATE/
+  /// ARRIVAL-class lines always on.
+  void _navEvent(String name, {String detail = '', bool force = false}) {
+    if (!force && !kDebugMode) return;
+    final s = _session;
+    final fix = _locationProvider.currentFix;
+    final src = fix == null
+        ? '-'
+        : (fix.source == PositionSource.wifi ? 'wifi' : 'gps');
+    navigationLog('[NAV] EVENT=$name'
+        ' sid=${s?.sessionId ?? '-'}'
+        ' rev=${s?.routeRevision ?? '-'}'
+        ' dst=${s?.destinationPuid ?? '-'}'
+        ' bldg=${s?.destinationSpace?.buid ?? '-'}'
+        ' flr=${_currentNavigatingFloor ?? '-'}'
+        ' src=$src'
+        '${detail.isEmpty ? '' : ' detail=$detail'}');
+  }
+
   /// PHASE 14: single choke point for every session write-through. The
   /// debug-mode assertion makes any reentrant adoption loop fail fast in
   /// tests instead of silently corrupting observer order.
@@ -220,6 +242,7 @@ class NavigationController extends ChangeNotifier {
     }
 
     _state = to;
+    _navEvent('STATE', detail: '$from->$to');
 
     switch (to) {
       case NavigationState.paused:
@@ -430,8 +453,8 @@ class NavigationController extends ChangeNotifier {
     if (wasIdle) {
       _transition(NavigationState.routePreview);
     }
-    debugPrint('[NAV] SESSION_START sid=${_session!.sessionId} '
-        'dst=$destinationPuid rev=${_session!.routeRevision}');
+    _navEvent('PREVIEW_SEED', detail: 'points=${route.points.length}');
+    _navEvent('SESSION_START', force: true);
     notifyListeners();
   }
 
@@ -518,6 +541,7 @@ class NavigationController extends ChangeNotifier {
       _resolveArrivalAnchor();
       _routeIncomplete = false;
       _indoorGuidanceEnsured = true;
+      _navEvent('ROUTE_COMMIT', detail: 'source=indoor-guidance');
       _indoorGuidanceFailed = false;
       debugPrint('[NAV] INDOOR_GUIDANCE_COMMITTED sid=$sid '
           'rev=${_session!.routeRevision}');
@@ -562,9 +586,29 @@ class NavigationController extends ChangeNotifier {
     _indoorGuidanceFailed = false;
     _routeIncomplete = false;
     if (endedSessionId != null) {
-      debugPrint('[NAV] SESSION_END sid=$endedSessionId');
+      _navEvent('TERMINATE', detail: 'sid=$endedSessionId', force: true);
+      _navEvent('SESSION_END', force: true);
     }
     notifyListeners();
+  }
+
+  /// Canonical teardown (MASTER PLAN PHASE 15, INV-10).
+  ///
+  /// Single-call termination from EVERY state. Never throws — even a
+  /// misbehaving scope cannot break teardown; failures are logged instead.
+  /// [endNavigation] is retained as the legacy alias delegating here.
+  void terminateNavigation() {
+    try {
+      endNavigation();
+    } catch (e) {
+      navigationLog('[NAV] TERMINATE_FAULT detail=$e');
+      _state = NavigationState.idle;
+      _session = null;
+      try {
+        _spaceScope.clearNavigationRoute();
+      } catch (_) {}
+      notifyListeners();
+    }
   }
 
   /// Marks arrival at the destination.
@@ -786,8 +830,8 @@ class NavigationController extends ChangeNotifier {
   void _evaluateBeliefFlip(PositionFix? fix) {
     if (_state != NavigationState.activeOutdoor) return;
     if (fix?.source != PositionSource.wifi) return;
-    debugPrint(
-        '[NavigationController] WiFi belief outdoors — entering building flow');
+    _navEvent('HANDOFF_ENTER_START', detail: 'belief-flip');
+    debugPrint('[NavigationController] WiFi belief outdoors — entering building flow');
     _transition(NavigationState.enteringBuilding);
   }
 
@@ -810,6 +854,7 @@ class NavigationController extends ChangeNotifier {
           debugPrint(
               '[NavigationController] Building entry corroborated by WiFi');
           _entryDwellCooldownUntil = null;
+          _navEvent('HANDOFF_ENTER_CONFIRM', detail: 'corroborated', force: true);
           _transition(NavigationState.activeIndoor);
           // PHASE 8: handoff completeness — refresh guidance content.
           _ensureIndoorGuidance();
@@ -817,6 +862,7 @@ class NavigationController extends ChangeNotifier {
         }
         if (navigationDwellExpired(_dwellStart, _now(),
             NavigationConfig.enteringCorroborationTimeoutSeconds)) {
+          _navEvent('HANDOFF_ENTER_TIMEOUT', detail: 'reverting outdoors');
           debugPrint(
               '[NavigationController] Entry not corroborated within '
               '${NavigationConfig.enteringCorroborationTimeoutSeconds}s — '
@@ -836,6 +882,7 @@ class NavigationController extends ChangeNotifier {
         }
         if (navigationDwellExpired(_dwellStart, _now(),
             NavigationConfig.exitingCorroborationTimeoutSeconds)) {
+          _navEvent('HANDOFF_EXIT_TIMEOUT', detail: 'staying indoors');
           debugPrint(
               '[NavigationController] Exit not confirmed within '
               '${NavigationConfig.exitingCorroborationTimeoutSeconds}s — '
@@ -845,7 +892,8 @@ class NavigationController extends ChangeNotifier {
         }
         if (location.accuracy <= NavigationConfig.exitAccuracyThreshold &&
             _isOutsideBuilding(location)) {
-          debugPrint('[NavigationController] Building exit confirmed');
+          _navEvent('HANDOFF_EXIT_CONFIRM', force: true);
+      debugPrint('[NavigationController] Building exit confirmed');
           _applyBuildingExitSideEffects();
           _transition(NavigationState.activeOutdoor);
         }
@@ -1036,6 +1084,7 @@ class NavigationController extends ChangeNotifier {
     // transition must never consume it (BUG-13).
     if (!_transition(NavigationState.rerouting)) return;
     _lastRerouteTime = _now();
+    _navEvent('REROUTE_TRIGGER', detail: 'origin=');
     notifyListeners();
 
     // Capture identity for fencing; nothing captured here may be trusted
@@ -1079,6 +1128,7 @@ class NavigationController extends ChangeNotifier {
               // Fenced, atomic write-through (INV-6): store + revision bump
               // + anchor re-resolution inside one observer notification.
               if (_isCurrent(sessionId: sid, revision: rev)) {
+                _navEvent('ROUTE_COMMIT', detail: 'source=reroute-kmz');
                 _adoptNavigatedRoute(customRoute);
                 _session!.routeRevision++;
                 _resolveArrivalAnchor();
@@ -1115,8 +1165,7 @@ class NavigationController extends ChangeNotifier {
         // A still-live session (superseded revision) returns to its
         // activity; an ended session is already idle and needs nothing.
         if (!_isCurrent(sessionId: sid, revision: rev)) {
-          debugPrint('[NavigationController] Reroute result discarded '
-              '(stale session/revision)');
+          _navEvent('ROUTE_DISCARDED', detail: 'reason=stale-session');
           if (_state == NavigationState.rerouting) {
             _transition(origin);
             notifyListeners();
@@ -1125,6 +1174,7 @@ class NavigationController extends ChangeNotifier {
         }
         if (route.hasRenderablePath) {
           // Fenced, atomic write-through (INV-6).
+          _navEvent('ROUTE_COMMIT', detail: 'source=reroute-api attempt=');
           _adoptNavigatedRoute(route);
           _session!.routeRevision++;
           _resolveArrivalAnchor();
@@ -1146,8 +1196,7 @@ class NavigationController extends ChangeNotifier {
       // Exponential backoff: 1s, 2s, 4s
       await Future.delayed(Duration(seconds: 1 << attempt));
       if (!_isCurrent(sessionId: sid, revision: rev)) {
-        debugPrint('[NavigationController] Reroute cancelled during backoff '
-            '(stale session/revision)');
+        _navEvent('ROUTE_DISCARDED', detail: 'reason=backoff-cancelled');
         if (_state == NavigationState.rerouting) {
           _transition(origin);
           notifyListeners();
@@ -1160,6 +1209,7 @@ class NavigationController extends ChangeNotifier {
       // INV-8/INV-6 failure semantics: the valid old route persists and the
       // failure is visible (transient flag cleared on next success or End).
       _rerouteFailed = true;
+      _navEvent('REROUTE_FAILED', detail: 'keeping previous route');
       debugPrint('[NavigationController] Reroute failed — keeping previous '
           'route');
     }
@@ -1247,6 +1297,7 @@ class NavigationController extends ChangeNotifier {
     // DETECTED: first consistent divergent evidence tick of the current
     // accumulation run (ORIGINAL PHASE 5 — stage visibility).
     if (_newFloorEstimateCount == 1) {
+      _navEvent('FLOOR_EVENT', detail: 'kind=detected');
       _recordFloorTransitionEvent(FloorTransitionEvent(
         stage: FloorTransitionStage.detected,
         trigger: FloorTransitionTrigger.evidence,
@@ -1281,6 +1332,7 @@ class NavigationController extends ChangeNotifier {
     _transitionStartTime = _now();
 
     // EXPECTED: the route anticipates a floor change (connector approached).
+    _navEvent('FLOOR_EVENT', detail: 'kind=expected');
     _recordFloorTransitionEvent(FloorTransitionEvent(
       stage: FloorTransitionStage.expected,
       trigger: FloorTransitionTrigger.connectorProximity,
@@ -1339,6 +1391,7 @@ class NavigationController extends ChangeNotifier {
 
     // CONFIRMED: evidence-gated acceptance — the only stage that represents
     // physical-floor proof (ORIGINAL PHASE 5 invariant).
+    _navEvent('FLOOR_EVENT', detail: 'kind=confirmed', force: true);
     _recordFloorTransitionEvent(FloorTransitionEvent(
       stage: FloorTransitionStage.confirmed,
       trigger: _connectorInitiatedTransition
@@ -1371,6 +1424,7 @@ class NavigationController extends ChangeNotifier {
       );
       // ABORTED: the dwell exceeded its timeout; evidence re-evaluates on
       // subsequent ticks (ORIGINAL PHASE 5 — stage visibility).
+      _navEvent('FLOOR_EVENT', detail: 'kind=aborted');
       _recordFloorTransitionEvent(FloorTransitionEvent(
         stage: FloorTransitionStage.aborted,
         trigger: FloorTransitionTrigger.timeout,
@@ -1608,10 +1662,11 @@ class NavigationController extends ChangeNotifier {
     }
 
     _exitConfirmationCounter = 0;
+    _navEvent('HANDOFF_ENTER_START', detail: 'entrance-proximity');
     _transition(NavigationState.enteringBuilding);
     notifyListeners();
 
-        // PHASE 8: indoor route refresh happens when corroboration completes —
+    // PHASE 8: indoor route refresh happens when corroboration completes —
     // see _ensureIndoorGuidance(), invoked from the ACTIVE_INDOOR entry
     // points.
   }
@@ -1877,6 +1932,7 @@ class NavigationController extends ChangeNotifier {
   /// Shared arrival path for the evidence producer and the manual hook.
   void _arrive() {
     if (!_state.isActivity) return;
+    _navEvent('ARRIVAL', detail: 'anchor resolved', force: true);
     _transition(NavigationState.arrived);
     notifyListeners();
   }

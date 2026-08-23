@@ -202,14 +202,14 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet>
                       // canonical way — Phase 2's endNavigation also clears
                       // the single store, so no ghost route survives.
                       if (navController.isPreview) {
-                        navController.endNavigation();
+                        navController.terminateNavigation();
                       }
                     },
                     onNavigate: () =>
                         spaceProvider.requestRouteToSelectedPoi(),
                     onClearRoute: () {
                       spaceProvider.clearNavigationRoute();
-                      navController.endNavigation();
+                      navController.terminateNavigation();
                     },
                     onStartDirections: () {
                       final target = selectedPoi;
@@ -229,7 +229,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet>
                       widget.onFitRouteBounds?.call(spaceProvider);
                     },
                     onEndNavigation: () {
-                      navController.endNavigation();
+                      navController.terminateNavigation();
                       spaceProvider.clearNavigationRoute();
                     },
                     isLoadingRoute: spaceProvider.isLoadingNavigationRoute,
@@ -391,7 +391,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet>
           const SizedBox(width: 8),
           GestureDetector(
             onTap: () {
-              navController.endNavigation();
+              navController.terminateNavigation();
               spaceProvider.clearNavigationRoute();
             },
             child: Container(

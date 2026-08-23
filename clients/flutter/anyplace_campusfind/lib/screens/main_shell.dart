@@ -41,7 +41,11 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     if (navController.isActive || navController.isPreview) {
       debugPrint('[MainShell] Leaving Map tab — stopping navigation');
-      navController.endNavigation();
+      // PHASE 15 policy (documented product decision, v1): leaving the Map
+      // tab TERMINATES the navigation session BY DESIGN. terminateNavigation
+      // already clears the single store; the explicit clear below is a
+      // harmless idempotent belt-and-braces. Revisit = product backlog note.
+      navController.terminateNavigation();
       spaceProvider.clearNavigationRoute();
     }
   }

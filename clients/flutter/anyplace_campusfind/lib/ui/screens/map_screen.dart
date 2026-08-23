@@ -1291,7 +1291,7 @@ class _MapScreenState extends State<MapScreen>
                     children: [
                       ArrivalBanner(
                         onDone: () {
-                          context.read<NavigationController>().endNavigation();
+                          context.read<NavigationController>().terminateNavigation();
                           spaceProvider.clearNavigationRoute();
                         },
                       ),
