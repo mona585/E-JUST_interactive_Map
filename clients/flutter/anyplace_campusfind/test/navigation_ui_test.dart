@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:anyplace_campusfind/config/navigation_config.dart';
 import 'package:anyplace_campusfind/data/datasources/location_service.dart';
 import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
 import 'package:anyplace_campusfind/data/models/floor_model.dart';
@@ -493,7 +494,10 @@ void main() {
     await h.startOutdoor(tester);
     await h.pumpStatusBar(tester);
 
-    h.provider.setGpsLocation(_gps(30.8700, accuracy: 120));
+    // PHASE 5: pause needs gpsPausePoorTicks consecutive degraded fixes.
+    for (var i = 0; i < NavigationConfig.gpsPausePoorTicks; i++) {
+      h.provider.setGpsLocation(_gps(30.8700, accuracy: 120));
+    }
     await tester.pump();
 
     expect(h.controller.isPaused, isTrue);

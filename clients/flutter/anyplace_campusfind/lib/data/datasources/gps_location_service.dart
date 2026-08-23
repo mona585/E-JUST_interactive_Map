@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../config/navigation_config.dart';
 import '../models/user_location.dart';
 import 'location_service.dart';
 
@@ -71,11 +72,20 @@ class GpsLocationService implements LocationService {
       return _toUserLocation(position);
     } catch (e) {
       debugPrint('[GpsLocationService] getCurrentPosition failed: $e');
-      // Fall back to last known position if current position times out
+      // Fall back to last known position if current position times out.
+      // PHASE 5: the fallback is stamped with its own observation time and
+      // explicitly age-checked against the staleness window before use —
+      // an old last-known fix is worthless for navigation.
       try {
         final lastKnown = await Geolocator.getLastKnownPosition();
         debugPrint('[GpsLocationService] Last known: ${lastKnown != null ? "${lastKnown.latitude},${lastKnown.longitude}" : "null"}');
         if (lastKnown != null) {
+          final age = DateTime.now().difference(lastKnown.timestamp);
+          if (age.inSeconds > NavigationConfig.gpsStaleAfterSeconds) {
+            debugPrint('[GpsLocationService] Last known fix rejected: '
+                '${age.inSeconds}s old exceeds staleness window');
+            return null;
+          }
           return _toUserLocation(lastKnown);
         }
       } catch (e2) {
@@ -91,12 +101,12 @@ class GpsLocationService implements LocationService {
     // produces them, with a 500 ms minimum interval on Android so the
     // provider — not a tight loop — controls fix frequency.
     //
-    // Platform limitation: geolocator's Dart API types distanceFilter as int,
-    // so sub-meter filters (e.g. 0.3 m) cannot be expressed directly. A value
-    // < 1 is mapped to 0, which disables the displacement gate on Android and
-    // lets the fused provider + interval decide when a new fix is meaningful.
+    // Platform limitation (PHASE 5): geolocator's Dart API types
+    // distanceFilter as int, so sub-meter filters cannot be expressed. Any
+    // value < 1 m is mapped to the minimum supported gate of 1 m; true
+    // sub-meter displacement gating is unsupported until upstream changes.
     final effectiveFilter =
-        distanceFilter < 1 ? 0 : distanceFilter.round();
+        distanceFilter < 1 ? 1 : distanceFilter.round();
 
     final locationSettings = Platform.isAndroid
         ? AndroidSettings(

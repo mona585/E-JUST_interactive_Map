@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:anyplace_campusfind/config/navigation_config.dart';
 import 'package:anyplace_campusfind/data/datasources/location_service.dart';
 import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
 import 'package:anyplace_campusfind/data/models/floor_model.dart';
@@ -361,8 +362,11 @@ void main() {
     addTearDown(h.dispose);
     h.startOutdoor();
 
-    // Pause via weak GPS (on-route so deviation cannot fire first).
-    h.provider.setGpsLocation(_gps(30.8700, accuracy: 150));
+    // Pause via sustained weak GPS (on-route so deviation cannot fire first;
+    // PHASE 5: gpsPausePoorTicks consecutive degraded fixes are required).
+    for (var i = 0; i < NavigationConfig.gpsPausePoorTicks; i++) {
+      h.provider.setGpsLocation(_gps(30.8700, accuracy: 150));
+    }
     expect(h.controller.isPaused, isTrue);
     expect(h.controller.lastRerouteTimeForTest, isNull);
 

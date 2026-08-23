@@ -94,6 +94,32 @@ class LocationProvider extends ChangeNotifier {
   UserLocation? _gpsLocation;
   PositionEstimate? _latestIndoorEstimate;
 
+  // -- PHASE 5: GPS ingestion quality gate (INV-8 inputs, INV-11) --
+  /// Most recent raw GPS sample regardless of gate outcome (INV-11: raw
+  /// preservation; filtering is per-fix acceptance, not rate reduction).
+  UserLocation? _lastRawGps;
+
+  /// Diagnostics view of the untouched last raw GPS sample (INV-11).
+  UserLocation? get lastRawGpsForDiagnostics => _lastRawGps;
+
+  /// Last GPS sample that PASSED the quality gate.
+  UserLocation? _lastAcceptedGps;
+
+  /// Canonical-candidate fix built exclusively from accepted GPS samples.
+  PositionFix? _gpsFix;
+
+  /// Consecutive outlier samples accepted as real fast movement guard.
+  int _gpsOutlierStreak = 0;
+
+  /// Consecutive degraded (stale/rejected/poor/held) GPS samples.
+  int _gpsDegradedStreak = 0;
+
+  /// Whether the GPS feed is currently degraded for decision purposes:
+  /// [NavigationConfig.gpsPausePoorTicks] consecutive poor/invalid/held
+  /// fixes. Consumers (pause logic) must wait this out before acting.
+  bool get gpsDegraded =>
+      _gpsDegradedStreak >= NavigationConfig.gpsPausePoorTicks;
+
   // -- Unified arbiter state --
   _ArbiterMode _mode = _ArbiterMode.outdoor;
 
@@ -461,36 +487,119 @@ class LocationProvider extends ChangeNotifier {
   }
 
   /// Deterministic GPS confidence mapping from reported accuracy.
+  ///
+  /// PHASE 5 bands: ≤5 m excellent; ≤ good high; anything accepted above
+  /// the poor band is flagged low-confidence so decisions can ignore it.
   double _gpsConfidence(double accuracy) {
     if (accuracy <= 5.0) return 0.9;
-    if (accuracy <= NavigationConfig.exitAccuracyThreshold) return 0.7;
-    return 0.5;
+    if (accuracy <= NavigationConfig.gpsGoodAccuracyMeters) return 0.7;
+    return 0.25;
+  }
+
+  // ── PHASE 5: GPS ingestion gate ──────────────────────────────────────
+
+  /// Single intake point for every raw GPS sample (stream, manual injection,
+  /// initial centering). Applies staleness, accuracy-band and implied-speed
+  /// gates BEFORE anything can become canonical; raw samples are always
+  /// preserved on [_gpsLocation]/[_lastRawGps] (INV-11).
+  void _ingestGps(UserLocation location) {
+    _lastRawGps = location;
+    _gpsLocation = location;
+    final now = DateTime.now();
+
+    // Staleness: a fix older than the window must never refresh the
+    // canonical position; an existing fix is demoted to stale for display.
+    final age = now.difference(location.timestamp);
+    if (age.inSeconds > NavigationConfig.gpsStaleAfterSeconds) {
+      debugPrint('[LocationProvider] GPS fix stale (${age.inSeconds}s) — '
+          'not applied');
+      _markDegraded();
+      _demoteGpsFixToStale();
+      return;
+    }
+
+    // Hard rejection band.
+    if (location.accuracy > NavigationConfig.gpsRejectAccuracyMeters) {
+      debugPrint('[LocationProvider] GPS fix rejected '
+          '(accuracy ${location.accuracy.toStringAsFixed(0)}m)');
+      _markDegraded();
+      return;
+    }
+
+    // Implied-speed outlier: implausible displacement without good accuracy
+    // is held for [gpsOutlierHoldTicks] ticks; a second consecutive outlier
+    // is accepted as genuine fast movement.
+    final prev = _lastAcceptedGps;
+    if (prev != null) {
+      final dtMs =
+          location.timestamp.difference(prev.timestamp).inMilliseconds;
+      if (dtMs > 0) {
+        final dist = Geolocator.distanceBetween(
+            prev.latitude, prev.longitude, location.latitude, location.longitude);
+        final speed = dist / (dtMs / 1000.0);
+        final newAccuracyIsGood =
+            location.accuracy <= NavigationConfig.gpsGoodAccuracyMeters;
+        if (speed > NavigationConfig.gpsMaxImpliedSpeedMps &&
+            !newAccuracyIsGood) {
+          _gpsOutlierStreak++;
+          _markDegraded();
+          if (_gpsOutlierStreak <= NavigationConfig.gpsOutlierHoldTicks) {
+            debugPrint('[LocationProvider] GPS outlier held '
+                '(${speed.toStringAsFixed(0)} m/s implied); holding previous fix');
+            _holdGpsFix(location.timestamp);
+            return;
+          }
+          debugPrint('[LocationProvider] GPS outlier streak accepted as real '
+              'movement');
+        }
+      }
+    }
+    _gpsOutlierStreak = 0;
+
+    // Accepted.
+    _lastAcceptedGps = location;
+    _gpsDegradedStreak = 0;
+    _gpsFix = PositionFix(
+      latitude: location.latitude,
+      longitude: location.longitude,
+      source: PositionSource.gps,
+      accuracy: location.accuracy,
+      confidence: _gpsConfidence(location.accuracy),
+      timestamp: location.timestamp,
+      status: PositionFixStatus.fresh,
+    );
+  }
+
+  void _markDegraded() {
+    _gpsDegradedStreak++;
+  }
+
+  void _holdGpsFix(DateTime observedAt) {
+    final fix = _gpsFix;
+    if (fix == null) return;
+    _gpsFix = fix.copyWith(
+      timestamp: observedAt,
+      status: PositionFixStatus.held,
+    );
+  }
+
+  void _demoteGpsFixToStale() {
+    final fix = _gpsFix;
+    if (fix == null || fix.status == PositionFixStatus.stale) return;
+    _gpsFix = fix.copyWith(status: PositionFixStatus.stale);
   }
 
   // -- Canonical fix maintenance --
 
   /// Rebuilds the canonical fix from arbiter state. While indoor, the
-  /// maintained Wi-Fi fix stands; otherwise GPS (or none) is believed.
+  /// maintained Wi-Fi fix stands; otherwise the GPS gate output (or none)
+  /// is believed.
   void _evaluateArbitration() {
     if (_isDisposed) return;
     if (!(_mode == _ArbiterMode.indoor && _currentFix != null)) {
-      _currentFix = _buildGpsFix();
+      _currentFix = _gpsFix;
     }
     notifyListeners();
-  }
-
-  PositionFix? _buildGpsFix() {
-    final gps = _gpsLocation;
-    if (gps == null) return null;
-    return PositionFix(
-      latitude: gps.latitude,
-      longitude: gps.longitude,
-      source: PositionSource.gps,
-      accuracy: gps.accuracy,
-      confidence: _gpsConfidence(gps.accuracy),
-      timestamp: gps.timestamp,
-      status: PositionFixStatus.fresh,
-    );
   }
 
   // -- Indoor stale timer --
@@ -649,7 +758,7 @@ class LocationProvider extends ChangeNotifier {
       final position = await _locationService.getCurrentPosition();
       debugPrint('[LocationProvider] getCurrentPosition returned: ${position != null ? "${position.latitude},${position.longitude}" : "null"}');
       if (position != null) {
-        _gpsLocation = position;
+        _ingestGps(position);
         _status = LocationStateStatus.tracking;
         _errorMessage = null;
         startTracking();
@@ -685,7 +794,7 @@ class LocationProvider extends ChangeNotifier {
       (location) {
         debugPrint('[LocationProvider] GPS update: ${location.latitude},${location.longitude}');
         if (_isDisposed) return;
-        _gpsLocation = location;
+        _ingestGps(location);
         _status = LocationStateStatus.tracking;
         _errorMessage = null;
         _evaluateArbitration();
@@ -709,8 +818,11 @@ class LocationProvider extends ChangeNotifier {
   }
 
   /// Manually injects a GPS position (useful for unit testing).
+  ///
+  /// PHASE 5: routed through the same ingestion gate as the live stream, so
+  /// tests exercise identical staleness/accuracy/outlier semantics.
   void setGpsLocation(UserLocation location) {
-    _gpsLocation = location;
+    _ingestGps(location);
     _evaluateArbitration();
   }
 

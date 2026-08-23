@@ -32,6 +32,29 @@ class NavigationConfig {
   // -- Rerouting --
 
   /// Route deviation (m) before auto-reroute triggers.
+  // ── PHASE 5: outdoor GPS ingestion quality gates (INV-8 inputs) ──
+
+  /// Reject fixes older than this at consumption.
+  static const int gpsStaleAfterSeconds = 10;
+
+  /// Accuracy above this = invalid: the fix is ignored entirely.
+  static const double gpsRejectAccuracyMeters = 50;
+
+  /// Poor band upper bound: usable for display, not for decisions.
+  static const double gpsPoorAccuracyMeters = 30;
+
+  /// Good band; aligns with exitAccuracyThreshold.
+  static const double gpsGoodAccuracyMeters = 15;
+
+  /// Implied speed above this (~90 km/h) is an outlier on campus.
+  static const double gpsMaxImpliedSpeedMps = 25;
+
+  /// Hold the previous position for N ticks on an outlier.
+  static const int gpsOutlierHoldTicks = 1;
+
+  /// Consecutive degraded (poor/invalid/held) fixes that enter PAUSED.
+  static const int gpsPausePoorTicks = 3;
+
   static const double deviationThreshold = 15.0;
 
   /// Minimum time (s) between reroute attempts.

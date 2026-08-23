@@ -1595,20 +1595,23 @@ class NavigationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Checks for GPS signal loss and pauses navigation.
+  /// PHASE 5: GPS quality is judged by the LocationProvider ingestion gate.
+  /// PAUSED is entered once the degraded streak (poor/invalid/held fixes)
+  /// reaches [NavigationConfig.gpsPausePoorTicks]; a single bad tick can
+  /// never pause (INV-8 hysteresis).
   void _checkGpsLoss(UserLocation location) {
     if (!_state.isActivity) return;
-
-    // If GPS accuracy is very poor (>100m), consider it lost
-    if (location.accuracy > 100) {
+    if (_locationProvider.gpsDegraded) {
       _pauseNavigation('GPS signal weak — waiting for better signal');
     }
   }
 
-  /// Resumes from PAUSED once usable GPS returns.
+  /// Resumes from PAUSED once good-band GPS returns and the degraded streak
+  /// has cleared.
   void _checkGpsRecovery(UserLocation location) {
     if (_state != NavigationState.paused) return;
-    if (location.accuracy <= 100) {
+    if (!_locationProvider.gpsDegraded &&
+        location.accuracy <= NavigationConfig.gpsGoodAccuracyMeters) {
       _resumeFromPause();
     }
   }

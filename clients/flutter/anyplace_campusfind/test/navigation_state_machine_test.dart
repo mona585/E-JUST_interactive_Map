@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:anyplace_campusfind/config/navigation_config.dart';
 import 'package:anyplace_campusfind/data/datasources/location_service.dart';
 import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
 import 'package:anyplace_campusfind/data/models/floor_model.dart';
@@ -528,10 +529,17 @@ void main() {
 
   testWidgets('pause overlay records previous activity and resumes into it',
       (tester) async {
+    // PHASE 5 flip: pause requires gpsPausePoorTicks CONSECUTIVE degraded
+    // fixes; a single bad tick can never pause (INV-8 hysteresis).
     // Outdoor variant.
     final out = _Harness();
     addTearDown(out.dispose);
     out.startOutdoor();
+    for (var i = 0; i < NavigationConfig.gpsPausePoorTicks - 1; i++) {
+      out.provider.setGpsLocation(_gps(30.8750, accuracy: 150));
+    }
+    expect(out.controller.navigationState, NavigationState.activeOutdoor,
+        reason: 'below the degraded threshold nothing happens yet');
     out.provider.setGpsLocation(_gps(30.8750, accuracy: 150));
     expect(out.controller.navigationState, NavigationState.paused);
     expect(out.controller.isPaused, isTrue);
@@ -547,7 +555,12 @@ void main() {
     addTearDown(ind.dispose);
     await ind.startIndoor(tester);
     await tester.pump(const Duration(seconds: 11));
-    ind.provider.setGpsLocation(_gps(30.8650, accuracy: 150));
+    // Seed one accepted GPS sample so a canonical fix exists once the WiFi
+    // belief goes stale; degraded rejected samples then accumulate on top.
+    ind.provider.setGpsLocation(_gps(30.8650, accuracy: 8));
+    for (var i = 0; i < NavigationConfig.gpsPausePoorTicks; i++) {
+      ind.provider.setGpsLocation(_gps(30.8650, accuracy: 150));
+    }
     expect(ind.controller.navigationState, NavigationState.paused);
     expect(ind.controller.subState, NavigationSubState.indoor,
         reason: 'paused over ACTIVE_INDOOR projects indoor');
@@ -1123,8 +1136,13 @@ void main() {
     // Weak GPS pauses; recovery resumes indoors. (The WiFi belief must go
     // stale first — a live WiFi fix carries clamped accuracy, so GPS
     // weakness only reaches the pause check once GPS governs the fix.)
+    // PHASE 5: pause needs gpsPausePoorTicks consecutive degraded fixes.
     await tester.pump(const Duration(seconds: 11));
-    h.provider.setGpsLocation(_gps(30.8650, accuracy: 150));
+    // Seed an accepted fix so the degraded streak has a canonical base.
+    h.provider.setGpsLocation(_gps(30.8650, accuracy: 8));
+    for (var i = 0; i < NavigationConfig.gpsPausePoorTicks; i++) {
+      h.provider.setGpsLocation(_gps(30.8650, accuracy: 150));
+    }
     expect(h.controller.navigationState, NavigationState.paused);
     h.provider.setGpsLocation(_gps(30.8650, accuracy: 8));
     expect(h.controller.navigationState, NavigationState.activeIndoor);
