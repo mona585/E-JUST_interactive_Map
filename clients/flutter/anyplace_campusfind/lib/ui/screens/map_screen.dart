@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' show cos, pi, sin, atan2;
 import 'dart:typed_data';
 import 'package:geolocator/geolocator.dart';
@@ -22,6 +21,7 @@ import '../../state/space_provider.dart';
 import '../widgets/building_search_sheet.dart';
 import '../widgets/map_bottom_sheet.dart';
 import '../widgets/map_controls.dart';
+import '../utils/floorplan_overlay_cache.dart';
 
 /// Main Map Screen displaying Anyplace buildings, indoor floorplans, indoor POIs, and device GPS on Google Maps.
 class MapScreen extends StatefulWidget {
@@ -41,8 +41,17 @@ class _MapScreenState extends State<MapScreen>
   bool _lastFollowMode = false;
   bool _hasInitialCentering = false;
   bool _hasCenteredOnCustomRoutes = false;
-  Uint8List? _cachedResizedFloorplan;
-  String? _cachedResizedFloorplanPath;
+  // Prepared floorplan overlays. The bitmap for the active floor is decoded
+  // and encoded exactly once (bounded LRU across recently used floors) and
+  // the resulting GroundOverlay instance is reused verbatim on every
+  // GoogleMap rebuild, so heading/GPS/provider churn never re-uploads the
+  // floorplan image to the native renderer.
+  static const int _floorplanCacheCapacity = 3;
+  final FloorplanOverlayCache _floorplanOverlayCache =
+      FloorplanOverlayCache(capacity: _floorplanCacheCapacity);
+  PreparedFloorplanOverlay? _activeFloorplanOverlay;
+  String? _preparingFloorplanKey;
+  int _floorplanGeneration = 0;
 
   // Marker icon caches (generated once from widget screenshots)
   BitmapDescriptor? _buildingIcon;
@@ -267,6 +276,12 @@ class _MapScreenState extends State<MapScreen>
 
   @override
   void dispose() {
+    // Invalidate any in-flight floorplan preparation before teardown so a
+    // late async completion can never call setState on this State.
+    _floorplanGeneration++;
+    _activeFloorplanOverlay = null;
+    _preparingFloorplanKey = null;
+    _floorplanOverlayCache.clear();
     _headingSubscription?.cancel();
     _markerHeadingNotifier.dispose();
     _mapController?.dispose();
@@ -881,100 +896,83 @@ class _MapScreenState extends State<MapScreen>
     ),
   };
 
-  /// Build ground overlays for floorplan images
-  Set<GroundOverlay> _buildGroundOverlays(SpaceProvider spaceProvider) {
-    final overlays = <GroundOverlay>{};
-    if (!spaceProvider.hasActiveFloorplan ||
-        spaceProvider.activeFloorplanImagePath == null) {
-      return overlays;
-    }
+  /// Keeps [_activeFloorplanOverlay] in sync with the selected floorplan.
+  ///
+  /// Runs on every provider-driven rebuild but performs no I/O and allocates
+  /// no bitmaps: it either reuses an already-prepared overlay, keeps waiting
+  /// on an in-flight preparation, or kicks off preparation exactly once per
+  /// floor identity. A selection that supersedes an in-flight preparation
+  /// bumps the generation token so the stale result is discarded.
+  void _syncFloorplanOverlay(SpaceProvider spaceProvider) {
+    final floorplan = spaceProvider.activeFloorplan;
+    final imagePath = spaceProvider.activeFloorplanImagePath;
 
-    final floorplan = spaceProvider.activeFloorplan!;
-    final imagePath = spaceProvider.activeFloorplanImagePath!;
-
-    if (_cachedResizedFloorplanPath == imagePath && _cachedResizedFloorplan != null) {
-      debugPrint('[MapScreen] _buildGroundOverlays: using cached resized image (${_cachedResizedFloorplan!.length} bytes)');
-      overlays.add(GroundOverlay.fromBounds(
-        groundOverlayId: GroundOverlayId('floorplan_${floorplan.buid}_${floorplan.floorNumber}'),
-        image: BitmapDescriptor.bytes(_cachedResizedFloorplan!, bitmapScaling: MapBitmapScaling.none),
+    String? desiredKey;
+    FloorplanOverlayRequest? request;
+    if (spaceProvider.hasActiveFloorplan && floorplan != null &&
+        imagePath != null) {
+      request = FloorplanOverlayRequest(
+        buid: floorplan.buid,
+        floorNumber: floorplan.floorNumber,
+        imagePath: imagePath,
         bounds: floorplan.bounds,
-        transparency: 0.0,
-      ));
-      return overlays;
+      );
+      desiredKey = request.key;
     }
 
-    final rawBytes = <Uint8List>[];
-    try {
-      rawBytes.add(File(imagePath).readAsBytesSync());
-    } on FileSystemException catch (_) {
-      debugPrint('[MapScreen] _buildGroundOverlays: failed to read floorplan image file at $imagePath');
-      return overlays;
-    } catch (e) {
-      debugPrint('[MapScreen] _buildGroundOverlays: unexpected error reading floorplan: $e');
-      return overlays;
+    // A newer selection (or a cleared one) invalidates any in-flight work.
+    if (_preparingFloorplanKey != null && _preparingFloorplanKey != desiredKey) {
+      _floorplanGeneration++;
+      _preparingFloorplanKey = null;
     }
 
-    if (rawBytes.isEmpty || rawBytes.first.isEmpty) {
-      debugPrint('[MapScreen] _buildGroundOverlays: floorplan image data is empty');
-      return overlays;
+    if (desiredKey == null) {
+      _activeFloorplanOverlay = null;
+      return;
     }
 
-    _resizeFloorplanAsync(rawBytes.first, imagePath);
+    final cached = _floorplanOverlayCache.get(desiredKey);
+    if (cached != null) {
+      _preparingFloorplanKey = null;
+      _activeFloorplanOverlay = cached;
+      return;
+    }
+    if (_activeFloorplanOverlay?.key == desiredKey ||
+        _preparingFloorplanKey == desiredKey) {
+      return; // already prepared / already preparing — nothing to do
+    }
 
-    overlays.add(GroundOverlay.fromBounds(
-      groundOverlayId: GroundOverlayId('floorplan_${floorplan.buid}_${floorplan.floorNumber}'),
-      image: BitmapDescriptor.bytes(rawBytes.first, bitmapScaling: MapBitmapScaling.none),
-      bounds: floorplan.bounds,
-      transparency: 0.0,
-    ));
-    return overlays;
+    _activeFloorplanOverlay = null;
+    final generation = ++_floorplanGeneration;
+    _preparingFloorplanKey = desiredKey;
+    FloorplanOverlayCache.prepare(request!).then((prepared) {
+      if (!mounted || generation != _floorplanGeneration || prepared == null) {
+        return; // disposed or superseded by a newer floor selection
+      }
+      _floorplanOverlayCache.put(prepared);
+      if (_preparingFloorplanKey == desiredKey) {
+        _preparingFloorplanKey = null;
+      }
+      setState(() {
+        if (_activeFloorplanOverlay?.key != desiredKey) {
+          _activeFloorplanOverlay = prepared;
+        }
+      });
+    });
   }
 
-  void _resizeFloorplanAsync(Uint8List rawBytes, String imagePath) async {
-    try {
-      final codec = await ui.instantiateImageCodec(rawBytes);
-      final frame = await codec.getNextFrame();
-      final image = frame.image;
-      final width = image.width;
-      final height = image.height;
-      const maxDim = 2048;
-      debugPrint('[MapScreen] _resizeFloorplanAsync: original ${width}x${height}');
-
-      int newWidth = width;
-      int newHeight = height;
-      if (width > maxDim || height > maxDim) {
-        final ratio = width > height ? maxDim / width : maxDim / height;
-        newWidth = (width * ratio).round();
-        newHeight = (height * ratio).round();
-      }
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      final paint = Paint()..filterQuality = FilterQuality.medium;
-      canvas.drawImageRect(
-        image,
-        Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-        Rect.fromLTWH(0, 0, newWidth.toDouble(), newHeight.toDouble()),
-        paint,
-      );
-      final picture = recorder.endRecording();
-      final resizedImage = await picture.toImage(newWidth, newHeight);
-      image.dispose();
-
-      final byteData = await resizedImage.toByteData(format: ui.ImageByteFormat.png);
-      resizedImage.dispose();
-
-      _cachedResizedFloorplan = byteData?.buffer.asUint8List() ?? rawBytes;
-      _cachedResizedFloorplanPath = imagePath;
-      debugPrint('[MapScreen] _resizeFloorplanAsync: done ${newWidth}x${newHeight}, ${_cachedResizedFloorplan!.length} bytes');
-
-      if (mounted) setState(() {});
-    } catch (e) {
-      debugPrint('[MapScreen] _resizeFloorplanAsync FAILED: $e');
-      _cachedResizedFloorplan = rawBytes;
-      _cachedResizedFloorplanPath = imagePath;
-      if (mounted) setState(() {});
+  /// Returns the stable overlay set shown on the map.
+  ///
+  /// The same [GroundOverlay] instance is returned until the floorplan
+  /// actually changes; google_maps_flutter diffs objects by equality, so an
+  /// identical instance produces zero platform-channel traffic regardless of
+  /// how often this widget rebuilds.
+  Set<GroundOverlay> _buildGroundOverlays() {
+    final active = _activeFloorplanOverlay;
+    if (active == null) {
+      return const <GroundOverlay>{};
     }
+    return <GroundOverlay>{active.overlay};
   }
 
   @override
@@ -985,6 +983,7 @@ class _MapScreenState extends State<MapScreen>
         final userLocation = locationProvider.currentLocation;
 
         _checkFloorplanCameraCenter(spaceProvider);
+        _syncFloorplanOverlay(spaceProvider);
 
         // If no GPS and no building selected, try to center on custom routes
         if (!_hasInitialCentering && !_hasCenteredOnCustomRoutes) {
@@ -1049,7 +1048,7 @@ class _MapScreenState extends State<MapScreen>
                         userMarker,
                     },
                     polylines: _buildPolylines(spaceProvider),
-                    groundOverlays: _buildGroundOverlays(spaceProvider),
+                    groundOverlays: _buildGroundOverlays(),
                   );
                 },
               ),

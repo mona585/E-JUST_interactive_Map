@@ -49,4 +49,11 @@ class ApiConfig {
 
   /// Timeout duration for HTTP requests.
   static const Duration requestTimeout = Duration(seconds: 30);
+
+  /// Timeout for bulk image downloads. Measured transfers of campus
+  /// floorplans from the public Anyplace backend take ~2 minutes (~8-11 MB
+  /// trickled at roughly 70 KB/s), far exceeding [requestTimeout]. The value
+  /// must comfortably exceed that; the on-disk cache makes each floor a
+  /// one-time cost.
+  static const Duration floorplanImageTimeout = Duration(minutes: 5);
 }

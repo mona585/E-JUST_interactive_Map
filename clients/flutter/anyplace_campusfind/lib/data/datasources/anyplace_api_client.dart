@@ -435,15 +435,31 @@ class AnyplaceApiClient {
     );
     debugPrint('[AnyplaceApi] --> POST floorplan image: $uri');
 
-    try {
-      final response = await _client
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/json', 'Accept': '*/*'},
-            body: jsonEncode({}),
-          )
-          .timeout(ApiConfig.requestTimeout);
+    // Floorplan payloads are multi-megabyte Base64 responses; on slow links
+    // the default JSON timeout is far too short. Allow a longer window and
+    // retry the download once on transient network failures.
+    Future<http.Response> postOnce() => _client
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json', 'Accept': '*/*'},
+          body: jsonEncode({}),
+        )
+        .timeout(ApiConfig.floorplanImageTimeout);
 
+    http.Response response;
+    try {
+      response = await postOnce();
+    } on SocketException catch (e) {
+      debugPrint(
+        '[AnyplaceApi] floorplan image: network error (${e.message}), retrying once',
+      );
+      response = await postOnce();
+    } on TimeoutException {
+      debugPrint('[AnyplaceApi] floorplan image: timed out, retrying once');
+      response = await postOnce();
+    }
+
+    try {
       debugPrint(
         '[AnyplaceApi] <-- HTTP ${response.statusCode} for floorplan image ($cleanBuid, floor $cleanFloor, raw bytes: ${response.bodyBytes.length})',
       );
