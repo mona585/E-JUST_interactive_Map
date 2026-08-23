@@ -210,7 +210,6 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet>
                       navController.startRoutePreview(
                         destinationPuid: selectedPoi.puid,
                         destinationSpace: spaceProvider.selectedSpace!,
-                        destinationFloorNumber: selectedPoi.floorNumber,
                       );
                       navController.startActiveNavigation();
                       widget.onFitRouteBounds?.call(spaceProvider);

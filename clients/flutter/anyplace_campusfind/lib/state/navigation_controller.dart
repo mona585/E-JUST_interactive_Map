@@ -54,8 +54,7 @@ class NavigationController extends ChangeNotifier {
   NavigationState? _previousActiveState;
 
   // -- Route context --
-  String? _destinationPuid;
-  SpaceModel? _destinationSpace;
+  NavigationSession? _session;
   NavigationRouteModel? _activeRoute;
   bool _followMode = true;
   DateTime? _lastRerouteTime;
@@ -114,6 +113,14 @@ class NavigationController extends ChangeNotifier {
 
   DateTime _now() => debugNowOverride?.call() ?? DateTime.now();
 
+  /// Session-fencing guard (MASTER PLAN PHASE 1 / INV-3 core): an async
+  /// continuation may commit only while the session it captured is still
+  /// the current one at the route revision it observed.
+  bool _isCurrent({required String sessionId, required int revision}) =>
+      _session != null &&
+      _session!.sessionId == sessionId &&
+      _session!.routeRevision == revision;
+
   NavigationController({
     required NavigationRouteScope spaceProvider,
     required this._locationProvider,
@@ -138,7 +145,7 @@ class NavigationController extends ChangeNotifier {
         state: _state,
         previousActiveState: _previousActiveState,
         fix: _locationProvider.currentFix,
-        navigatingBuildingId: _destinationSpace?.buid,
+        navigatingBuildingId: destinationSpace?.buid,
         navigatingFloor: _currentNavigatingFloor,
         expectedNextFloor: _expectedNextFloor,
         pauseReason: _pauseReason,
@@ -234,8 +241,14 @@ class NavigationController extends ChangeNotifier {
       _state == NavigationState.floorTransition;
   bool get isRerouting => _state == NavigationState.rerouting;
   bool get isArrived => _state == NavigationState.arrived;
-  String? get destinationPuid => _destinationPuid;
-  SpaceModel? get destinationSpace => _destinationSpace;
+
+  /// Identity of the live navigation session, or null when no session exists.
+  String? get sessionId => _session?.sessionId;
+
+  /// Destination identity now lives on the session (Phase 1); these getters
+  /// are delegates so existing consumers stay source-compatible.
+  String? get destinationPuid => _session?.destinationPuid;
+  SpaceModel? get destinationSpace => _session?.destinationSpace;
 
   // Segment navigation getters
   int get currentSegmentIndex => _currentSegmentIndex;
@@ -318,10 +331,14 @@ class NavigationController extends ChangeNotifier {
   ///
   /// The route must already be loaded in the scope provider. Calling again
   /// while previewing re-seeds the preview (e.g., destination changed).
+  ///
+  /// Creates the [NavigationSession] for this run. The caller-supplied
+  /// destination floor parameter was unused and has been removed (BUG-15c);
+  /// the session's destination floor is derived from the destination POI
+  /// when it is resolvable in the scope.
   void startRoutePreview({
     required String destinationPuid,
     required SpaceModel destinationSpace,
-    required String destinationFloorNumber,
   }) {
     if (_state != NavigationState.idle &&
         _state != NavigationState.routePreview) {
@@ -333,9 +350,15 @@ class NavigationController extends ChangeNotifier {
 
     final wasIdle = _state == NavigationState.idle;
 
-    _destinationPuid = destinationPuid;
-    _destinationSpace = destinationSpace;
+    final destinationPoi =
+        _spaceScope.pois.where((p) => p.puid == destinationPuid).firstOrNull;
+    _session = NavigationSession(
+      destinationPuid: destinationPuid,
+      destinationSpace: destinationSpace,
+      destinationFloorNumber: destinationPoi?.floorNumber,
+    );
     _activeRoute = route;
+    _session!.routeRevision++; // revision 1 = seeded preview geometry
     _currentNavigatingFloor = _spaceScope.selectedFloor?.floorNumber;
     _newFloorEstimateCount = 0;
     _connectorInitiatedTransition = false;
@@ -351,6 +374,8 @@ class NavigationController extends ChangeNotifier {
     if (wasIdle) {
       _transition(NavigationState.routePreview);
     }
+    debugPrint('[NAV] SESSION_START sid=${_session!.sessionId} '
+        'dst=$destinationPuid rev=${_session!.routeRevision}');
     notifyListeners();
   }
 
@@ -379,10 +404,10 @@ class NavigationController extends ChangeNotifier {
 
   /// Ends the session from ANY state (user action; bypasses the table).
   void endNavigation() {
+    final endedSessionId = _session?.sessionId;
     _state = NavigationState.idle;
     _previousActiveState = null;
-    _destinationPuid = null;
-    _destinationSpace = null;
+    _session = null;
     _activeRoute = null;
     _currentNavigatingFloor = null;
     _expectedNextFloor = null;
@@ -401,6 +426,9 @@ class NavigationController extends ChangeNotifier {
     _entryDwellCooldownUntil = null;
     _arrivalAnchor = null;
     _arrivalConfirmationCounter = 0;
+    if (endedSessionId != null) {
+      debugPrint('[NAV] SESSION_END sid=$endedSessionId');
+    }
     notifyListeners();
   }
 
@@ -416,6 +444,27 @@ class NavigationController extends ChangeNotifier {
   /// approach/cancel behavior has no other external signal).
   @visibleForTesting
   bool get buildingPreloadedForTest => _buildingPreloaded;
+
+  /// Test-only view of the live session (Phase 1).
+  @visibleForTesting
+  NavigationSession? get sessionForTest => _session;
+
+  /// Test-only view of the reroute cooldown stamp (Phase 1 — cooldown must
+  /// only be consumed by a reroute that actually began).
+  @visibleForTesting
+  DateTime? get lastRerouteTimeForTest => _lastRerouteTime;
+
+  /// Test-only direct entry into the reroute flow (Phase 1 — lets tests
+  /// exercise guard/fencing branches unreachable through the tick order).
+  @visibleForTesting
+  Future<void> debugTriggerReroute() => _triggerReroute();
+
+  /// Test-only revision bump (Phase 1 — simulates a committed replacement
+  /// landing while an older async result is still in flight).
+  @visibleForTesting
+  void debugBumpRouteRevision() {
+    if (_session != null) _session!.routeRevision++;
+  }
 
   /// Temporarily disables follow mode (e.g., user panned the map).
   void exitFollowMode() {
@@ -582,7 +631,7 @@ class NavigationController extends ChangeNotifier {
   /// ([PositionFix.hasScope]); selection context can never fill it. With no
   /// known destination the source check alone remains authoritative.
   bool _entryCorroborated(PositionFix fix) {
-    final destination = _destinationSpace;
+    final destination = destinationSpace;
     if (destination == null) return true;
     if (!fix.hasScope) return false;
     return fix.buildingId == destination.buid;
@@ -625,7 +674,7 @@ class NavigationController extends ChangeNotifier {
 
     // Cooldown check
     if (_lastRerouteTime != null) {
-      final elapsed = DateTime.now().difference(_lastRerouteTime!);
+      final elapsed = _now().difference(_lastRerouteTime!);
       if (elapsed.inSeconds < NavigationConfig.rerouteCooldownSeconds) return;
     }
 
@@ -696,22 +745,31 @@ class NavigationController extends ChangeNotifier {
         _state == NavigationState.enteringBuilding)) {
       return;
     }
-    if (_destinationPuid == null) return;
+    final session = _session;
+    if (session == null || session.destinationPuid == null) return;
 
     final location = _locationProvider.currentLocation;
     if (location == null) return;
 
     final origin = _state;
-    _lastRerouteTime = DateTime.now();
+    // Cooldown starts only when the reroute actually begins: a rejected
+    // transition must never consume it (BUG-13).
     if (!_transition(NavigationState.rerouting)) return;
+    _lastRerouteTime = _now();
     notifyListeners();
+
+    // Capture identity for fencing; nothing captured here may be trusted
+    // after an await without revalidation (INV-3 core).
+    final sid = session.sessionId;
+    final rev = session.routeRevision;
+    final destinationPuid = session.destinationPuid!;
 
     // Step 1: Try custom KMZ routes first (outdoor only)
     if (origin == NavigationState.activeOutdoor) {
       final customRepo = _spaceScope.customRouteRepository;
       if (customRepo.isLoaded) {
         // Find destination from destination space
-        final destSpace = _destinationSpace;
+        final destSpace = _session?.destinationSpace;
         if (destSpace != null) {
           // Step 1a: Try pure custom graph routing
           var customPath = customRepo.findRoute(
@@ -738,7 +796,8 @@ class NavigationController extends ChangeNotifier {
               destinationBuid: destSpace.buid,
             );
             if (customRoute != null && customRoute.hasRenderablePath) {
-              if (_state.isSessionLive) {
+              // Fenced commit: a superseded or ended session may not write.
+              if (_isCurrent(sessionId: sid, revision: rev)) {
                 _activeRoute = customRoute;
               }
               if (_state == NavigationState.rerouting) {
@@ -761,21 +820,46 @@ class NavigationController extends ChangeNotifier {
           latitude: location.latitude,
           longitude: location.longitude,
           floorNumber: currentFloor,
-          destinationPuid: _destinationPuid!,
+          destinationPuid: destinationPuid,
         );
-        if (route.hasRenderablePath) {
-          // A user End during the await must not resurrect the session.
-          if (_state.isSessionLive) {
-            _activeRoute = route;
+        // The captured result is dead the moment its identity stopped being
+        // current — drop it silently instead of committing stale geometry.
+        // A still-live session (superseded revision) returns to its
+        // activity; an ended session is already idle and needs nothing.
+        if (!_isCurrent(sessionId: sid, revision: rev)) {
+          debugPrint('[NavigationController] Reroute result discarded '
+              '(stale session/revision)');
+          if (_state == NavigationState.rerouting) {
+            _transition(origin);
+            notifyListeners();
           }
+          return;
+        }
+        if (route.hasRenderablePath) {
+          _activeRoute = route;
           break;
         }
       } catch (e) {
         debugPrint('[NavigationController] Reroute attempt $attempt failed: $e');
-        if (!_state.isSessionLive) break;
+        if (!_isCurrent(sessionId: sid, revision: rev)) {
+          if (_state == NavigationState.rerouting) {
+            _transition(origin);
+            notifyListeners();
+          }
+          return;
+        }
       }
       // Exponential backoff: 1s, 2s, 4s
       await Future.delayed(Duration(seconds: 1 << attempt));
+      if (!_isCurrent(sessionId: sid, revision: rev)) {
+        debugPrint('[NavigationController] Reroute cancelled during backoff '
+            '(stale session/revision)');
+        if (_state == NavigationState.rerouting) {
+          _transition(origin);
+          notifyListeners();
+        }
+        return;
+      }
     }
 
     if (_state == NavigationState.rerouting) {
@@ -1075,7 +1159,7 @@ class NavigationController extends ChangeNotifier {
   void checkBuildingApproach(UserLocation location) {
     if (_state != NavigationState.activeOutdoor) return;
 
-    final building = _destinationSpace;
+    final building = destinationSpace;
     if (building == null) return;
 
     final dist = Geolocator.distanceBetween(location.latitude, location.longitude, building.latitude, building.longitude);
@@ -1097,13 +1181,21 @@ class NavigationController extends ChangeNotifier {
   }
 
   Future<void> _preLoadBuildingData(SpaceModel building) async {
+    // Fencing pattern (Phase 1): identity is captured before any effect and
+    // revalidated at the completion point.
+    final session = _session;
+    if (session == null) return;
+    final sid = session.sessionId;
+    final rev = session.routeRevision;
+
     debugPrint(
       '[NavigationController] Pre-loading building data for ${building.name} (${building.buid})',
     );
     _buildingPreloaded = true;
 
     // Auto-select the building — this triggers floor loading
-    if (_spaceScope.selectedSpace?.buid != building.buid) {
+    if (_spaceScope.selectedSpace?.buid != building.buid &&
+        _isCurrent(sessionId: sid, revision: rev)) {
       _spaceScope.selectSpace(building);
     }
   }
@@ -1148,7 +1240,7 @@ class NavigationController extends ChangeNotifier {
   }
 
   void _checkFallbackEntranceProximity(UserLocation location) {
-    final building = _destinationSpace;
+    final building = destinationSpace;
     if (building == null) return;
 
     final dist = Geolocator.distanceBetween(location.latitude, location.longitude, building.latitude, building.longitude);
@@ -1192,8 +1284,16 @@ class NavigationController extends ChangeNotifier {
         (a, b) => a.numericFloor <= b.numericFloor ? a : b);
 
     if (preloadFloor != null) {
-      _currentNavigatingFloor = preloadFloor.floorNumber;
-      _spaceScope.selectFloor(preloadFloor);
+      // Fencing pattern (Phase 1): only a current session may drive
+      // navigation-context floor selection.
+      final session = _session;
+      if (session != null &&
+          _isCurrent(
+              sessionId: session.sessionId,
+              revision: session.routeRevision)) {
+        _currentNavigatingFloor = preloadFloor.floorNumber;
+        _spaceScope.selectFloor(preloadFloor);
+      }
     }
 
     _exitConfirmationCounter = 0;
@@ -1338,7 +1438,7 @@ class NavigationController extends ChangeNotifier {
   /// (always present and data-driven).
   void _resolveArrivalAnchor() {
     final poi = _spaceScope.pois
-        .where((p) => p.puid == _destinationPuid)
+        .where((p) => p.puid == destinationPuid)
         .firstOrNull;
     if (poi != null) {
       _arrivalAnchor = _ArrivalAnchor(

@@ -305,7 +305,6 @@ class _Bug1Fixture {
     controller.startRoutePreview(
       destinationPuid: 'room104',
       destinationSpace: seedRepo.spaces[0],
-      destinationFloorNumber: '0',
     );
     controller.startActiveNavigation();
   }
@@ -521,7 +520,6 @@ testWidgets('CHARACTERIZATION BUG-2 (flips in Phase 2): committed reroute '
   controller.startRoutePreview(
     destinationPuid: 'dest',
     destinationSpace: buildingA,
-    destinationFloorNumber: '0',
   );
   controller.startActiveNavigation();
   expect(controller.navigationState, NavigationState.activeOutdoor);

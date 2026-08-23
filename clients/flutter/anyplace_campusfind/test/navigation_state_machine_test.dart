@@ -289,7 +289,7 @@ class _Harness {
     controller.startRoutePreview(
       destinationPuid: 'dest',
       destinationSpace: _building(),
-      destinationFloorNumber: '0',
+
     );
   }
 
@@ -321,7 +321,7 @@ void main() {
     h.controller.startRoutePreview(
       destinationPuid: 'd',
       destinationSpace: _building(),
-      destinationFloorNumber: '0',
+
     );
     expect(h.controller.navigationState, NavigationState.idle);
 
@@ -329,7 +329,7 @@ void main() {
     h.controller.startRoutePreview(
       destinationPuid: 'd',
       destinationSpace: _building(),
-      destinationFloorNumber: '0',
+
     );
     expect(h.controller.navigationState, NavigationState.routePreview);
     expect(h.controller.phase, NavigationPhase.preview);
@@ -1051,13 +1051,23 @@ void main() {
 
     var s = h.controller.snapshot;
     expect(s.state, NavigationState.idle);
+    expect(h.controller.sessionId, isNull,
+        reason: 'no session may exist before the preview seeds one');
 
     h.startOutdoor();
     expect(h.controller.navigationState, NavigationState.activeOutdoor);
+    // PHASE 1: a session identity exists and stays stable across every
+    // state of the journey.
+    final sid = h.controller.sessionId;
+    expect(sid, isNotNull);
+    expect(h.controller.sessionForTest!.routeRevision, 1,
+        reason: 'preview seed is revision 1');
 
     h.provider.setGpsLocation(_gps(30.8660)); // preload
     h.provider.setGpsLocation(_gps(30.86505)); // enter dwell
     expect(h.controller.navigationState, NavigationState.enteringBuilding);
+    expect(h.controller.sessionId, sid,
+        reason: 'session id is stable across states');
 
     // Six estimates from a cold outdoor arbiter: #3 flips belief and
     // confirms scope, #6 is the first fix carrying the confirmed identity
@@ -1088,9 +1098,13 @@ void main() {
 
     h.controller.markArrived();
     expect(h.controller.navigationState, NavigationState.arrived);
+    expect(h.controller.sessionId, sid,
+        reason: 'session id survives overlays and arrival');
 
     h.controller.endNavigation();
     expect(h.controller.navigationState, NavigationState.idle);
     expect(h.controller.snapshot.previousActiveState, isNull);
+    expect(h.controller.sessionId, isNull,
+        reason: 'termination destroys the session identity');
   });
 }

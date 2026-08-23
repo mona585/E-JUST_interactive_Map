@@ -194,3 +194,32 @@ abstract class NavigationRouteScope implements Listenable {
   void selectFloor(FloorModel floor);
   void clearSelection();
 }
+
+/// Identity of exactly one navigation run (MASTER PLAN PHASE 1).
+///
+/// Created when a preview is seeded, carried through the whole session, and
+/// destroyed by termination. Retargeting (Phase 4) replaces the instance
+/// wholesale, producing a fresh [sessionId]. Every async continuation that
+/// intends to mutate navigation state captures `(sessionId, routeRevision)`
+/// at launch and must observe both unchanged at commit time.
+class NavigationSession {
+  NavigationSession({
+    String? sessionId,
+    this.destinationPuid,
+    this.destinationSpace,
+    this.destinationFloorNumber,
+    this.routeRevision = 0,
+  }) : sessionId = sessionId ?? (++_counter).toString();
+
+  /// Monotonic per-process counter; uniqueness is the entire contract.
+  static int _counter = 0;
+
+  final String sessionId;
+  String? destinationPuid;
+  SpaceModel? destinationSpace;
+  String? destinationFloorNumber;
+
+  /// Bumped on preview seed and on every committed route replacement, so a
+  /// superseded async route computation can never commit over newer state.
+  int routeRevision;
+}

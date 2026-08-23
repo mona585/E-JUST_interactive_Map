@@ -310,7 +310,7 @@ class _Harness {
     controller.startRoutePreview(
       destinationPuid: 'dest',
       destinationSpace: _building(),
-      destinationFloorNumber: '0',
+
     );
     controller.startActiveNavigation();
     expect(controller.navigationState, NavigationState.activeIndoor);
@@ -605,7 +605,7 @@ void main() {
     h.controller.startRoutePreview(
       destinationPuid: 'dest2',
       destinationSpace: _building(),
-      destinationFloorNumber: '0',
+
     );
     expect(h.controller.floorTransitionEvents.length, 0);
     expect(h.controller.lastFloorTransitionEvent, isNull);

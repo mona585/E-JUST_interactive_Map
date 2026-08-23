@@ -278,7 +278,6 @@ class _Harness {
     controller.startRoutePreview(
       destinationPuid: 'dest',
       destinationSpace: _building(),
-      destinationFloorNumber: '0',
     );
   }
 
