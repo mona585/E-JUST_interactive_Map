@@ -97,6 +97,20 @@ class NavigationController extends ChangeNotifier {
   // -- Pause bookkeeping --
   String? _pauseReason;
 
+  // -- PHASE 6: reroute hysteresis + failure visibility --
+  /// Consecutive off-route (polyline deviation) confirm ticks.
+  int _deviationStreak = 0;
+
+  /// Consecutive KMZ off-route confirm ticks.
+  int _kmzOffRouteStreak = 0;
+
+  /// Transient failure flag: the last reroute attempt could not produce a
+  /// valid route. Cleared on the next successful commit, End, preview seed
+  /// or retarget. Surfaced in the status bar.
+  bool _rerouteFailed = false;
+
+  bool get rerouteFailed => _rerouteFailed;
+
   // -- Custom route tracking --
   RouteProgress? _customRouteProgress;
 
@@ -154,7 +168,7 @@ class NavigationController extends ChangeNotifier {
         expectedNextFloor: _expectedNextFloor,
         pauseReason: _pauseReason,
         segmentIndex: _currentSegmentIndex,
-        timestamp: DateTime.now(),
+        timestamp: _now(),
       );
 
   /// Enforces the allowed-edge table and records overlay bookkeeping.
@@ -374,6 +388,9 @@ class NavigationController extends ChangeNotifier {
     _exitConfirmationCounter = 0;
     _entryDwellCooldownUntil = null;
     _arrivalConfirmationCounter = 0;
+    _deviationStreak = 0;
+    _kmzOffRouteStreak = 0;
+    _rerouteFailed = false;
     _resolveArrivalAnchor();
 
     if (wasIdle) {
@@ -394,6 +411,9 @@ class NavigationController extends ChangeNotifier {
 
     _followMode = true;
     _lastRerouteTime = null;
+    _deviationStreak = 0;
+    _kmzOffRouteStreak = 0;
+    _rerouteFailed = false;
     _exitConfirmationCounter = 0;
     _newFloorEstimateCount = 0;
     _arrivalConfirmationCounter = 0;
@@ -433,6 +453,9 @@ class NavigationController extends ChangeNotifier {
     _entryDwellCooldownUntil = null;
     _arrivalAnchor = null;
     _arrivalConfirmationCounter = 0;
+    _deviationStreak = 0;
+    _kmzOffRouteStreak = 0;
+    _rerouteFailed = false;
     if (endedSessionId != null) {
       debugPrint('[NAV] SESSION_END sid=$endedSessionId');
     }
@@ -490,6 +513,9 @@ class NavigationController extends ChangeNotifier {
     _arrivalConfirmationCounter = 0;
     _arrivalAnchor = null;
     _customRouteProgress = null;
+    _deviationStreak = 0;
+    _kmzOffRouteStreak = 0;
+    _rerouteFailed = false;
     notifyListeners();
 
     // 3. Content second: cascade for the new target behind request ids.
@@ -610,6 +636,16 @@ class NavigationController extends ChangeNotifier {
 
     _evaluateBeliefFlip(fix);
     _maintainDwell(fix, location);
+
+    // PHASE 6 ordering: the GPS-quality/pause gate runs BEFORE any deviation
+    // or reroute evaluation so a garbage fix can never fire a reroute before
+    // the pause check sees it (BUG-5 second half).
+    _checkGpsLoss(location);
+    if (_state == NavigationState.paused) {
+      notifyListeners();
+      return;
+    }
+
     _updateCustomRouteProgress(location);
     _checkDeviationAndReroute(location);
     _checkFloorTransition(location);
@@ -618,7 +654,6 @@ class NavigationController extends ChangeNotifier {
     checkEntranceProximity(location);
     _checkSegmentTransition(location);
     _checkArrival(location);
-    _checkGpsLoss(location);
     notifyListeners();
   }
 
@@ -753,10 +788,31 @@ class NavigationController extends ChangeNotifier {
       if (elapsed.inSeconds < NavigationConfig.rerouteCooldownSeconds) return;
     }
 
-    // Use custom route graph for deviation when outdoors and on a custom route
+    // PHASE 6 / INV-8: decisions consume only decision-quality fixes. Below
+    // the poor band, or held/stale, evidence resets the hysteresis streaks.
+    final fix = _locationProvider.currentFix;
+    if (fix == null ||
+        fix.status != PositionFixStatus.fresh ||
+        fix.accuracy > NavigationConfig.gpsPoorAccuracyMeters) {
+      _deviationStreak = 0;
+      _kmzOffRouteStreak = 0;
+      return;
+    }
+
+    // Use custom route graph for deviation when outdoors and on a custom
+    // route. KMZ off-route evidence also requires confirm-tick hysteresis.
     if (_state == NavigationState.activeOutdoor &&
         _customRouteProgress != null &&
         !_customRouteProgress!.isOnRoute) {
+      _kmzOffRouteStreak++;
+      if (_kmzOffRouteStreak <
+          NavigationConfig.rerouteDeviationConfirmTicks) {
+        debugPrint('[NavigationController] Off custom route '
+            '($_kmzOffRouteStreak/'
+            '${NavigationConfig.rerouteDeviationConfirmTicks} confirm ticks)');
+        return;
+      }
+      _kmzOffRouteStreak = 0;
       debugPrint(
         '[NavigationController] Off custom route '
         '(distance: ${_customRouteProgress!.distanceFromRoute.toStringAsFixed(1)}m) — rerouting',
@@ -764,11 +820,22 @@ class NavigationController extends ChangeNotifier {
       _triggerReroute();
       return;
     }
+    _kmzOffRouteStreak = 0;
 
-    // Fallback: deviation against active route polyline
+    // Fallback: deviation against active route polyline with hysteresis.
     final deviation = _computeMinDeviation(location.latLng, _activeRoute!);
     if (deviation > NavigationConfig.deviationThreshold) {
+      _deviationStreak++;
+      if (_deviationStreak < NavigationConfig.rerouteDeviationConfirmTicks) {
+        debugPrint('[NavigationController] Deviation '
+            '$_deviationStreak/${NavigationConfig.rerouteDeviationConfirmTicks} '
+            'confirm ticks');
+        return;
+      }
+      _deviationStreak = 0;
       _triggerReroute();
+    } else {
+      _deviationStreak = 0;
     }
   }
 
@@ -857,7 +924,7 @@ class NavigationController extends ChangeNotifier {
             customPath = customRepo.findHybridRoute(
               location.latLng,
               destSpace.latLng,
-              snapThreshold: 100.0,
+              snapThreshold: NavigationConfig.rerouteKmzSnapThreshold,
             ) ?? [];
           }
 
@@ -889,8 +956,12 @@ class NavigationController extends ChangeNotifier {
       }
     }
 
-    // Step 2: Fall back to API-based rerouting
-    final currentFloor = _currentNavigatingFloor ?? '0';
+    // Step 2: Fall back to API-based rerouting.
+    // PHASE 6 (BUG-12): outdoor sessions send a NULL floor — never a
+    // fabricated '0'; indoor legs send the confirmed navigating floor.
+    final String? currentFloor =
+        origin == NavigationState.activeOutdoor ? null : _currentNavigatingFloor;
+    var committed = false;
 
     for (var attempt = 0; attempt < NavigationConfig.rerouteMaxRetries; attempt++) {
       try {
@@ -918,6 +989,8 @@ class NavigationController extends ChangeNotifier {
           _spaceScope.adoptNavigatedRoute(route);
           _session!.routeRevision++;
           _resolveArrivalAnchor();
+          committed = true;
+          _rerouteFailed = false;
           break;
         }
       } catch (e) {
@@ -941,6 +1014,14 @@ class NavigationController extends ChangeNotifier {
         }
         return;
       }
+    }
+
+    if (!committed) {
+      // INV-8/INV-6 failure semantics: the valid old route persists and the
+      // failure is visible (transient flag cleared on next success or End).
+      _rerouteFailed = true;
+      debugPrint('[NavigationController] Reroute failed — keeping previous '
+          'route');
     }
 
     if (_state == NavigationState.rerouting) {
@@ -1438,7 +1519,7 @@ class NavigationController extends ChangeNotifier {
     // Use appropriate threshold based on segment type
     final threshold = currentSeg.type == RouteSegmentType.floorTransition
         ? NavigationConfig.connectorProximityThreshold
-        : 10.0; // 10m for regular segment endpoints
+        : NavigationConfig.segmentAdvanceThresholdMeters;
 
     if (distance <= threshold) {
       debugPrint(

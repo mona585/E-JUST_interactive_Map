@@ -685,19 +685,20 @@ class AnyplaceApiClient {
     }
   }
 
-  /// Fetches a route from coordinates on a floor to a destination POI.
+  /// Fetches a route from coordinates to a destination POI.
+  ///
+  /// PHASE 6 (BUG-12): [floorNumber] is nullable — outdoor reroutes send
+  /// null (omitted from the payload) instead of a fabricated '0'; indoor
+  /// reroutes send the confirmed navigating floor.
   Future<NavigationRouteModel> fetchNavigationRouteFromCoordinates({
     required double latitude,
     required double longitude,
-    required String floorNumber,
+    String? floorNumber,
     required String destinationPuid,
   }) async {
-    final cleanFloor = floorNumber.trim();
+    final cleanFloor = floorNumber?.trim() ?? '';
     final cleanDestinationPuid = destinationPuid.trim();
 
-    if (cleanFloor.isEmpty) {
-      throw const ApiException('Floor number cannot be empty.');
-    }
     if (cleanDestinationPuid.isEmpty) {
       throw const ApiException('Destination POI ID cannot be empty.');
     }
@@ -708,7 +709,7 @@ class AnyplaceApiClient {
     final requestBody = jsonEncode({
       'coordinates_lat': latitude.toString(),
       'coordinates_lon': longitude.toString(),
-      'floor_number': cleanFloor,
+      if (cleanFloor.isNotEmpty) 'floor_number': cleanFloor,
       'pois_to': cleanDestinationPuid,
     });
 

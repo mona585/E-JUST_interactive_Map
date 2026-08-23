@@ -55,6 +55,19 @@ class NavigationConfig {
   /// Consecutive degraded (poor/invalid/held) fixes that enter PAUSED.
   static const int gpsPausePoorTicks = 3;
 
+  // ── PHASE 6: rerouting correctness ──
+
+  /// Consecutive qualifying off-route ticks required before a reroute fires
+  /// (INV-8 hysteresis: no single bad tick may reroute).
+  static const int rerouteDeviationConfirmTicks = 2;
+
+  /// KMZ hybrid edge-snap threshold for reroutes (was an inline literal).
+  static const double rerouteKmzSnapThreshold = 100.0;
+
+  /// Distance to a regular segment endpoint that advances the segment
+  /// counter (was an inline literal).
+  static const double segmentAdvanceThresholdMeters = 10.0;
+
   static const double deviationThreshold = 15.0;
 
   /// Minimum time (s) between reroute attempts.

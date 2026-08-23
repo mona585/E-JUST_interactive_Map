@@ -27,6 +27,11 @@ String navigationStatusLabel(NavigationController nav) {
     case NavigationState.exitingBuilding:
       return 'Leaving building\u2026';
     default:
+      // PHASE 6: a failed recalculation is visible while the valid old
+      // route keeps guiding; the flag clears on the next success or End.
+      if (nav.rerouteFailed && nav.isActive) {
+        return 'Recalculation failed \u2014 retrying soon';
+      }
       return nav.positioningStatus;
   }
 }

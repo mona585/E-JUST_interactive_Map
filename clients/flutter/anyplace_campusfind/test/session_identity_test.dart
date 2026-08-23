@@ -128,7 +128,7 @@ class _GatedRepo implements NavigationRepository {
   Future<NavigationRouteModel> getRouteFromCoordinates({
     required double latitude,
     required double longitude,
-    required String floorNumber,
+    String? floorNumber,
     required String destinationPuid,
   }) async {
     calls++;
@@ -314,6 +314,8 @@ void main() {
     h.startOutdoor();
 
     h.repo.holdNext();
+    // PHASE 6 hysteresis: two consecutive off-route ticks fire the reroute.
+    h.provider.setGpsLocation(_gps(30.8900));
     h.provider.setGpsLocation(_gps(30.8900)); // off-route -> reroute pending
     await tester.pump();
     expect(h.controller.isRerouting, isTrue);
@@ -340,6 +342,8 @@ void main() {
     final original = h.scope.activeNavigationRoute!;
 
     h.repo.holdNext();
+    // PHASE 6 hysteresis: two consecutive off-route ticks fire the reroute.
+    h.provider.setGpsLocation(_gps(30.8900));
     h.provider.setGpsLocation(_gps(30.8900));
     await tester.pump();
     expect(h.controller.isRerouting, isTrue);
@@ -381,6 +385,8 @@ void main() {
 
     final replacement = _replacement();
     h.repo.served = replacement;
+    // PHASE 6 hysteresis: two consecutive off-route ticks fire the reroute.
+    h.provider.setGpsLocation(_gps(30.8900));
     h.provider.setGpsLocation(_gps(30.8900));
     await tester.pump();
     await tester.pump();

@@ -175,7 +175,7 @@ class _SeedNavigationRepository implements NavigationRepository {
   Future<NavigationRouteModel> getRouteFromCoordinates({
     required double latitude,
     required double longitude,
-    required String floorNumber,
+    String? floorNumber,
     required String destinationPuid,
   }) async =>
       coordinateRoute ?? (throw Exception('stub: no route'));
@@ -530,7 +530,8 @@ testWidgets('PHASE 2 FLIP of BUG-2: a committed reroute reaches the '
   expect(controller.navigationState, NavigationState.activeOutdoor);
   expect(controller.activeRoute, same(originalRoute));
 
-  // One far off-route tick (>15 m threshold) fires the reroute.
+  // One far off-route tick pair (>15 m threshold) fires the reroute.
+  provider.setGpsLocation(_gpsAt(30.8900));
   provider.setGpsLocation(_gpsAt(30.8900));
   await tester.pump();
   await tester.pump();

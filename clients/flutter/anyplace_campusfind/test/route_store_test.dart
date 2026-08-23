@@ -101,7 +101,7 @@ class _CountingRepo implements NavigationRepository {
   Future<NavigationRouteModel> getRouteFromCoordinates({
     required double latitude,
     required double longitude,
-    required String floorNumber,
+    String? floorNumber,
     required String destinationPuid,
   }) async {
     calls++;
@@ -246,6 +246,8 @@ void main() {
     final replacement = _routeAt([30.8930, 30.8560]);
     h.repo.served = replacement;
 
+    // PHASE 6 hysteresis: two consecutive off-route ticks fire the reroute.
+    h.provider.setGpsLocation(_gps(30.8900));
     h.provider.setGpsLocation(_gps(30.8900));
     await tester.pump();
     await tester.pump();
@@ -277,6 +279,8 @@ void main() {
 
     final replacement = _routeAt([30.8930, 30.8560]);
     h.repo.served = replacement;
+    // PHASE 6 hysteresis: two consecutive off-route ticks fire the reroute.
+    h.provider.setGpsLocation(_gps(30.8900));
     h.provider.setGpsLocation(_gps(30.8900));
     await tester.pump();
     await tester.pump();

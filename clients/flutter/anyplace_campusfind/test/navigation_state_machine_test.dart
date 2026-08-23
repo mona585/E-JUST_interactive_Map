@@ -98,7 +98,7 @@ class _StubNavigationRepository implements NavigationRepository {
   Future<NavigationRouteModel> getRouteFromCoordinates({
     required double latitude,
     required double longitude,
-    required String floorNumber,
+    String? floorNumber,
     required String destinationPuid,
   }) async {
     calls++;
@@ -577,7 +577,16 @@ void main() {
     final reroutedTo = _route();
     h.stub.respondWith(reroutedTo);
 
-    // Jump far off the route line -> deviation triggers reroute.
+    // Jump far off the route line -> deviation triggers reroute
+    // (PHASE 6: after the second consecutive confirm tick).
+    h.provider.setGpsLocation(UserLocation(
+      latitude: 30.8720,
+      longitude: 29.5900,
+      accuracy: 8.0,
+      timestamp: DateTime.now(),
+    ));
+    expect(h.controller.navigationState, NavigationState.activeOutdoor,
+        reason: 'a single off-route tick never fires a reroute');
     h.provider.setGpsLocation(UserLocation(
       latitude: 30.8720,
       longitude: 29.5900,
@@ -703,6 +712,13 @@ void main() {
     final gate = Completer<NavigationRouteModel>();
     h.stub.gate(gate);
 
+    h.provider.setGpsLocation(UserLocation(
+      latitude: 30.8720,
+      longitude: 29.5900,
+      accuracy: 8.0,
+      timestamp: DateTime.now(),
+    ));
+    // PHASE 6 hysteresis: the second consecutive tick fires the reroute.
     h.provider.setGpsLocation(UserLocation(
       latitude: 30.8720,
       longitude: 29.5900,

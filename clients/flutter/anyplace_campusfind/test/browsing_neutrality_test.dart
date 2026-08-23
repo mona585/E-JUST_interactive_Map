@@ -134,7 +134,7 @@ class _NavRepo implements NavigationRepository {
   Future<NavigationRouteModel> getRouteFromCoordinates({
     required double latitude,
     required double longitude,
-    required String floorNumber,
+    String? floorNumber,
     required String destinationPuid,
   }) async =>
       coordinateRoute;
