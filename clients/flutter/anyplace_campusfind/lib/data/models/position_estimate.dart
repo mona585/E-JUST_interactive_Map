@@ -12,6 +12,15 @@ class PositionEstimate {
   final DateTime timestamp;
   final String status;
 
+  /// RSS-space distance of the closest matched fingerprint on the winning map.
+  /// Null when the platform payload predates the evidence fields or when
+  /// nothing was localized. May be infinite for degenerate native results.
+  final double? bestDistance;
+
+  /// Maximum pairwise great-circle spread (meters) among the k selected
+  /// fingerprints of the winning map. Null when not provided.
+  final double? topKSpreadMeters;
+
   const PositionEstimate({
     this.latitude,
     this.longitude,
@@ -22,6 +31,8 @@ class PositionEstimate {
     required this.durationMs,
     required this.timestamp,
     required this.status,
+    this.bestDistance,
+    this.topKSpreadMeters,
   });
 
   /// Factory constructor to deserialize from EventChannel JSON payload map.
@@ -41,9 +52,18 @@ class PositionEstimate {
     }
 
     final tsVal = map['timestamp'];
-    final timestamp = tsVal is num
-        ? DateTime.fromMillisecondsSinceEpoch(tsVal.toInt())
-        : DateTime.now();
+    DateTime timestamp;
+    if (tsVal is num) {
+      try {
+        timestamp = DateTime.fromMillisecondsSinceEpoch(tsVal.toInt());
+      } on ArgumentError {
+        // Corrupt/out-of-range numeric timestamp: same fallback semantics as
+        // a non-numeric one - never crash the positioning stream.
+        timestamp = DateTime.now();
+      }
+    } else {
+      timestamp = DateTime.now();
+    }
 
     return PositionEstimate(
       latitude: parseDouble(map['latitude']),
@@ -55,6 +75,8 @@ class PositionEstimate {
       durationMs: parseInt(map['durationMs']),
       timestamp: timestamp,
       status: (map['status'] ?? 'unknown').toString(),
+      bestDistance: parseDouble(map['bestDistance']),
+      topKSpreadMeters: parseDouble(map['topKSpreadMeters']),
     );
   }
 
@@ -85,6 +107,8 @@ class PositionEstimate {
       'durationMs': durationMs,
       'timestamp': timestamp.millisecondsSinceEpoch,
       'status': status,
+      if (bestDistance != null) 'bestDistance': bestDistance,
+      if (topKSpreadMeters != null) 'topKSpreadMeters': topKSpreadMeters,
     };
   }
 

@@ -56,8 +56,8 @@ class WifiScanner(private val context: Context) {
         override fun run() {
             if (!isRunning) return
 
-            if (!PositioningEngine.hasActiveRadioMap) {
-                Log.d(TAG, "No active RadioMap; stopping fallback loop")
+            if (!PositioningEngine.hasResidentMaps) {
+                Log.d(TAG, "No resident RadioMaps; stopping fallback loop")
                 stopScanning()
                 return
             }
@@ -122,7 +122,7 @@ class WifiScanner(private val context: Context) {
     }
 
     private fun handleScanResults() {
-        if (!isRunning || !PositioningEngine.hasActiveRadioMap) return
+        if (!isRunning || !PositioningEngine.hasResidentMaps) return
 
         val rawResults = try {
             wifiManager?.scanResults ?: emptyList()

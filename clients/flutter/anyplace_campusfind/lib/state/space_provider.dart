@@ -25,6 +25,7 @@ import '../services/search_service.dart';
 import '../services/cache_service.dart';
 import '../utils/category_deriver.dart';
 import 'location_provider.dart';
+import 'navigation_state_model.dart';
 
 /// Status of RadioMap acquisition and native engine readiness for the selected floor.
 enum RadioMapStatus { idle, loading, ready, unsupported, error }
@@ -75,7 +76,7 @@ class QuickAccessSeedReport {
 }
 
 /// Provider managing state for Anyplace buildings, floors, RadioMaps, indoor Floorplans, and POIs.
-class SpaceProvider extends ChangeNotifier {
+class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   final SpaceRepository _repository;
   final RadioMapRepository _radioMapRepository;
   final FloorplanRepository _floorplanRepository;
@@ -178,13 +179,17 @@ class SpaceProvider extends ChangeNotifier {
     );
   }
 
-  /// Binds LocationProvider for indoor floor position scoping.
+  /// Binds LocationProvider for route requests that need the current fix.
+  ///
+  /// Selection state is never forwarded as positioning scope: selection only
+  /// controls which RadioMaps load into the native engine, never which one
+  /// wins positioning arbitration.
   void setLocationProvider(LocationProvider? locationProvider) {
     _locationProvider = locationProvider;
-    _syncLocationProvider();
   }
 
   /// Access to the custom route repository for map rendering and queries.
+  @override
   CustomRouteRepository get customRouteRepository => _customRouteRepository;
 
   /// Loads custom KMZ routes from bundled assets.
@@ -197,13 +202,6 @@ class SpaceProvider extends ChangeNotifier {
     await _customRouteRepository.loadRoutes();
     debugPrint('[SpaceProvider] loadCustomRoutes: loaded=${_customRouteRepository.isLoaded}, routes=${_customRouteRepository.routes.length}');
     notifyListeners();
-  }
-
-  void _syncLocationProvider() {
-    _locationProvider?.setActiveIndoorFloor(
-      _selectedSpace?.buid,
-      _selectedFloor?.floorNumber,
-    );
   }
 
   /// Retries [fn] up to [maxRetries] times with exponential backoff.
@@ -231,6 +229,7 @@ class SpaceProvider extends ChangeNotifier {
   }
 
   List<SpaceModel> get spaces => _spaces;
+  @override
   SpaceModel? get selectedSpace => _selectedSpace;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -238,7 +237,9 @@ class SpaceProvider extends ChangeNotifier {
   bool get hasSelectedSpace => _selectedSpace != null;
 
   // Floor Getters
+  @override
   List<FloorModel> get floors => _floors;
+  @override
   FloorModel? get selectedFloor => _selectedFloor;
   bool get isLoadingFloors => _isLoadingFloors;
   String? get floorsErrorMessage => _floorsErrorMessage;
@@ -258,6 +259,7 @@ class SpaceProvider extends ChangeNotifier {
 
   // Floorplan Getters
   FloorplanStatus get floorplanStatus => _floorplanStatus;
+  @override
   FloorplanModel? get activeFloorplan => _activeFloorplan;
   bool get isLoadingFloorplan => _floorplanStatus == FloorplanStatus.loading;
   bool get hasActiveFloorplan =>
@@ -270,8 +272,10 @@ class SpaceProvider extends ChangeNotifier {
 
   // POI Getters
   PoiStatus get poiStatus => _poiStatus;
+  @override
   List<PoiModel> get pois => _pois;
   PoiModel? get selectedPoi => _selectedPoi;
+  @override
   bool get hasPois => _pois.isNotEmpty;
   bool get isLoadingPois => _poiStatus == PoiStatus.loading;
   String? get poiErrorMessage => _poiErrorMessage;
@@ -279,6 +283,7 @@ class SpaceProvider extends ChangeNotifier {
 
   // Navigation Getters
   NavigationRouteStatus get navigationRouteStatus => _navigationRouteStatus;
+  @override
   NavigationRouteModel? get activeNavigationRoute => _activeNavigationRoute;
   String? get navigationRouteErrorMessage => _navigationRouteErrorMessage;
   bool get isLoadingNavigationRoute =>
@@ -419,6 +424,7 @@ class SpaceProvider extends ChangeNotifier {
   }
 
   /// Selects a space, clears previous floor & POI selections, and automatically loads available floors.
+  @override
   void selectSpace(SpaceModel space) {
     if (_selectedSpace?.buid != space.buid) {
       debugPrint(
@@ -433,7 +439,6 @@ class SpaceProvider extends ChangeNotifier {
       _resetFloorplanState();
       _resetPoiState();
       _resetNavigationRouteState();
-      _syncLocationProvider();
       _batchPaused = true; // Pause background batch Ã¢â‚¬â€ user action takes priority
       notifyListeners();
 
@@ -443,6 +448,7 @@ class SpaceProvider extends ChangeNotifier {
   }
 
   /// Clears the currently selected space, floor, RadioMap, floorplan, and POIs.
+  @override
   void clearSelection() {
     if (_selectedSpace != null || _selectedFloor != null) {
       debugPrint(
@@ -460,13 +466,13 @@ class SpaceProvider extends ChangeNotifier {
       _resetFloorplanState();
       _resetPoiState();
       _resetNavigationRouteState();
-      _syncLocationProvider();
       _batchPaused = false; // Resume background batch
       notifyListeners();
     }
   }
 
   /// Selects a floor for the currently selected space and triggers RadioMap, Floorplan, and POI downloads.
+  @override
   void selectFloor(FloorModel floor) {
     if (_selectedSpace == null) {
       debugPrint('[SpaceProvider] Cannot select floor: no space selected');
@@ -491,7 +497,6 @@ class SpaceProvider extends ChangeNotifier {
     _selectedFloor = floor;
     _selectedPoi = null;
     _resetNavigationRouteState();
-    _syncLocationProvider();
     notifyListeners();
 
     // Trigger RadioMap, Floorplan, and POI acquisitions for the selected floor
@@ -513,7 +518,6 @@ class SpaceProvider extends ChangeNotifier {
       _resetFloorplanState();
       _resetPoiState();
       _resetNavigationRouteState();
-      _syncLocationProvider();
       notifyListeners();
     }
   }
@@ -1668,7 +1672,9 @@ class SpaceProvider extends ChangeNotifier {
         _radioMapStatus = RadioMapStatus.error;
         _radioMapErrorMessage =
             loadFailureReason ?? 'Native engine rejected RadioMap format.';
-        await _nativePositioningService.clearRadioMap();
+        // Targeted eviction: only this floor's map is removed; other resident
+        // RadioMaps keep serving positioning.
+        await _nativePositioningService.removeRadioMap(targetBuid, targetFloor);
       }
     } on ApiException catch (e) {
       if (requestId != _radioMapRequestId) return;
@@ -1691,7 +1697,8 @@ class SpaceProvider extends ChangeNotifier {
           '[SpaceProvider] RadioMap API error for $targetBuid / Floor $targetFloor: ${e.message}',
         );
       }
-      await _nativePositioningService.clearRadioMap();
+      // Targeted eviction: only this floor's map is affected by the failure.
+      await _nativePositioningService.removeRadioMap(targetBuid, targetFloor);
     } catch (e) {
       if (requestId != _radioMapRequestId) return;
       _radioMapStatus = RadioMapStatus.error;
@@ -1699,7 +1706,8 @@ class SpaceProvider extends ChangeNotifier {
       debugPrint(
         '[SpaceProvider] Unexpected RadioMap error for $targetBuid / Floor $targetFloor: $e',
       );
-      await _nativePositioningService.clearRadioMap();
+      // Targeted eviction: only this floor's map is affected by the failure.
+      await _nativePositioningService.removeRadioMap(targetBuid, targetFloor);
     } finally {
       if (requestId == _radioMapRequestId) {
         notifyListeners();

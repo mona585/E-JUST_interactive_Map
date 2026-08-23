@@ -449,6 +449,9 @@ class _FakeNativePositioningService implements NativePositioningService {
   Future<bool> clearRadioMap() async => true;
 
   @override
+  Future<bool> removeRadioMap(String buid, String floor) async => true;
+
+  @override
   Future<Map<String, dynamic>?> getActiveRadioMapInfo() async => null;
 
   @override

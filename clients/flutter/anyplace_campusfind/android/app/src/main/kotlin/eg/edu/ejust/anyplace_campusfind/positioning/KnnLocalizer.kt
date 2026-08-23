@@ -1,6 +1,9 @@
 package eg.edu.ejust.anyplace_campusfind.positioning
 
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 data class LatLng(val latitude: Double, val longitude: Double)
@@ -9,10 +12,21 @@ data class ScanRecord(val bssid: String, val rssi: Int)
 
 data class LocDistance(val distance: Double, val lat: Double, val lon: Double)
 
+/**
+ * Result of one localization pass.
+ *
+ * The trailing evidence fields are purely observational and never influence
+ * the computed [latLng]: [bestDistance] is the RSS-space distance of the
+ * closest fingerprint ([Double.POSITIVE_INFINITY] when nothing was localized),
+ * and [topKSpreadMeters] is the maximum pairwise great-circle distance among
+ * the k selected fingerprint locations (0 when fewer than two were selected).
+ */
 data class LocalizationResult(
     val latLng: LatLng?,
     val matchedAps: Int,
-    val totalAps: Int
+    val totalAps: Int,
+    val bestDistance: Double = Double.POSITIVE_INFINITY,
+    val topKSpreadMeters: Double = 0.0
 )
 
 /**
@@ -24,6 +38,8 @@ data class LocalizationResult(
  */
 object KnnLocalizer {
     const val DEFAULT_K = 4
+
+    private const val EARTH_RADIUS_METERS = 6371008.8
 
     fun localize(
         scanResults: List<ScanRecord>,
@@ -89,7 +105,13 @@ object KnnLocalizer {
             unweightedAverage(distances, actualK)
         }
 
-        return LocalizationResult(estimate, matchedAps, scanResults.size)
+        return LocalizationResult(
+            latLng = estimate,
+            matchedAps = matchedAps,
+            totalAps = scanResults.size,
+            bestDistance = distances[0].distance,
+            topKSpreadMeters = topKPairwiseSpreadMeters(distances, actualK)
+        )
     }
 
     private fun unweightedAverage(distances: List<LocDistance>, k: Int): LatLng {
@@ -120,5 +142,29 @@ object KnnLocalizer {
         } else {
             unweightedAverage(distances, k)
         }
+    }
+
+    private fun topKPairwiseSpreadMeters(distances: List<LocDistance>, k: Int): Double {
+        var maxSpread = 0.0
+        for (i in 0 until k) {
+            for (j in i + 1 until k) {
+                val d = distanceMeters(
+                    distances[i].lat,
+                    distances[i].lon,
+                    distances[j].lat,
+                    distances[j].lon
+                )
+                if (d > maxSpread) maxSpread = d
+            }
+        }
+        return maxSpread
+    }
+
+    private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val halfChord = sin(dLat / 2).pow(2) +
+            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+        return 2 * EARTH_RADIUS_METERS * atan2(sqrt(halfChord), sqrt(1 - halfChord))
     }
 }

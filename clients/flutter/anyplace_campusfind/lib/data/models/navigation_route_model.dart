@@ -2,7 +2,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'route_segment.dart';
 
-/// Status of a navigation route model.
+/// Completeness of a composed [NavigationRouteModel].
+///
+/// Deliberately distinct from SpaceProvider's `NavigationRouteStatus`, which
+/// tracks the route-fetch lifecycle (idle/loading/ready/unsupported/error).
+/// This enum describes whether the model itself is fully usable: [ready]
+/// enables active navigation, [partial] renders with a warning and disables
+/// it, [error] carries nothing usable.
 enum RouteModelStatus {
   /// All segments generated successfully. Full active navigation enabled.
   ready,
@@ -87,7 +93,17 @@ class NavigationRoutePoint {
   }
 }
 
-/// A full Anyplace navigation route polyline composed of waypoint POIs.
+/// A full Anyplace navigation route.
+///
+/// Two complementary representations live here:
+///  * [points] — the universal flat waypoint projection consumed by the
+///    renderer and by the controller's floor-transition indices. Always
+///    populated.
+///  * [segments] — optional typed legs of a cross-building journey
+///    ([RouteSegmentType]). Empty for legacy routes built directly from
+///    server waypoints or hybrid merges; when built via
+///    [NavigationRouteModel.fromSegments], [points] are derived from the
+///    segments so the segments remain the single source of truth.
 class NavigationRouteModel {
   final List<NavigationRoutePoint> points;
 
@@ -98,7 +114,7 @@ class NavigationRouteModel {
   /// Overall status of this route.
   final RouteModelStatus status;
 
-  /// Warning message shown when [status] is [NavigationRouteStatus.partial].
+  /// Warning message shown when [status] is [RouteModelStatus.partial].
   final String? partialRouteWarning;
 
   const NavigationRouteModel({
@@ -170,24 +186,31 @@ class NavigationRouteModel {
     return NavigationRouteModel(points: routePoints);
   }
 
-  /// Creates a route from segments, generating flat points automatically.
+  /// Creates a route from segments, deriving the flat [points] projection.
+  ///
+  /// Generated points carry synthetic, globally-unique puids of the form
+  /// `<segmentType>_<index>` and have no server identity. Real connector /
+  /// entrance identity stays on the [RouteSegment] itself (e.g.
+  /// [RouteSegment.connectorPoiId]).
   factory NavigationRouteModel.fromSegments({
     required List<RouteSegment> segments,
     required RouteModelStatus status,
     String? partialRouteWarning,
   }) {
     final allPoints = <NavigationRoutePoint>[];
+    var pointIndex = 0;
     for (final seg in segments) {
       for (final pt in seg.points) {
         allPoints.add(NavigationRoutePoint(
           latitude: pt.latitude,
           longitude: pt.longitude,
-          puid: seg.connectorPoiId ?? '__segment__',
+          puid: '${seg.type.name}_$pointIndex',
           buid: seg.buildingId ?? '',
           floorNumber: seg.floorNumber ?? '',
           poisType: seg.type.name,
           isOutdoor: seg.type == RouteSegmentType.outdoorWalking,
         ));
+        pointIndex++;
       }
     }
     return NavigationRouteModel(
@@ -206,44 +229,6 @@ class NavigationRouteModel {
 
   /// Whether this is a partial route (some segments failed).
   bool get isPartial => status == RouteModelStatus.partial;
-
-  /// Whether this route is fully navigable (ready status, has segments).
-  bool get isFullyNavigable =>
-      status == RouteModelStatus.ready && hasSegments;
-
-  /// Reconstructs the flat point list from segments for backward compatibility.
-  /// If no segments exist, returns the original [points] list.
-  List<NavigationRoutePoint> get flatPoints {
-    if (segments.isEmpty) return points;
-    final result = <NavigationRoutePoint>[];
-    for (final seg in segments) {
-      for (final pt in seg.points) {
-        result.add(NavigationRoutePoint(
-          latitude: pt.latitude,
-          longitude: pt.longitude,
-          puid: seg.connectorPoiId ?? '__segment__',
-          buid: seg.buildingId ?? '',
-          floorNumber: seg.floorNumber ?? '',
-          poisType: seg.type.name,
-          isOutdoor: seg.type == RouteSegmentType.outdoorWalking,
-        ));
-      }
-    }
-    return result;
-  }
-
-  /// Total distance across all segments in meters.
-  double get totalDistance =>
-      segments.fold(0.0, (sum, seg) => sum + seg.distance);
-
-  /// Estimated total duration in seconds (approximation: 1.4 m/s walking speed).
-  double get estimatedDuration => totalDistance / 1.4;
-
-  /// The current segment being navigated, or null if not started.
-  RouteSegment? get currentSegment => null; // Set by NavigationController
-
-  /// The next segment after the current one, or null.
-  RouteSegment? get nextSegment => null; // Set by NavigationController
 
   List<LatLng> get polylinePoints =>
       points.map((point) => point.latLng).toList();
@@ -264,48 +249,6 @@ class NavigationRouteModel {
 
   /// Whether this route crosses one or more floors.
   bool get hasFloorTransitions => floorTransitionIndices.isNotEmpty;
-
-  /// The route points grouped by floor number (preserving order within each floor).
-  Map<String, List<NavigationRoutePoint>> get segmentsByFloor {
-    final map = <String, List<NavigationRoutePoint>>{};
-    for (final point in points) {
-      map.putIfAbsent(point.floorNumber, () => []).add(point);
-    }
-    return map;
-  }
-
-  /// Floor numbers this route passes through, in order of first appearance.
-  List<String> get floorsInOrder {
-    final seen = <String>{};
-    final floors = <String>[];
-    for (final point in points) {
-      if (seen.add(point.floorNumber)) {
-        floors.add(point.floorNumber);
-      }
-    }
-    return floors;
-  }
-
-  /// Connector points where the floor changes.
-  ///
-  /// Uses [poisType] when available (Stair/Elevator), falls back to
-  /// floor-number-change detection.
-  List<NavigationRoutePoint> get connectorPoints {
-    return [
-      for (final idx in floorTransitionIndices) points[idx],
-    ];
-  }
-
-  /// Returns the next floor the route transitions to from [currentFloor],
-  /// or null if the route stays on the current floor.
-  String? nextFloorFrom(String currentFloor) {
-    for (final idx in floorTransitionIndices) {
-      if (points[idx].floorNumber == currentFloor) {
-        return points[idx + 1].floorNumber;
-      }
-    }
-    return null;
-  }
 
   /// The subset of polyline points that belong to [floorNumber].
   List<LatLng> polylinePointsForFloor(String floorNumber) {

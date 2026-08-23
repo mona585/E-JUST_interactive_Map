@@ -7,6 +7,7 @@ import '../../data/models/quick_access_item.dart';
 import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
 import '../../utils/category_deriver.dart';
+import '../utils/navigation_display.dart';
 import '../widgets/building_detail_card.dart';
 import '../widgets/poi_detail_card.dart';
 
@@ -338,7 +339,7 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet>
                   ),
                 ),
                 Text(
-                  navController.positioningStatus,
+                  navigationStatusLabel(navController),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

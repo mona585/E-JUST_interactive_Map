@@ -8,6 +8,7 @@ import '../data/datasources/gps_location_service.dart';
 import '../data/datasources/location_service.dart';
 import '../data/datasources/native_positioning_service.dart';
 import '../data/models/position_estimate.dart';
+import '../data/models/position_fix.dart';
 import '../data/models/user_location.dart';
 
 /// Active source of effective user position.
@@ -45,6 +46,20 @@ enum PositioningStability {
   stable,
 }
 
+/// Which evidence stream the unified arbiter currently believes.
+///
+/// Decided exclusively by measurement evidence (timeliness and quality of
+/// native estimates vs availability of GPS) — never by UI selection,
+/// destination, route, POI, or selected-floor context.
+enum _ArbiterMode {
+  /// GPS is the believed source; Wi-Fi evidence is only accumulating towards
+  /// indoor-entry confirmation.
+  outdoor,
+
+  /// Fresh, qualifying Wi-Fi evidence is the believed source.
+  indoor,
+}
+
 /// A single entry in the positioning stability rolling window.
 class _StabilityEntry {
   final LatLng position;
@@ -59,18 +74,53 @@ class _StabilityEntry {
 }
 
 /// Provider managing outdoor device GPS position, native indoor Wi-Fi position,
-/// and evaluating position source precedence.
+/// and arbitrating between them as a single unified positioning pipeline.
+///
+/// Arbitration contract (Phase 1):
+/// - Native estimates are consumed as evidence only. An estimate's
+///   `buid`/`floor` mean "this estimate was localized against that resident
+///   RadioMap"; they become canonical user identity only after
+///   [NavigationConfig.scopeConfirmCount] consecutive consistent winning
+///   estimates.
+/// - UI selection (building/floor/POI/route/destination) never influences
+///   which evidence is believed nor the reported identity.
+/// - There is no numerical GPS/Wi-Fi fusion: exactly one source is believed
+///   at a time, switched with hysteresis.
 class LocationProvider extends ChangeNotifier {
   final LocationService _locationService;
   final NativePositioningService _nativePositioningService;
 
+  // -- Raw evidence streams (pass-through, never selection-gated) --
   UserLocation? _gpsLocation;
   PositionEstimate? _latestIndoorEstimate;
-  String? _activeIndoorBuid;
-  String? _activeIndoorFloor;
 
-  UserLocation? _currentLocation;
-  LocationSource _positionSource = LocationSource.none;
+  // -- Unified arbiter state --
+  _ArbiterMode _mode = _ArbiterMode.outdoor;
+
+  /// Canonical output of the arbiter (single believed source per fix).
+  PositionFix? _currentFix;
+
+  /// Consecutive qualifying estimates while outdoor (indoor-entry hysteresis).
+  int _indoorCandidateStreak = 0;
+
+  /// Consecutive non-qualifying/outlier arrivals while indoor
+  /// (indoor-exit hysteresis). Silence is handled by the stale timer.
+  int _indoorBadCycleCount = 0;
+
+  /// Building/floor claim under confirmation (estimate-level identity).
+  String? _claimBuid;
+  String? _claimFloor;
+  int _claimStreak = 0;
+
+  /// Canonically confirmed identity pair; null until
+  /// [NavigationConfig.scopeConfirmCount] consistent claims succeed.
+  String? _confirmedBuid;
+  String? _confirmedFloor;
+
+  /// Estimate-level identity of the last accepted Wi-Fi fix; used by the
+  /// outlier guard to distinguish genuine map switches from noise.
+  String? _lastAcceptedWifiBuid;
+  String? _lastAcceptedWifiFloor;
 
   LocationStateStatus _status = LocationStateStatus.initial;
   String? _errorMessage;
@@ -79,6 +129,7 @@ class LocationProvider extends ChangeNotifier {
   Timer? _indoorStaleTimer;
   int _indoorEstimateGeneration = 0;
   bool _isTracking = false;
+  bool _isDisposed = false;
 
   // -- Positioning stability tracker --
   final List<_StabilityEntry> _stabilityWindow = [];
@@ -94,20 +145,42 @@ class LocationProvider extends ChangeNotifier {
     _subscribeNativePositionStream();
   }
 
-  /// Current effective user location (either Indoor Wi-Fi or Outdoor GPS).
-  UserLocation? get currentLocation => _currentLocation;
+  /// Canonical immutable position fix produced by unified arbitration.
+  ///
+  /// Exactly one of GPS / Wi-Fi evidence is believed per fix. Building/floor
+  /// identity is present only after claim confirmation; it is never inferred
+  /// from UI selection context.
+  PositionFix? get currentFix => _currentFix;
 
-  /// Outdoor GPS location fix.
+  /// Current effective user location (either Indoor Wi-Fi or Outdoor GPS).
+  UserLocation? get currentLocation {
+    final fix = _currentFix;
+    if (fix == null) return null;
+    return UserLocation(
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+      accuracy: fix.accuracy,
+      timestamp: fix.timestamp,
+    );
+  }
+
+  /// Outdoor GPS location fix (raw pass-through).
   UserLocation? get gpsLocation => _gpsLocation;
 
-  /// Latest native Wi-Fi indoor position estimate.
+  /// Latest raw native Wi-Fi indoor position estimate (pass-through).
   PositionEstimate? get latestIndoorEstimate => _latestIndoorEstimate;
 
   /// Active position source (`gps`, `indoorWifi`, or `none`).
-  LocationSource get positionSource => _positionSource;
+  LocationSource get positionSource {
+    final fix = _currentFix;
+    if (fix == null) return LocationSource.none;
+    return fix.source == PositionSource.wifi
+        ? LocationSource.indoorWifi
+        : LocationSource.gps;
+  }
 
   /// Whether current effective position is driven by native Wi-Fi.
-  bool get isIndoorWifiActive => _positionSource == LocationSource.indoorWifi;
+  bool get isIndoorWifiActive => positionSource == LocationSource.indoorWifi;
 
   /// Current lifecycle status of location provider.
   LocationStateStatus get status => _status;
@@ -119,7 +192,7 @@ class LocationProvider extends ChangeNotifier {
   bool get isTracking => _isTracking;
 
   /// Whether a valid user location fix is available.
-  bool get hasLocation => _currentLocation != null;
+  bool get hasLocation => _currentFix != null;
 
   void _subscribeNativePositionStream() {
     _nativeSubscription?.cancel();
@@ -128,24 +201,7 @@ class LocationProvider extends ChangeNotifier {
         debugPrint(
           '[LocationProvider] Native position estimate received: $estimate',
         );
-        _latestIndoorEstimate = estimate;
-
-        // Feed stability window if estimate is valid and matches current floor
-        if (estimate.isValid &&
-            estimate.buid == _activeIndoorBuid &&
-            estimate.floor == _activeIndoorFloor &&
-            estimate.latitude != null &&
-            estimate.longitude != null) {
-          _stabilityWindow.add(_StabilityEntry(
-            position: LatLng(estimate.latitude!, estimate.longitude!),
-            timestamp: estimate.timestamp,
-            matchedAps: estimate.matchedAps,
-          ));
-          _evaluateStability();
-        }
-
-        _scheduleIndoorStaleTimer();
-        _evaluatePositionPolicy();
+        _onNativeEstimate(estimate);
       },
       onError: (err) {
         debugPrint('[LocationProvider] Native position stream error: $err');
@@ -153,86 +209,345 @@ class LocationProvider extends ChangeNotifier {
     );
   }
 
+  /// Unified evidence intake: records raw pass-through state, runs the mode
+  /// state machine, then rebuilds the canonical fix.
+  void _onNativeEstimate(PositionEstimate estimate) {
+    if (_isDisposed) return;
+    _latestIndoorEstimate = estimate;
+
+    final qualifies = _qualifies(estimate);
+
+    if (!estimate.isValid) {
+      _cancelIndoorStaleTimer();
+    } else {
+      _scheduleIndoorStaleTimer();
+    }
+
+    switch (_mode) {
+      case _ArbiterMode.outdoor:
+        _handleOutdoorEvidence(estimate, qualifies);
+        break;
+      case _ArbiterMode.indoor:
+        _handleIndoorEvidence(estimate, qualifies);
+        break;
+    }
+
+    _feedStability(qualifies, estimate);
+    _evaluateArbitration();
+  }
+
+  /// Whether an estimate counts as valid positioning evidence.
+  ///
+  /// Gates: native validity, a backing resident RadioMap (non-empty buid and
+  /// floor), minimum matched APs, and — when totalAps is known — the minimum
+  /// matched ratio. Estimates without a backing map carry no verifiable
+  /// coordinates and are never qualifying evidence.
+  bool _qualifies(PositionEstimate e) {
+    if (!e.isValid) return false;
+    if (e.buid.isEmpty || e.floor.isEmpty) return false;
+    if (e.matchedAps < NavigationConfig.stabilityMinMatchedAps) return false;
+    if (e.totalAps > 0 &&
+        e.matchedAps / e.totalAps < NavigationConfig.minMatchedRatio) {
+      return false;
+    }
+    return true;
+  }
+
+  // -- Mode state machine --
+
+  /// Outdoor mode: only qualifying estimates accumulate towards indoor entry.
+  /// GPS remains the believed source until [NavigationConfig.indoorEnterConfirmCount]
+  /// consecutive qualifying estimates confirm indoor positioning.
+  void _handleOutdoorEvidence(PositionEstimate estimate, bool qualifies) {
+    if (!qualifies) {
+      _indoorCandidateStreak = 0;
+      return;
+    }
+
+    _indoorCandidateStreak++;
+    if (_indoorCandidateStreak >= NavigationConfig.indoorEnterConfirmCount) {
+      debugPrint(
+        '[LocationProvider] Entering indoor positioning after '
+        '$_indoorCandidateStreak consecutive qualifying estimates',
+      );
+      _mode = _ArbiterMode.indoor;
+      _indoorCandidateStreak = 0;
+      _indoorBadCycleCount = 0;
+      _resetClaim();
+      _acceptWifiEstimate(estimate);
+    }
+  }
+
+  /// Indoor mode: accepted evidence maintains the fix and claim streak;
+  /// non-qualifying or outlier evidence accumulates towards exit.
+  void _handleIndoorEvidence(PositionEstimate estimate, bool qualifies) {
+    if (qualifies) {
+      if (_isOutlierJump(estimate)) {
+        // Suspect sample: hold previous fix, break the claim streak, and
+        // count this cycle as bad for exit hysteresis.
+        debugPrint(
+          '[LocationProvider] Outlier jump rejected '
+          '(>${NavigationConfig.outlierJumpThresholdMeters}m within same scope); holding previous fix',
+        );
+        _holdWifiFix(estimate);
+        _claimStreak = 0;
+        _indoorBadCycleCount++;
+      } else {
+        _acceptWifiEstimate(estimate);
+        _indoorBadCycleCount = 0;
+      }
+
+      if (_indoorBadCycleCount >= NavigationConfig.indoorExitStaleCycles) {
+        _exitIndoorMode('consecutive low-quality/outlier cycles');
+      }
+      return;
+    }
+
+    _indoorBadCycleCount++;
+    _claimStreak = 0;
+    if (_indoorBadCycleCount >= NavigationConfig.indoorExitStaleCycles) {
+      _exitIndoorMode('consecutive non-qualifying cycles');
+    }
+  }
+
+  void _exitIndoorMode(String reason) {
+    debugPrint('[LocationProvider] Exiting indoor positioning: $reason');
+    _mode = _ArbiterMode.outdoor;
+    _indoorCandidateStreak = 0;
+    _indoorBadCycleCount = 0;
+    _resetClaim();
+    _resetStability();
+    // Canonical fix falls back to GPS (or none) in _evaluateArbitration.
+  }
+
+  /// Whether a qualifying estimate is an implausible jump from the last
+  /// accepted Wi-Fi fix.
+  ///
+  /// Only applies when the estimate claims the same resident map identity as
+  /// the last accepted fix. A different winning (buid, floor) is genuine
+  /// evidence — floors overlap geographically and only map identity can
+  /// disambiguate them — so it bypasses the guard.
+  bool _isOutlierJump(PositionEstimate e) {
+    final fix = _currentFix;
+    if (fix == null || fix.source != PositionSource.wifi) return false;
+    if (e.buid != _lastAcceptedWifiBuid || e.floor != _lastAcceptedWifiFloor) {
+      return false;
+    }
+    final distance = Geolocator.distanceBetween(
+      fix.latitude,
+      fix.longitude,
+      e.latitude!,
+      e.longitude!,
+    );
+    return distance > NavigationConfig.outlierJumpThresholdMeters;
+  }
+
+  /// Accepts a qualifying Wi-Fi estimate as the believed fix and advances the
+  /// building/floor claim state machine.
+  void _acceptWifiEstimate(PositionEstimate e) {
+    _currentFix = PositionFix(
+      latitude: e.latitude!,
+      longitude: e.longitude!,
+      source: PositionSource.wifi,
+      buildingId: _confirmedBuid,
+      floor: _confirmedFloor,
+      accuracy: _deriveWifiAccuracy(e),
+      confidence: _computeWifiConfidence(e),
+      timestamp: e.timestamp,
+      status: PositionFixStatus.fresh,
+    );
+    _lastAcceptedWifiBuid = e.buid;
+    _lastAcceptedWifiFloor = e.floor;
+    _advanceClaim(e.buid, e.floor);
+  }
+
+  /// Carries the previous fix forward with `held` status after an outlier.
+  /// Coordinates/accuracy/confidence/scope are preserved unchanged.
+  void _holdWifiFix(PositionEstimate observationTime) {
+    final fix = _currentFix;
+    if (fix == null) return;
+    _currentFix = fix.copyWith(
+      timestamp: observationTime.timestamp,
+      status: PositionFixStatus.held,
+    );
+  }
+
+  // -- Claim confirmation (N = NavigationConfig.scopeConfirmCount) --
+
+  /// Advances the claim streak with an accepted estimate's identity pair.
+  ///
+  /// The pair becomes canonically confirmed only after
+  /// [NavigationConfig.scopeConfirmCount] consecutive consistent claims; the
+  /// confirmed pair then switches atomically when a different pair reaches N.
+  void _advanceClaim(String buid, String floor) {
+    if (_claimBuid == buid && _claimFloor == floor) {
+      _claimStreak++;
+    } else {
+      _claimBuid = buid;
+      _claimFloor = floor;
+      _claimStreak = 1;
+    }
+
+    if (_claimStreak >= NavigationConfig.scopeConfirmCount &&
+        (_confirmedBuid != buid || _confirmedFloor != floor)) {
+      debugPrint('[LocationProvider] Scope confirmed: $buid / $floor');
+      _confirmedBuid = buid;
+      _confirmedFloor = floor;
+    }
+  }
+
+  void _resetClaim() {
+    _claimBuid = null;
+    _claimFloor = null;
+    _claimStreak = 0;
+    _confirmedBuid = null;
+    _confirmedFloor = null;
+    _lastAcceptedWifiBuid = null;
+    _lastAcceptedWifiFloor = null;
+  }
+
+  // -- Evidence-derived quality metrics --
+
+  /// Derives Wi-Fi horizontal accuracy (meters) from KNN evidence:
+  /// clamp(max(topKSpreadMeters, bestDistance), wifiAccuracyMinMeters,
+  /// wifiAccuracyMaxMeters). Non-finite or absent fields contribute nothing;
+  /// with no basis at all, the conservative upper bound is used.
+  double _deriveWifiAccuracy(PositionEstimate e) {
+    var basis = -1.0;
+    final spread = e.topKSpreadMeters;
+    if (spread != null && spread.isFinite && spread > 0) {
+      basis = spread;
+    }
+    final best = e.bestDistance;
+    if (best != null && best.isFinite && best > basis) {
+      basis = best;
+    }
+    if (basis < 0) {
+      basis = NavigationConfig.wifiAccuracyMaxMeters;
+    }
+    return basis.clamp(
+      NavigationConfig.wifiAccuracyMinMeters,
+      NavigationConfig.wifiAccuracyMaxMeters,
+    );
+  }
+
+  /// Computes arbitration confidence in [0, 1] from match ratio, top-k
+  /// fingerprint spread, and short-term stability of the evidence window.
+  double _computeWifiConfidence(PositionEstimate e) {
+    // Match-ratio component saturating at 50% matched APs. When totalAps is
+    // unknown, take the neutral midpoint.
+    final ratio = e.totalAps > 0 ? e.matchedAps / e.totalAps : 0.5;
+    final ratioScore = (ratio / 0.5).clamp(0.0, 1.0);
+
+    // Spread component: tight fingerprint clusters score higher; unknown
+    // spread is neutral.
+    var spreadScore = 0.5;
+    final spread = e.topKSpreadMeters;
+    if (spread != null && spread.isFinite && spread > 0) {
+      final normalized =
+          ((spread - NavigationConfig.wifiAccuracyMinMeters) /
+                  (NavigationConfig.wifiAccuracyMaxMeters -
+                      NavigationConfig.wifiAccuracyMinMeters))
+              .clamp(0.0, 1.0);
+      spreadScore = 1.0 - normalized;
+    }
+
+    // Stability component: agreement of the recent evidence window.
+    final stabilityScore =
+        _positioningStability == PositioningStability.stable ? 1.0 : 0.4;
+
+    return (0.45 * ratioScore + 0.25 * spreadScore + 0.30 * stabilityScore)
+        .clamp(0.0, 1.0);
+  }
+
+  /// Deterministic GPS confidence mapping from reported accuracy.
+  double _gpsConfidence(double accuracy) {
+    if (accuracy <= 5.0) return 0.9;
+    if (accuracy <= NavigationConfig.exitAccuracyThreshold) return 0.7;
+    return 0.5;
+  }
+
+  // -- Canonical fix maintenance --
+
+  /// Rebuilds the canonical fix from arbiter state. While indoor, the
+  /// maintained Wi-Fi fix stands; otherwise GPS (or none) is believed.
+  void _evaluateArbitration() {
+    if (_isDisposed) return;
+    if (!(_mode == _ArbiterMode.indoor && _currentFix != null)) {
+      _currentFix = _buildGpsFix();
+    }
+    notifyListeners();
+  }
+
+  PositionFix? _buildGpsFix() {
+    final gps = _gpsLocation;
+    if (gps == null) return null;
+    return PositionFix(
+      latitude: gps.latitude,
+      longitude: gps.longitude,
+      source: PositionSource.gps,
+      accuracy: gps.accuracy,
+      confidence: _gpsConfidence(gps.accuracy),
+      timestamp: gps.timestamp,
+      status: PositionFixStatus.fresh,
+    );
+  }
+
+  // -- Indoor stale timer --
+
   void _scheduleIndoorStaleTimer() {
     final estimate = _latestIndoorEstimate;
     if (estimate == null || !estimate.isValid) {
-      _indoorStaleTimer?.cancel();
-      _indoorStaleTimer = null;
+      _cancelIndoorStaleTimer();
       return;
     }
 
     _indoorStaleTimer?.cancel();
     final generation = ++_indoorEstimateGeneration;
-    _indoorStaleTimer = Timer(const Duration(seconds: 10), () {
-      if (generation != _indoorEstimateGeneration) {
-        return;
-      }
+    _indoorStaleTimer = Timer(
+      Duration(seconds: NavigationConfig.indoorStaleTimerSeconds),
+      () {
+        if (_isDisposed || generation != _indoorEstimateGeneration) {
+          return;
+        }
 
-      if (_latestIndoorEstimate == estimate) {
-        debugPrint(
-          '[LocationProvider] Indoor estimate expired after 10s; clearing active Wi-Fi position',
-        );
-        _latestIndoorEstimate = null;
-        _evaluatePositionPolicy();
-      }
-    });
-  }
-
-  /// Sets the currently active indoor building and floor scope.
-  ///
-  /// Must be called whenever the user selects or clears a floor.
-  void setActiveIndoorFloor(String? buid, String? floor) {
-    if (_activeIndoorBuid == buid && _activeIndoorFloor == floor) return;
-
-    debugPrint(
-      '[LocationProvider] setActiveIndoorFloor: ($buid, $floor) [was ($_activeIndoorBuid, $_activeIndoorFloor)]',
+        if (_latestIndoorEstimate == estimate) {
+          debugPrint(
+            '[LocationProvider] Indoor estimate expired after '
+            '${NavigationConfig.indoorStaleTimerSeconds}s; clearing active Wi-Fi position',
+          );
+          _latestIndoorEstimate = null;
+          if (_mode == _ArbiterMode.indoor) {
+            _exitIndoorMode('stale estimate');
+          }
+          _evaluateArbitration();
+        }
+      },
     );
-    _activeIndoorBuid = buid;
-    _activeIndoorFloor = floor;
-
-    // Reset indoor estimate if floor changed or cleared
-    if (buid == null || floor == null) {
-      _latestIndoorEstimate = null;
-      _indoorStaleTimer?.cancel();
-      _indoorStaleTimer = null;
-      _indoorEstimateGeneration++;
-      _resetStability();
-    } else {
-      // Floor changed to a new value Ã¢â‚¬â€ reset stability for new floor
-      _resetStability();
-    }
-
-    _evaluatePositionPolicy();
   }
 
-  /// Evaluates position source precedence:
-  ///
-  /// 1. Indoor Wi-Fi wins IF valid estimate exists for current buid/floor AND < 10s old.
-  /// 2. GPS fallback used otherwise.
-  void _evaluatePositionPolicy() {
-    final estimate = _latestIndoorEstimate;
-    final isIndoorValid = estimate != null &&
-        estimate.isValid &&
-        estimate.buid == _activeIndoorBuid &&
-        estimate.floor == _activeIndoorFloor;
+  void _cancelIndoorStaleTimer() {
+    _indoorStaleTimer?.cancel();
+    _indoorStaleTimer = null;
+  }
 
-    if (isIndoorValid) {
-      _positionSource = LocationSource.indoorWifi;
-      _currentLocation = UserLocation(
-        latitude: estimate.latitude!,
-        longitude: estimate.longitude!,
-        accuracy: 3.0,
-        timestamp: estimate.timestamp,
-      );
-    } else if (_gpsLocation != null) {
-      _positionSource = LocationSource.gps;
-      _currentLocation = _gpsLocation;
-    } else {
-      _positionSource = LocationSource.none;
-      _currentLocation = null;
+  // -- Positioning stability (scope-independent feed) --
+
+  /// Feeds the rolling stability window from every qualifying estimate,
+  /// regardless of which resident RadioMap produced it.
+  void _feedStability(bool qualifies, PositionEstimate estimate) {
+    if (!qualifies ||
+        estimate.latitude == null ||
+        estimate.longitude == null) {
+      return;
     }
 
-    notifyListeners();
+    _stabilityWindow.add(_StabilityEntry(
+      position: LatLng(estimate.latitude!, estimate.longitude!),
+      timestamp: estimate.timestamp,
+      matchedAps: estimate.matchedAps,
+    ));
+    _evaluateStability();
   }
 
   /// Evaluates positioning stability based on a rolling window of indoor estimates.
@@ -276,7 +591,7 @@ class LocationProvider extends ChangeNotifier {
   }
 
   void _updateStability(PositioningStability newStability) {
-    if (_positioningStability == newStability) return;
+    if (_isDisposed || _positioningStability == newStability) return;
     _positioningStability = newStability;
     debugPrint('[LocationProvider] Positioning stability: $newStability');
     notifyListeners();
@@ -338,8 +653,8 @@ class LocationProvider extends ChangeNotifier {
         _status = LocationStateStatus.tracking;
         _errorMessage = null;
         startTracking();
-        _evaluatePositionPolicy();
-        return _currentLocation;
+        _evaluateArbitration();
+        return currentLocation;
       } else {
         _status = LocationStateStatus.error;
         _errorMessage = 'Unable to acquire GPS signal. Please try again.';
@@ -369,14 +684,16 @@ class LocationProvider extends ChangeNotifier {
     _gpsSubscription = _locationService.getPositionStream().listen(
       (location) {
         debugPrint('[LocationProvider] GPS update: ${location.latitude},${location.longitude}');
+        if (_isDisposed) return;
         _gpsLocation = location;
         _status = LocationStateStatus.tracking;
         _errorMessage = null;
-        _evaluatePositionPolicy();
+        _evaluateArbitration();
         notifyListeners();
       },
       onError: (error) {
         debugPrint('[LocationProvider] GPS stream error: $error');
+        if (_isDisposed) return;
         _errorMessage = 'GPS tracking error: $error';
         notifyListeners();
       },
@@ -394,7 +711,7 @@ class LocationProvider extends ChangeNotifier {
   /// Manually injects a GPS position (useful for unit testing).
   void setGpsLocation(UserLocation location) {
     _gpsLocation = location;
-    _evaluatePositionPolicy();
+    _evaluateArbitration();
   }
 
   /// Clears any transient error message.
@@ -405,9 +722,14 @@ class LocationProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
     _gpsSubscription?.cancel();
+    _gpsSubscription = null;
     _nativeSubscription?.cancel();
+    _nativeSubscription = null;
     _indoorStaleTimer?.cancel();
+    _indoorStaleTimer = null;
     super.dispose();
   }
 }

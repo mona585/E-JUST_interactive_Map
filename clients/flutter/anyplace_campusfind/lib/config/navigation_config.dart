@@ -68,6 +68,49 @@ class NavigationConfig {
   /// Minimum matched WiFi APs for a valid indoor estimate.
   static const int stabilityMinMatchedAps = 2;
 
+  // -- Unified positioning arbitration --
+
+  /// Maximum number of building/floor RadioMaps simultaneously resident in the
+  /// native positioning engine (LRU-evicted on overflow).
+  ///
+  /// DOCUMENTATION ONLY — the enforced constant lives in the native engine
+  /// ([RESIDENT_MAP_LIMIT] in
+  /// `android/app/src/main/kotlin/eg/edu/ejust/anyplace_campusfind/positioning/PositioningEngine.kt`),
+  /// which is the single source of truth. Dart code must not branch on this
+  /// value; changing it requires changing the native constant.
+  static const int residentMapLimit = 4;
+
+  /// Consecutive valid indoor estimates required before the arbiter enters
+  /// indoor positioning mode (Wi-Fi becomes the believed source).
+  static const int indoorEnterConfirmCount = 3;
+
+  /// Consecutive low-quality indoor estimate cycles required before the
+  /// arbiter exits indoor positioning mode (guards against transient WiFi
+  /// dropouts). Hard staleness is additionally governed by
+  /// [indoorStaleTimerSeconds].
+  static const int indoorExitStaleCycles = 3;
+
+  /// Minimum fraction of observed APs that must match a resident RadioMap for
+  /// its estimate to count as valid positioning evidence.
+  static const double minMatchedRatio = 0.25;
+
+  /// Distance (m) between a new winning indoor estimate and the last accepted
+  /// indoor fix above which the new estimate is treated as an outlier and the
+  /// previous fix is held.
+  static const double outlierJumpThresholdMeters = 30.0;
+
+  /// Consecutive consistent winning (buildingId, floor) pairs required before
+  /// the arbiter confirms that identity canonically. Until confirmed, the fix
+  /// carries no building/floor identity: selection context must never fill it.
+  static const int scopeConfirmCount = 3;
+
+  /// Lower clamp bound (m) for Wi-Fi accuracy derived from KNN evidence
+  /// (max(topKSpreadMeters, bestDistance)).
+  static const double wifiAccuracyMinMeters = 2.0;
+
+  /// Upper clamp bound (m) for Wi-Fi accuracy derived from KNN evidence.
+  static const double wifiAccuracyMaxMeters = 30.0;
+
   // -- Camera --
 
   /// Camera zoom during indoor navigation follow mode.
@@ -128,6 +171,40 @@ class NavigationConfig {
 
   /// Maximum time (s) to wait for a floor transition to complete before aborting.
   static const int transitionTimeoutSeconds = 30;
+
+  /// Maximum number of floor-transition lifecycle events retained for
+  /// observers (oldest dropped). (ORIGINAL PHASE 5 — Floor Transitions.)
+  static const int floorTransitionEventHistoryLimit = 8;
+
+  // -- Arrival --
+
+  /// Distance (m) from the resolved destination anchor within which a
+  /// positioning tick qualifies as an arrival candidate.
+  /// (ORIGINAL PHASE 6 — Arrival.)
+  static const double arrivalProximityThresholdMeters = 15.0;
+
+  /// Consecutive qualifying ticks required before arrival is confirmed.
+  /// Proximity alone is never proof. (ORIGINAL PHASE 6 — Arrival.)
+  static const int arrivalConfirmationCount = 2;
+
+  // -- Building entry dwell --
+
+  /// How long (s) the ENTERING_BUILDING state waits for Wi-Fi corroboration
+  /// before reverting to ACTIVE_OUTDOOR. (ORIGINAL PHASE 2 — State Machine.)
+  static const int enteringCorroborationTimeoutSeconds = 20;
+
+  /// Cool-down (s) after a TIMED-OUT entrance dwell before the proximity
+  /// path may trigger ENTERING_BUILDING again. Prevents a doorstep loiterer
+  /// from cycling in and out of the dwell every timeout period.
+  /// Evidence-driven belief flips are never suppressed.
+  /// (ORIGINAL PHASE 4 — Building Transitions.)
+  static const int entryRetriggerCooldownSeconds = 15;
+
+  /// How long (s) the EXITING_BUILDING state waits for a confirming GPS tick
+  /// before reverting to ACTIVE_INDOOR — the safe default is to remain
+  /// indoors rather than fabricate an exit from silence.
+  /// (ORIGINAL PHASE 4 — Building Transitions.)
+  static const int exitingCorroborationTimeoutSeconds = 20;
 
   // -- Indoor stale timer --
 

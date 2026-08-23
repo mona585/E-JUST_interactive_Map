@@ -19,8 +19,11 @@ import '../../state/location_provider.dart';
 import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
 import '../widgets/building_search_sheet.dart';
+import '../widgets/arrival_banner.dart';
 import '../widgets/map_bottom_sheet.dart';
 import '../widgets/map_controls.dart';
+import '../widgets/navigation_status_bar.dart';
+import '../utils/navigation_display.dart';
 import '../utils/floorplan_overlay_cache.dart';
 
 /// Main Map Screen displaying Anyplace buildings, indoor floorplans, indoor POIs, and device GPS on Google Maps.
@@ -41,6 +44,7 @@ class _MapScreenState extends State<MapScreen>
   bool _lastFollowMode = false;
   bool _hasInitialCentering = false;
   bool _hasCenteredOnCustomRoutes = false;
+
   // Prepared floorplan overlays. The bitmap for the active floor is decoded
   // and encoded exactly once (bounded LRU across recently used floors) and
   // the resulting GroundOverlay instance is reused verbatim on every
@@ -313,11 +317,16 @@ class _MapScreenState extends State<MapScreen>
     if (state == AppLifecycleState.paused) {
       debugPrint('[MapScreen] App paused ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â navigation continues');
     } else if (state == AppLifecycleState.resumed) {
-      debugPrint('[MapScreen] App resumed ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â still navigating');
+      debugPrint('[MapScreen] App resumed \u2014 still navigating');
       // Re-center camera on user position after resume
       final location = context.read<LocationProvider>().currentLocation;
       if (location != null && nav.followMode) {
-        _followUserPosition(location.latLng, nav.subState,
+        final display = displayLocationFor(
+          holdFloorTransition: nav.isTransitioningFloors,
+          heldPosition: nav.heldPositionDuringTransition,
+          currentLocation: location,
+        );
+        _followUserPosition(display?.latLng ?? location.latLng, nav.subState,
             bearing: _currentHeading);
       }
     }
@@ -338,15 +347,35 @@ class _MapScreenState extends State<MapScreen>
       return;
     }
 
-    if (nav.followMode && location != null) {
-      final heading = _updateHeading(location, now);
-      _followUserPosition(location.latLng, nav.subState, bearing: heading);
+    if (nav.followMode) {
+      // ORIGINAL PHASE 7: follow the held position during floor
+      // transitions; heading still derives from the raw fix stream.
+      final display = displayLocationFor(
+        holdFloorTransition: nav.isTransitioningFloors,
+        heldPosition: nav.heldPositionDuringTransition,
+        currentLocation: location,
+      );
+      if (display != null) {
+        final heading = location != null
+            ? _updateHeading(location, now)
+            : _currentHeading;
+        _followUserPosition(display.latLng, nav.subState, bearing: heading);
+      }
     }
 
     // Detect follow mode turning on (e.g. re-center tap)
-    if (nav.followMode && !_lastFollowMode && location != null) {
-      final heading = _updateHeading(location, now);
-      _followUserPosition(location.latLng, nav.subState, bearing: heading);
+    if (nav.followMode && !_lastFollowMode) {
+      final display = displayLocationFor(
+        holdFloorTransition: nav.isTransitioningFloors,
+        heldPosition: nav.heldPositionDuringTransition,
+        currentLocation: location,
+      );
+      if (display != null) {
+        final heading = location != null
+            ? _updateHeading(location, now)
+            : _currentHeading;
+        _followUserPosition(display.latLng, nav.subState, bearing: heading);
+      }
     }
     _lastFollowMode = nav.followMode;
   }
@@ -765,8 +794,7 @@ class _MapScreenState extends State<MapScreen>
   ///      sensor is unavailable.
   /// When neither has a real direction (> 0.5°), the dot-only icon is used so
   /// a false due-north orientation is never implied.
-  Marker? _buildUserMarker(LocationProvider locationProvider) {
-    final location = locationProvider.currentLocation;
+  Marker? _buildUserMarker(UserLocation? location) {
     if (location == null) return null;
 
     final deviceHeading = _deviceHeading;
@@ -995,6 +1023,15 @@ class _MapScreenState extends State<MapScreen>
             userLocation?.latLng ??
             SpaceProvider.defaultCenter;
 
+        // ORIGINAL PHASE 7: during a floor transition the Phase 5 held
+        // position replaces the raw fix so the marker does not jump floors.
+        final displayLocation = displayLocationFor(
+          holdFloorTransition: context.read<NavigationController>().isTransitioningFloors,
+          heldPosition:
+              context.read<NavigationController>().heldPositionDuringTransition,
+          currentLocation: userLocation,
+        );
+
         return Scaffold(
           body: Stack(
             children: [
@@ -1043,7 +1080,7 @@ class _MapScreenState extends State<MapScreen>
                     mapToolbarEnabled: false,
                     markers: {
                       ..._buildBaseMarkers(spaceProvider, selectedSpace),
-                      if (_buildUserMarker(locationProvider)
+                      if (_buildUserMarker(displayLocation)
                           case final Marker userMarker)
                         userMarker,
                     },
@@ -1223,7 +1260,8 @@ class _MapScreenState extends State<MapScreen>
                   ),
                 ),
 
-              // 5. Navigation Status Bar (during active navigation)
+              // 5. Navigation Status Bar (during active navigation) +
+              //    Arrival Banner (ORIGINAL PHASE 7 exposure).
               if (context.select<NavigationController, bool>(
                 (nav) => nav.isActive,
               ))
@@ -1231,69 +1269,17 @@ class _MapScreenState extends State<MapScreen>
                   left: 16,
                   right: 76,
                   bottom: 24,
-                  child: Consumer<NavigationController>(
-                    builder: (context, nav, _) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppTheme.cardBorder),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.08),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              nav.subState == NavigationSubState.indoor
-                                  ? Icons.wifi
-                                  : nav.subState == NavigationSubState.transitioning
-                                      ? Icons.swap_vert
-                                      : Icons.gps_fixed,
-                              size: 16,
-                              color: nav.subState == NavigationSubState.indoor
-                                  ? const Color(0xFF0D9488)
-                                  : nav.subState == NavigationSubState.transitioning
-                                      ? const Color(0xFFF59E0B)
-                                      : AppTheme.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                   Text(
-                                    nav.positioningStatus,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppTheme.textPrimary,
-                                    ),
-                                  ),
-                                  if (nav.isRerouting)
-                                    const Text(
-                                      'Recalculating route...',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Color(0xFFDC2626),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ArrivalBanner(
+                        onDone: () {
+                          context.read<NavigationController>().endNavigation();
+                          spaceProvider.clearNavigationRoute();
+                        },
+                      ),
+                      const NavigationStatusBar(),
+                    ],
                   ),
                 ),
 

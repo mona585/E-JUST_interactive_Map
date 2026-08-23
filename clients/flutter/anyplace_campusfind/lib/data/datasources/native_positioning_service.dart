@@ -20,6 +20,14 @@ abstract class NativePositioningService {
   /// Clears the active RadioMap from the native engine.
   Future<bool> clearRadioMap();
 
+  /// Removes a single resident RadioMap ("buid|floor") from the native engine
+  /// without touching any other resident map.
+  ///
+  /// Returns true when the map was present and removed. Native scanning stops
+  /// only when this removes the last resident map; [clearRadioMap] remains the
+  /// explicit global reset.
+  Future<bool> removeRadioMap(String buid, String floor);
+
   /// Retrieves metadata about the currently active RadioMap in the native engine.
   Future<Map<String, dynamic>?> getActiveRadioMapInfo();
 
@@ -108,6 +116,28 @@ class MethodChannelNativePositioningService implements NativePositioningService 
     } catch (e) {
       debugPrint(
         '[NativePositioningService] Error clearing native radiomap: $e',
+      );
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> removeRadioMap(String buid, String floor) async {
+    try {
+      final dynamic result =
+          await _channel.invokeMethod<bool>('removeRadioMap', {
+        'buid': buid,
+        'floor': floor,
+      });
+      debugPrint(
+        '[NativePositioningService] removeRadioMap buid=$buid, floor=$floor -> removed=${result == true}',
+      );
+      return result == true;
+    } on MissingPluginException {
+      return true;
+    } catch (e) {
+      debugPrint(
+        '[NativePositioningService] Error removing native radiomap: $e',
       );
       return false;
     }
