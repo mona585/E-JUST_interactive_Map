@@ -193,6 +193,15 @@ abstract class NavigationRouteScope implements Listenable {
   void selectSpace(SpaceModel space);
   void selectFloor(FloorModel floor);
   void clearSelection();
+
+  /// The ONLY way a live session writes the route store (MASTER PLAN PHASE 2,
+  /// INV-1/2/6). Implementations must set the store atomically for observers:
+  /// assign + status ready + a single [notifyListeners], touching nothing
+  /// else (no browsing state, no destination bookkeeping).
+  void adoptNavigatedRoute(NavigationRouteModel route);
+
+  /// Idempotent teardown of the route store (used by canonical termination).
+  void clearNavigationRoute();
 }
 
 /// Identity of exactly one navigation run (MASTER PLAN PHASE 1).

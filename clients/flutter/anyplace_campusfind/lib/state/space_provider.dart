@@ -1267,6 +1267,7 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   }
 
   /// Clears the currently displayed navigation route.
+  @override
   void clearNavigationRoute() {
     if (_navigationRouteStatus != NavigationRouteStatus.idle ||
         _activeNavigationRoute != null ||
@@ -1275,6 +1276,22 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       _resetNavigationRouteState();
       notifyListeners();
     }
+  }
+
+  /// Session write-through (MASTER PLAN PHASE 2, INV-1/2/6).
+  ///
+  /// The single route store is replaced atomically for observers: one field
+  /// assignment, status ready, error cleared, ONE notification. Browsing
+  /// state (radiomap/floorplan/POIs) and destination bookkeeping are never
+  /// touched here — during a live session only the navigation controller
+  /// calls this.
+  @override
+  void adoptNavigatedRoute(NavigationRouteModel route) {
+    debugPrint('[SpaceProvider] adoptNavigatedRoute (session write-through)');
+    _activeNavigationRoute = route;
+    _navigationRouteStatus = NavigationRouteStatus.ready;
+    _navigationRouteErrorMessage = null;
+    notifyListeners();
   }
 
   /// Requests a route from the user's current location to [targetSpace].

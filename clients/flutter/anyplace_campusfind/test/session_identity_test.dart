@@ -178,6 +178,21 @@ class _Scope extends ChangeNotifier implements NavigationRouteScope {
     activeNavigationRoute = null;
     notifyListeners();
   }
+
+  int adoptCalls = 0;
+
+  @override
+  void adoptNavigatedRoute(NavigationRouteModel route) {
+    activeNavigationRoute = route;
+    adoptCalls++;
+    notifyListeners();
+  }
+
+  @override
+  void clearNavigationRoute() {
+    activeNavigationRoute = null;
+    notifyListeners();
+  }
 }
 
 class _Harness {
@@ -217,6 +232,9 @@ class _Harness {
   }
 
   void startOutdoor() {
+    // A terminated session cleared the single store; every new run is
+    // preceded by a fresh cascade seed (as in production).
+    scope.activeNavigationRoute ??= _route();
     provider.setGpsLocation(_gps(30.8750));
     preview();
     controller.startActiveNavigation();
@@ -240,8 +258,9 @@ void main() {
     expect(h.controller.destinationSpace?.buid, 'b1');
     // Destination floor is derived from the POI now (BUG-15c closure).
     expect(h.controller.sessionForTest!.destinationFloorNumber, '2');
-    expect(h.controller.sessionForTest!.routeRevision, 1,
-        reason: 'preview seed bumps the revision to 1');
+    expect(h.controller.sessionForTest!.routeRevision, 0,
+        reason: 'preview seeding is NOT a controller write; revisions count '
+            'committed replacements only');
 
     h.controller.endNavigation();
     expect(h.controller.sessionId, isNull);
@@ -273,7 +292,6 @@ void main() {
     final h = _Harness();
     addTearDown(h.dispose);
     h.startOutdoor();
-    final original = h.scope.activeNavigationRoute!;
 
     h.repo.holdNext();
     h.provider.setGpsLocation(_gps(30.8900)); // off-route -> reroute pending
@@ -289,8 +307,9 @@ void main() {
 
     expect(h.controller.navigationState, NavigationState.idle);
     expect(h.controller.activeRoute, isNull);
-    expect(h.scope.activeNavigationRoute, same(original),
-        reason: 'the store is untouched by dead-session results');
+    expect(h.scope.activeNavigationRoute, isNull,
+        reason: 'PHASE 2: canonical teardown clears the single store, and '
+            'the dead result must not resurrect it');
   });
 
   testWidgets('reroute result superseded by a revision bump commits nothing '

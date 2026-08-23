@@ -161,6 +161,20 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
     calls.add('clearSelection');
     notifyListeners();
   }
+
+  @override
+  void adoptNavigatedRoute(NavigationRouteModel route) {
+    activeNavigationRoute = route;
+    calls.add('adoptNavigatedRoute');
+    notifyListeners();
+  }
+
+  @override
+  void clearNavigationRoute() {
+    activeNavigationRoute = null;
+    calls.add('clearNavigationRoute');
+    notifyListeners();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1060,8 +1074,8 @@ void main() {
     // state of the journey.
     final sid = h.controller.sessionId;
     expect(sid, isNotNull);
-    expect(h.controller.sessionForTest!.routeRevision, 1,
-        reason: 'preview seed is revision 1');
+    expect(h.controller.sessionForTest!.routeRevision, 0,
+        reason: 'preview seed records revision 0; reroutes bump it');
 
     h.provider.setGpsLocation(_gps(30.8660)); // preload
     h.provider.setGpsLocation(_gps(30.86505)); // enter dwell

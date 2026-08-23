@@ -55,9 +55,14 @@ class NavigationController extends ChangeNotifier {
 
   // -- Route context --
   NavigationSession? _session;
-  NavigationRouteModel? _activeRoute;
   bool _followMode = true;
   DateTime? _lastRerouteTime;
+
+  /// Delegating view of the SINGLE route store (MASTER PLAN PHASE 2,
+  /// INV-1/INV-2). There is no second cache: evaluation and rendering read
+  /// the same object by construction. Commits go through
+  /// [NavigationRouteScope.adoptNavigatedRoute] with a revision increment.
+  NavigationRouteModel? get _activeRoute => _spaceScope.activeNavigationRoute;
 
   // -- Floor-transition bookkeeping --
   String? _currentNavigatingFloor;
@@ -129,7 +134,6 @@ class NavigationController extends ChangeNotifier {
         _navigationRepository =
             navigationRepository ?? AnyplaceNavigationRepository() {
     _locationProvider.addListener(_onLocationChanged);
-    _spaceScope.addListener(_onSpaceProviderChanged);
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -357,8 +361,9 @@ class NavigationController extends ChangeNotifier {
       destinationSpace: destinationSpace,
       destinationFloorNumber: destinationPoi?.floorNumber,
     );
-    _activeRoute = route;
-    _session!.routeRevision++; // revision 1 = seeded preview geometry
+    // The route itself stays where it already is — the scope store. Preview
+    // seeding is NOT a controller write, so the revision starts at 0; it is
+    // bumped only by committed session replacements (reroutes).
     _currentNavigatingFloor = _spaceScope.selectedFloor?.floorNumber;
     _newFloorEstimateCount = 0;
     _connectorInitiatedTransition = false;
@@ -408,7 +413,9 @@ class NavigationController extends ChangeNotifier {
     _state = NavigationState.idle;
     _previousActiveState = null;
     _session = null;
-    _activeRoute = null;
+    // INV-10 groundwork: teardown owns the store clear as well. Caller-side
+    // clears remain harmless until Phase 15 removes them.
+    _spaceScope.clearNavigationRoute();
     _currentNavigatingFloor = null;
     _expectedNextFloor = null;
     _connectorInitiatedTransition = false;
@@ -531,20 +538,6 @@ class NavigationController extends ChangeNotifier {
     _checkArrival(location);
     _checkGpsLoss(location);
     notifyListeners();
-  }
-
-  void _onSpaceProviderChanged() {
-    // Sync route if the scope's active route changed (e.g., reroute completed)
-    final route = _spaceScope.activeNavigationRoute;
-    if (route != null && route != _activeRoute && route.hasRenderablePath) {
-      _activeRoute = route;
-      // The destination anchor follows the adopted route (reroutes target
-      // the same destination, but the endpoint coordinates may shift).
-      if (_state.isSessionLive) {
-        _resolveArrivalAnchor();
-        notifyListeners();
-      }
-    }
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -796,9 +789,12 @@ class NavigationController extends ChangeNotifier {
               destinationBuid: destSpace.buid,
             );
             if (customRoute != null && customRoute.hasRenderablePath) {
-              // Fenced commit: a superseded or ended session may not write.
+              // Fenced, atomic write-through (INV-6): store + revision bump
+              // + anchor re-resolution inside one observer notification.
               if (_isCurrent(sessionId: sid, revision: rev)) {
-                _activeRoute = customRoute;
+                _spaceScope.adoptNavigatedRoute(customRoute);
+                _session!.routeRevision++;
+                _resolveArrivalAnchor();
               }
               if (_state == NavigationState.rerouting) {
                 _transition(origin);
@@ -836,7 +832,10 @@ class NavigationController extends ChangeNotifier {
           return;
         }
         if (route.hasRenderablePath) {
-          _activeRoute = route;
+          // Fenced, atomic write-through (INV-6).
+          _spaceScope.adoptNavigatedRoute(route);
+          _session!.routeRevision++;
+          _resolveArrivalAnchor();
           break;
         }
       } catch (e) {
@@ -1535,7 +1534,6 @@ class NavigationController extends ChangeNotifier {
   @override
   void dispose() {
     _locationProvider.removeListener(_onLocationChanged);
-    _spaceScope.removeListener(_onSpaceProviderChanged);
     super.dispose();
   }
 }

@@ -362,6 +362,18 @@ class _FakeScope extends ChangeNotifier implements NavigationRouteScope {
     activeNavigationRoute = null;
     notifyListeners();
   }
+
+  @override
+  void adoptNavigatedRoute(NavigationRouteModel route) {
+    activeNavigationRoute = route;
+    notifyListeners();
+  }
+
+  @override
+  void clearNavigationRoute() {
+    activeNavigationRoute = null;
+    notifyListeners();
+  }
 }
 
 UserLocation _gpsAt(double lat, {double accuracy = 8.0}) => UserLocation(
@@ -390,8 +402,10 @@ final NavigationRouteModel _replacementRoute = NavigationRouteModel(points: [
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('CHARACTERIZATION BUG-1 (flips in Phase 2/3): '
-      'every browsing API nulls the rendered route during a live session', () {
+  group('CHARACTERIZATION BUG-1 (copy-divergence killed in Phase 2; '
+      'store-nulling flips in Phase 3): '
+      'every browsing API nulls the rendered route during a live session',
+      () {
     testWidgets('selectFloor nulls the scope route while session is live',
         (tester) async {
       final f = await _Bug1Fixture.build();
@@ -404,10 +418,12 @@ void main() {
       f.spaceProvider.selectFloor(_floor('bA', '1'));
 
       expect(f.spaceProvider.activeNavigationRoute, isNull,
-          reason: 'BUG-1 pin: selectFloor destroys the rendered route');
+          reason: 'BUG-1 pin (store-nulling half): STILL TRUE until Phase 3');
       expect(f.controller.isActive, isTrue);
-      expect(f.controller.activeRoute, isNotNull,
-          reason: 'controller keeps evaluating its private copy');
+      // PHASE 2 FLIP (INV-1/INV-2): the private copy is gone — evaluation
+      // reads the same store rendering does.
+      expect(f.controller.activeRoute,
+          same(f.spaceProvider.activeNavigationRoute));
       await tester.pump(const Duration(seconds: 30));
     });
 
@@ -421,7 +437,10 @@ void main() {
       f.spaceProvider.clearFloorSelection();
 
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.activeRoute, isNotNull);
+      expect(f.controller.isActive, isTrue);
+      expect(f.controller.activeRoute,
+          same(f.spaceProvider.activeNavigationRoute),
+          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
 
@@ -435,7 +454,10 @@ void main() {
       f.spaceProvider.selectSpace(f.seedRepo.spaces[1]);
 
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.activeRoute, isNotNull);
+      expect(f.controller.isActive, isTrue);
+      expect(f.controller.activeRoute,
+          same(f.spaceProvider.activeNavigationRoute),
+          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
   });
@@ -452,7 +474,10 @@ void main() {
       f.spaceProvider.clearSelection();
 
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.activeRoute, isNotNull);
+      expect(f.controller.isActive, isTrue);
+      expect(f.controller.activeRoute,
+          same(f.spaceProvider.activeNavigationRoute),
+          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
 
@@ -468,7 +493,10 @@ void main() {
           .first);
 
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.activeRoute, isNotNull);
+      expect(f.controller.isActive, isTrue);
+      expect(f.controller.activeRoute,
+          same(f.spaceProvider.activeNavigationRoute),
+          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
 
@@ -482,14 +510,17 @@ void main() {
       f.spaceProvider.clearSelectedPoi();
 
       expect(f.spaceProvider.activeNavigationRoute, isNull);
-      expect(f.controller.activeRoute, isNotNull);
+      expect(f.controller.isActive, isTrue);
+      expect(f.controller.activeRoute,
+          same(f.spaceProvider.activeNavigationRoute),
+          reason: 'PHASE 2 FLIP: single store - evaluation == rendering');
       await tester.pump(const Duration(seconds: 30));
     });
   });
 
-testWidgets('CHARACTERIZATION BUG-2 (flips in Phase 2): committed reroute '
-    'never reaches the rendered store and a later scope notification '
-    'reverts the controller to the stale route', (tester) async {
+testWidgets('PHASE 2 FLIP of BUG-2: a committed reroute reaches the '
+    'rendered store atomically and later scope notifications can never '
+    'revert it', (tester) async {
   final scope = _FakeScope(floors: [_floor('bA', '0')]);
   final buildingA = _building('bA', 'Building A', 30.8650);
   scope.selectedSpace = buildingA;
@@ -501,8 +532,6 @@ testWidgets('CHARACTERIZATION BUG-2 (flips in Phase 2): committed reroute '
     locationService: _FakeLocationService(),
     nativePositioningService: _FakeNativePositioningService(),
   );
-  // The reroute request will be served with different geometry than the
-  // initial preview route (which comes straight from the scope store).
   final rerouteRepo = _SeedNavigationRepository()
     ..coordinateRoute = _replacementRoute;
 
@@ -525,23 +554,24 @@ testWidgets('CHARACTERIZATION BUG-2 (flips in Phase 2): committed reroute '
   expect(controller.navigationState, NavigationState.activeOutdoor);
   expect(controller.activeRoute, same(originalRoute));
 
-  // One far off-route tick (>15 m threshold) fires a single-tick reroute.
+  // One far off-route tick (>15 m threshold) fires the reroute.
   provider.setGpsLocation(_gpsAt(30.8900));
   await tester.pump();
   await tester.pump();
 
   expect(controller.isRerouting, isFalse);
-  expect(controller.activeRoute, same(_replacementRoute),
-      reason: 'sanity: controller committed the rerouted geometry');
-  // THE PIN: the store the map renders never saw the reroute.
-  expect(scope.activeNavigationRoute, same(originalRoute),
-      reason: 'BUG-2 pin: write gap - reroute does not reach the store');
+  // THE FLIP: store and evaluation are one object — the rerouted geometry
+  // is what the map renders (INV-1/INV-2/INV-6).
+  expect(scope.activeNavigationRoute, same(_replacementRoute));
+  expect(controller.activeRoute, same(_replacementRoute));
+  expect(scope.selectedFloor, isNotNull,
+      reason: 'write-through touches nothing but the route');
 
-  // Ping-pong half: any later scope notification re-adopts the stale route.
+  // No ping-pong: an unrelated scope notification cannot revert anything.
   scope.selectFloor(_floor('bA', '0'));
   await tester.pump();
-  expect(controller.activeRoute, same(originalRoute),
-      reason: 'BUG-2 pin: adoption listener reverts to the stale store');
+  expect(controller.activeRoute, same(_replacementRoute),
+      reason: 'with one store there is nothing to re-adopt');
 });
 
 // ---------------------------------------------------------------------------

@@ -151,6 +151,20 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
     calls.add('clearSelection');
     notifyListeners();
   }
+
+  @override
+  void adoptNavigatedRoute(NavigationRouteModel route) {
+    activeNavigationRoute = route;
+    calls.add('adoptNavigatedRoute');
+    notifyListeners();
+  }
+
+  @override
+  void clearNavigationRoute() {
+    activeNavigationRoute = null;
+    calls.add('clearNavigationRoute');
+    notifyListeners();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -563,6 +577,9 @@ void main() {
     expect(h.controller.navigationState, NavigationState.arrived);
     h.controller.endNavigation();
 
+    // Fresh session (PHASE 2: End cleared the single store, so the new run
+    // is preceded by a fresh cascade seed, as in production).
+    h.scope.activeNavigationRoute ??= _route();
     // Fresh session: exactly ONE qualifying tick must NOT arrive.
     await h.startOutdoor(tester);
     h.provider.setGpsLocation(_gps(_endLat));

@@ -161,6 +161,20 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
     calls.add('clearSelection');
     notifyListeners();
   }
+
+  @override
+  void adoptNavigatedRoute(NavigationRouteModel route) {
+    activeNavigationRoute = route;
+    calls.add('adoptNavigatedRoute');
+    notifyListeners();
+  }
+
+  @override
+  void clearNavigationRoute() {
+    activeNavigationRoute = null;
+    calls.add('clearNavigationRoute');
+    notifyListeners();
+  }
 }
 
 // ---------------------------------------------------------------------------
