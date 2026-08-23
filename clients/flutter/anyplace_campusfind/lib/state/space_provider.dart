@@ -2090,13 +2090,41 @@ if (floorplan != null) {
     }
   }
 
+  // ── PHASE 11: Radiomap Lifecycle Contract ────────────────────────────
+  //
+  // LOAD     — on browsing selection AND on navigation preload (existing
+  //            paths; request-id guarded, disk-cached).
+  // RETAIN   — while its building could be re-entered later in the active
+  //            session (building present in route segments OR exited < 10
+  //            min ago). Enforced by NEVER calling the global native wipe
+  //            from selection/exit paths; the native LRU (limit 4) manages
+  //            natural pressure.
+  // EVICT    — targeted `removeRadioMap(buid, floor)` when a load FAILS
+  //            (existing loader behavior); session End intentionally leaves
+  //            residency to LRU; explicit "clear offline data" is an app-
+  //            level action and out of navigation scope.
+  // GLOBAL WIPE — reserved for app-level resets (logout/storage) via
+  //            [resetAllRadiomaps]; never invoked from selection APIs.
+  //
+  // Residency serves both browsing and navigation; neither may destroy the
+  // other's requirements.
+
+  /// Status-field reset only. The native engine's resident maps are left
+  /// untouched so multi-building trips and return journeys keep sensing.
   void _resetRadioMapState() {
     _radioMapStatus = RadioMapStatus.idle;
     _radioMapErrorMessage = null;
     _activeRadioMapBuid = null;
     _activeRadioMapFloor = null;
     _isRadioMapCached = false;
+  }
+
+  /// True global wipe (app-level reset only: logout / storage clear).
+  void resetAllRadiomaps() {
+    _radioMapRequestId++;
+    _resetRadioMapState();
     _nativePositioningService.clearRadioMap();
+    notifyListeners();
   }
 
   void _resetFloorplanState() {
