@@ -191,6 +191,12 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
   }
 
   @override
+  Future<bool> requestRouteForRetarget(PoiModel poi) async {
+    calls.add('requestRouteForRetarget:${poi.puid}');
+    return true;
+  }
+
+  @override
   void clearNavigationRoute() {
     activeNavigationRoute = null;
     calls.add('clearNavigationRoute');

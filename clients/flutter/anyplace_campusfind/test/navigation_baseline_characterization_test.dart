@@ -391,6 +391,7 @@ class _FakeScope extends ChangeNotifier implements NavigationRouteScope {
   }
 
   @override
+  Future<bool> requestRouteForRetarget(PoiModel poi) async => true;  @override
   void clearNavigationRoute() {
     activeNavigationRoute = null;
     notifyListeners();

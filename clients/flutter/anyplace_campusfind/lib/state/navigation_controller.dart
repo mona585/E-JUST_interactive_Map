@@ -447,6 +447,88 @@ class NavigationController extends ChangeNotifier {
   @visibleForTesting
   void markArrived() => _arrive();
 
+  /// Explicit destination-change protocol (MASTER PLAN PHASE 4).
+  ///
+  /// Destination changes are transactions: a NEW session identity is
+  /// installed FIRST, then the content (route) follows through the cascade.
+  /// Every in-flight artifact of the old run fails its Phase-1 identity
+  /// fence and is discarded — an old-destination route can never appear
+  /// after a retarget.
+  ///
+  /// Legal from any live activity/overlay and from preview; refused when
+  /// arrived (start a fresh journey instead). Returns true when the new
+  /// route committed; on failure the NEW session remains (the user's intent
+  /// stands) with arrival anchored on the POI itself.
+  Future<bool> retargetDestination(PoiModel newTarget) async {
+    if (_state == NavigationState.idle ||
+        _state == NavigationState.arrived) {
+      return false;
+    }
+    final oldSessionId = _session?.sessionId;
+    debugPrint('[NAV] RETARGET sid=$oldSessionId -> ${newTarget.puid}');
+
+    // 1. Identity first: everything captured under the old id is now dead.
+    final newSession = NavigationSession(
+      destinationPuid: newTarget.puid,
+      destinationSpace: _spaceScope.selectedSpace?.buid == newTarget.buid
+          ? _spaceScope.selectedSpace
+          : null,
+      destinationFloorNumber: newTarget.floorNumber,
+    );
+    _session = newSession;
+
+    // 2. Reset per-session bookkeeping (same set startRoutePreview resets).
+    _currentNavigatingFloor = _spaceScope.selectedFloor?.floorNumber;
+    _newFloorEstimateCount = 0;
+    _connectorInitiatedTransition = false;
+    _floorTransitionEvents.clear();
+    _lastFloorSwitchTime = null;
+    _lastIndoorPosition = null;
+    _buildingPreloaded = false;
+    _exitConfirmationCounter = 0;
+    _entryDwellCooldownUntil = null;
+    _arrivalConfirmationCounter = 0;
+    _arrivalAnchor = null;
+    _customRouteProgress = null;
+    notifyListeners();
+
+    // 3. Content second: cascade for the new target behind request ids.
+    final ok = await _spaceScope.requestRouteForRetarget(newTarget);
+
+    // 4. Post-await identity gate: only the newest retarget may seed.
+    if (!identical(_session, newSession)) {
+      debugPrint('[NAV] RETARGET superseded for ${newTarget.puid} — '
+          'discarding');
+      return false;
+    }
+
+    // 5. Anchor + state handling. The activity the user was in continues;
+    // overlays restore to it via their own dynamic edges.
+    if (ok) {
+      _resolveArrivalAnchor();
+    } else {
+      // Degraded but honest: anchor directly on the requested POI so
+      // arrival still targets what the user asked for.
+      _arrivalAnchor = _ArrivalAnchor(
+        latitude: newTarget.latitude,
+        longitude: newTarget.longitude,
+        buid: newTarget.buid,
+        floorNumber: newTarget.floorNumber,
+      );
+      debugPrint('[NAV] RETARGET route unavailable for ${newTarget.puid}; '
+          'anchored on POI');
+    }
+    if (_state == NavigationState.rerouting ||
+        _state == NavigationState.paused) {
+      final restore = _previousActiveState;
+      if (restore != null) _transition(restore);
+    }
+    debugPrint('[NAV] SESSION_REPLACED old=$oldSessionId '
+        'new=${_session!.sessionId} dst=${newTarget.puid}');
+    notifyListeners();
+    return ok;
+  }
+
   /// Test-only view of the residency-prep latch (ORIGINAL PHASE 4 —
   /// approach/cancel behavior has no other external signal).
   @visibleForTesting

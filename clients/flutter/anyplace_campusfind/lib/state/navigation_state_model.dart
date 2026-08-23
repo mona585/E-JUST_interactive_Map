@@ -8,6 +8,25 @@ import '../data/models/position_fix.dart';
 import '../data/models/poi_model.dart';
 import '../data/models/space_model.dart';
 
+/// CANONICAL ROUTE LIFECYCLE (MASTER PLAN PHASE 4).
+///
+/// REQUESTED → GENERATED(cascade) → COMMITTED(preview seed) → PREVIEW
+///   → ACTIVE(startActiveNavigation) ⇄ REROUTING(overlay)
+///   → SEGMENT_ADVANCED* → ARRIVED → TERMINATED(endNavigation /
+///   terminateNavigation)
+///
+/// Invalidations:
+///  * End anywhere terminates immediately.
+///  * `retargetDestination` replaces the SESSION WHOLESALE (new sessionId,
+///    revision 0) BEFORE any content moves; the old run's in-flight work
+///    fails its identity fence and is discarded.
+///  * A candidate that fails post-await validation is discarded and never
+///    touches the store; the previously committed route persists.
+///
+/// Destination changes are transactions: identity first, content second,
+/// and no old-session artifact may interleave (INV-3 extended to the
+/// destination dimension).
+
 /// Canonical navigation state (ORIGINAL PHASE 2 — Navigation State Machine).
 ///
 /// One explicit state replaces the fragmented
@@ -203,6 +222,12 @@ abstract class NavigationRouteScope implements Listenable {
   /// Route-safe building-exit context release (INV-9 route-safety half):
   /// clears indoor browsing residency while preserving the route store.
   void releaseIndoorContextForNavigation();
+
+  /// Retarget support (MASTER PLAN PHASE 4): selects the destination
+  /// context exclusively through navigation-safe variants, then runs the
+  /// INITIAL CASCADE under its existing request-id machinery. Returns true
+  /// when a renderable route for [target] was committed to the store.
+  Future<bool> requestRouteForRetarget(PoiModel target);
 
   /// The ONLY way a live session writes the route store (MASTER PLAN PHASE 2,
   /// INV-1/2/6). Implementations must set the store atomically for observers:

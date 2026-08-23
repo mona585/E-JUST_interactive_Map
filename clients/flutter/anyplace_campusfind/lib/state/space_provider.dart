@@ -1371,6 +1371,49 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     notifyListeners();
   }
 
+  /// Retarget support (MASTER PLAN PHASE 4).
+  ///
+  /// Selects the destination context exclusively through navigation-safe
+  /// variants (never resetting navigation fields), then runs the initial
+  /// route cascade — reusing its request-id machinery unchanged. Returns
+  /// true when a renderable route for [target] is in the store afterwards.
+  @override
+  Future<bool> requestRouteForRetarget(PoiModel target) async {
+    final building =
+        _spaces.where((s) => s.buid == target.buid).firstOrNull;
+    if (building == null) {
+      debugPrint(
+          '[SpaceProvider] retarget: building ${target.buid} not loaded');
+      return false;
+    }
+    _selectSpaceInternal(building, resetNavigationFields: false);
+    await loadFloorsForSelectedSpace();
+    final floor = _floors
+            .where((f) => f.floorNumber == target.floorNumber)
+            .firstOrNull ??
+        _floors.where((f) => f.floorNumber == '0').firstOrNull ??
+        (_floors.isEmpty
+            ? null
+            : _floors.reduce((a, b) =>
+                a.numericFloor <= b.numericFloor ? a : b));
+    if (floor != null) {
+      _selectFloorInternal(floor, resetNavigationFields: false);
+    }
+    // Selecting the new target POI must not trip the legacy reset even when
+    // idle-guard logic changes later; the session liveness guard already
+    // covers it, this is belt-and-braces for the retarget window.
+    _selectedPoi = target;
+    notifyListeners();
+
+    await requestRouteToSelectedPoi();
+    final ok = _navigationRouteStatus == NavigationRouteStatus.ready &&
+        _activeNavigationRoute != null &&
+        _activeNavigationRoute!.hasRenderablePath;
+    debugPrint('[SpaceProvider] requestRouteForRetarget(${target.puid}) '
+        '-> ${ok ? "ready" : "failed"}');
+    return ok;
+  }
+
   /// Session write-through (MASTER PLAN PHASE 2, INV-1/2/6).
   ///
   /// The single route store is replaced atomically for observers: one field

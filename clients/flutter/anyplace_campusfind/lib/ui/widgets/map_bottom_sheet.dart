@@ -198,7 +198,12 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet>
                     poi: selectedPoi,
                     onClose: () {
                       spaceProvider.clearSelectedPoi();
-                      if (navController.isPreview) navController.endNavigation();
+                      // BUG-8 closure: ending a preview tears down the
+                      // canonical way — Phase 2's endNavigation also clears
+                      // the single store, so no ghost route survives.
+                      if (navController.isPreview) {
+                        navController.endNavigation();
+                      }
                     },
                     onNavigate: () =>
                         spaceProvider.requestRouteToSelectedPoi(),
@@ -207,8 +212,17 @@ class _MapBottomSheetState extends ConsumerState<MapBottomSheet>
                       navController.endNavigation();
                     },
                     onStartDirections: () {
+                      final target = selectedPoi;
+                      // PHASE 4: "Navigate here" during an active run is the
+                      // ONLY retarget entry point — a transaction, never a
+                      // silent polyline swap.
+                      if (navController.isActive) {
+                        navController.retargetDestination(target);
+                        widget.onFitRouteBounds?.call(spaceProvider);
+                        return;
+                      }
                       navController.startRoutePreview(
-                        destinationPuid: selectedPoi.puid,
+                        destinationPuid: target.puid,
                         destinationSpace: spaceProvider.selectedSpace!,
                       );
                       navController.startActiveNavigation();
