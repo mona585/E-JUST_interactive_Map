@@ -165,7 +165,6 @@ class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
 
   @override
   void releaseIndoorContextForNavigation() {
-    selectedFloor = null;
     calls.add('releaseIndoorContextForNavigation');
     notifyListeners();
   }

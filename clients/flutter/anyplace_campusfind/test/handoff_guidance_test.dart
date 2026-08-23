@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:anyplace_campusfind/config/navigation_config.dart';
 import 'package:anyplace_campusfind/data/datasources/location_service.dart';
 import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
 import 'package:anyplace_campusfind/data/models/floor_model.dart';
@@ -390,6 +391,51 @@ void main() {
     expect(h.scope.indoorRequests.last['dest'], 'dest2');
 
     // Burn the LP indoor-stale timer so the test ends clean.
+    await tester.pump(const Duration(seconds: 11));
+  });
+
+  testWidgets('PHASE 10 / Matrix E: I→O→I double-handoff keeps identity and '
+      'route through both boundaries', (tester) async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    h.startOutdoorAtEntrance();
+    final sid = h.controller.sessionId!;
+
+    // In: corroboration confirms ACTIVE_INDOOR.
+    await h.corroborateEntry(tester);
+    await tester.pump();
+    await tester.pump();
+    expect(h.scope.activeNavigationRoute, isNotNull);
+    final routeAtIndoor = h.scope.activeNavigationRoute!;
+
+    // Out: let the Wi-Fi belief go stale, then accumulate three good
+    // outside confirmations.
+    await tester.pump(const Duration(seconds: 11));
+    for (var i = 0; i < NavigationConfig.exitConfirmationCount; i++) {
+      h.provider.setGpsLocation(_gps(30.8560));
+    }
+    expect(h.controller.navigationState, NavigationState.exitingBuilding);
+    // The confirming tick resolves the exit dwell.
+    h.provider.setGpsLocation(_gps(30.8560));
+    expect(h.controller.navigationState, NavigationState.activeOutdoor);
+    // INV-9: identity + route survive the exit boundary.
+    expect(h.controller.sessionId, sid);
+    expect(h.scope.activeNavigationRoute, same(routeAtIndoor));
+
+    // Back in: approach preloads again and corroboration re-confirms —
+    // WITHOUT a new session id.
+    h.provider.setGpsLocation(_gps(30.86505));
+    for (var i = 0; i < 6; i++) {
+      h.native.emit(_wifi());
+    }
+    await tester.pump();
+    expect(h.controller.buildingPreloadedForTest, isTrue,
+        reason: 're-entry re-runs the residency preload');
+    await h.corroborateEntry(tester);
+    expect(h.controller.navigationState, NavigationState.activeIndoor);
+    expect(h.controller.sessionId, sid,
+        reason: 'returning indoors mid-trip is the SAME session');
+
     await tester.pump(const Duration(seconds: 11));
   });
 }

@@ -1340,24 +1340,24 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     }
   }
 
-  /// Building-exit context release (MASTER PLAN PHASE 3, INV-9 route-safety
-  /// half; full policy lands in Phases 10–11).
+  /// Building-exit context release (MASTER PLAN PHASE 10, INV-9).
   ///
-  /// Clears indoor BROWSING residency — floor selection, POIs, floorplan,
-  /// radiomap — without ever touching route/session/destination fields.
-  /// Unlike [clearSelection] this keeps the selected building so map context
-  /// and exit-detection fallbacks remain stable.
+  /// Release matrix:
+  ///  * RELEASED — floorplan overlay browsing state, POI selection.
+  ///  * PRESERVED FOR MAP CONTEXT — the selected building AND the last floor
+  ///    selection stay so camera/bounds context and exit-detection fallbacks
+  ///    remain stable after stepping outside.
+  ///  * RADIOMAP — residency is NOT wiped here; Phase 11 owns the scoped
+  ///    eviction policy (targeted removal, never a global native wipe).
+  ///  * NEVER TOUCHED — route store, destination identity, session fields.
   @override
   void releaseIndoorContextForNavigation() {
     debugPrint(
       '[SpaceProvider] releaseIndoorContextForNavigation (route preserved)',
     );
-    _radioMapRequestId++;
     _floorplanRequestId++;
     _poiRequestId++;
-    _selectedFloor = null;
     _selectedPoi = null;
-    _resetRadioMapState();
     _resetFloorplanState();
     _resetPoiState();
     notifyListeners();

@@ -26,6 +26,17 @@ import '../data/models/space_model.dart';
 /// Destination changes are transactions: identity first, content second,
 /// and no old-session artifact may interleave (INV-3 extended to the
 /// destination dimension).
+///
+/// I→O EXIT RELEASE MATRIX (MASTER PLAN PHASE 10, INV-9):
+///  * RELEASED on confirmed exit: floorplan overlay browsing state, POI
+///    selection (see `releaseIndoorContextForNavigation`).
+///  * PRESERVED FOR MAP CONTEXT: selected building + last floor selection.
+///  * RADIOMAP residency follows the Phase 11 scoped policy — targeted,
+///    never a global native wipe from selection/exit paths.
+///  * PRESERVED ALWAYS: route store, destination identity, session id and
+///    revision; navigating-floor bookkeeping becomes stale-but-harmless and
+///    is recomputed on reroute or the next indoor leg. Custom-route progress
+///    switches source automatically through the existing state gate.
 
 /// Canonical navigation state (ORIGINAL PHASE 2 — Navigation State Machine).
 ///

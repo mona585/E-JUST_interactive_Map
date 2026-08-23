@@ -189,7 +189,6 @@ class _Scope extends ChangeNotifier implements NavigationRouteScope {
 
   @override
   void releaseIndoorContextForNavigation() {
-    selectedFloor = null;
     activeFloorplan = null;
     notifyListeners();
   }
