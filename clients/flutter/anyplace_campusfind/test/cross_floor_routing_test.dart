@@ -19,6 +19,7 @@ import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
 import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
 import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
 import 'package:anyplace_campusfind/state/location_provider.dart';
+import 'package:anyplace_campusfind/state/navigation_controller.dart';
 import 'package:anyplace_campusfind/state/space_provider.dart';
 
 const _buid = 'bldg_crossfloor_1';
@@ -312,6 +313,7 @@ class _Harness {
     double userLongitude = 31.9998,
     List<SpaceModel>? allSpaces,
     _SpyCrossBuildingRouter? spyRouter,
+    String browseFloor = '0',
   }) async {
     locationProvider = LocationProvider(
       locationService: _StubLocationService(),
@@ -341,7 +343,7 @@ class _Harness {
 
     spaceProvider.selectSpace(space);
     await spaceProvider.loadFloorsForSelectedSpace();
-    spaceProvider.selectFloor(floor0);
+    spaceProvider.selectFloor(browseFloor == '2' ? floor2 : floor0);
     await spaceProvider.loadPoisForSelectedFloor();
 
     locationProvider.setGpsLocation(UserLocation(
@@ -691,6 +693,63 @@ void main() {
       expect(identical(h.spaceProvider.activeNavigationRoute, canned), isTrue);
       expect(h.navRepo.calls, isEmpty);
 
+      await settle(h);
+    },
+  );
+
+  test(
+    'starting active navigation grounds a cross-floor trip begun outdoors',
+    () async {
+      final h = _Harness();
+      // Realistic flow: user browses Floor 2, picks an F2 POI, requests the
+      // route — so the selection context sits on the DESTINATION floor while
+      // the user is physically outside.
+      await h.pump(browseFloor: '2', userLatitude: 30.0100, userLongitude: 32.0100);
+
+      h.navRepo.onCoordinateRoute =
+          (lat, lon, floorNumber, destinationPuid) {
+        return _routeOf([h.roomOnF0, h.connectorF0]);
+      };
+      h.navRepo.onPoiRoute = (fromPuid, toPuid) {
+        if (fromPuid == h.connectorF0.puid && toPuid == h.connectorF2.puid) {
+          return _routeOf([h.connectorF0, h.connectorF2]);
+        }
+        if (fromPuid == h.connectorF2.puid && toPuid == h.destOnF2.puid) {
+          return _routeOf([h.connectorF2, h.destOnF2]);
+        }
+        throw const ApiException('no edge', statusCode: 400);
+      };
+
+      await h.requestRoute();
+      expect(h.spaceProvider.navigationRouteStatus, NavigationRouteStatus.ready);
+      final routeBefore = h.spaceProvider.activeNavigationRoute!;
+      expect(h.spaceProvider.selectedFloor?.floorNumber, '2');
+
+      final controller = NavigationController(
+        spaceProvider: h.spaceProvider,
+        locationProvider: h.locationProvider,
+        navigationRepository: h.navRepo,
+      );
+      h.spaceProvider.setIsNavigationActive(() => controller.isActive);
+
+      controller.startRoutePreview(
+        destinationPuid: h.destOnF2.puid,
+        destinationSpace: h.space,
+        destinationFloorNumber: h.destOnF2.floorNumber,
+      );
+      controller.startActiveNavigation();
+
+      expect(controller.isActive, isTrue);
+      expect(controller.currentNavigatingFloor, '0',
+          reason: 'navigation must anchor to the ground floor while outdoors');
+      expect(h.spaceProvider.selectedFloor?.floorNumber, '0',
+          reason: 'selection must follow the grounded floor');
+      expect(identical(controller.activeRoute, routeBefore), isTrue,
+          reason: 'Phase 0: grounding must preserve the active route');
+      expect(identical(h.spaceProvider.activeNavigationRoute, routeBefore),
+          isTrue);
+
+      controller.endNavigation();
       await settle(h);
     },
   );

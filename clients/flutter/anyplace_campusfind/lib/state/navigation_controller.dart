@@ -178,8 +178,44 @@ class NavigationController extends ChangeNotifier {
     _isTransitioningFloors = false;
     _exitConfirmationCounter = 0;
 
+    _groundNavigationFloorIfNeeded();
     _evaluateSubState();
     notifyListeners();
+  }
+
+  /// For cross-floor routes started while the user is still outdoors (GPS),
+  /// anchors navigation to the ground floor: the displayed floorplan, Wi-Fi
+  /// positioning scope, and floor-transition detection all follow physical
+  /// reality until the stair is reached. Phase 0 guarantees [SpaceProvider]
+  /// keeps the active route across this floor change.
+  void _groundNavigationFloorIfNeeded() {
+    final route = _activeRoute;
+    if (route == null || !route.hasFloorTransitions) return;
+    if (_locationProvider.positionSource == LocationSource.indoorWifi) return;
+
+    final floors = _spaceProvider.floors;
+    if (floors.isEmpty) return;
+
+    String? groundFloorNumber;
+    for (final f in floors) {
+      if (f.floorNumber == '0') {
+        groundFloorNumber = '0';
+        break;
+      }
+    }
+    groundFloorNumber ??= floors.first.floorNumber;
+
+    if (_spaceProvider.selectedFloor?.floorNumber != groundFloorNumber) {
+      final groundFloor =
+          floors.where((f) => f.floorNumber == groundFloorNumber).firstOrNull;
+      if (groundFloor != null) {
+        debugPrint(
+          '[NavigationController] Grounding navigation on Floor $groundFloorNumber for cross-floor trip',
+        );
+        _spaceProvider.selectFloor(groundFloor);
+      }
+    }
+    _currentNavigatingFloor = groundFloorNumber;
   }
 
   /// Ends active navigation and returns to idle.
