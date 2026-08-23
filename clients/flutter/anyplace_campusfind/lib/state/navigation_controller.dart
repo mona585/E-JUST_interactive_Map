@@ -157,6 +157,20 @@ class NavigationController extends ChangeNotifier {
       _session!.sessionId == sessionId &&
       _session!.routeRevision == revision;
 
+  /// PHASE 14: single choke point for every session write-through. The
+  /// debug-mode assertion makes any reentrant adoption loop fail fast in
+  /// tests instead of silently corrupting observer order.
+  bool _adoptingRoute = false;
+  void _adoptNavigatedRoute(NavigationRouteModel route) {
+    assert(!_adoptingRoute, 'reentrant adoptNavigatedRoute detected');
+    _adoptingRoute = true;
+    try {
+      _spaceScope.adoptNavigatedRoute(route);
+    } finally {
+      _adoptingRoute = false;
+    }
+  }
+
   NavigationController({
     required NavigationRouteScope spaceProvider,
     required this._locationProvider,
@@ -499,7 +513,7 @@ class NavigationController extends ChangeNotifier {
       return;
     }
     if (indoorRoute != null && indoorRoute.hasRenderablePath) {
-      _spaceScope.adoptNavigatedRoute(indoorRoute);
+      _adoptNavigatedRoute(indoorRoute);
       _session!.routeRevision++;
       _resolveArrivalAnchor();
       _routeIncomplete = false;
@@ -1065,7 +1079,7 @@ class NavigationController extends ChangeNotifier {
               // Fenced, atomic write-through (INV-6): store + revision bump
               // + anchor re-resolution inside one observer notification.
               if (_isCurrent(sessionId: sid, revision: rev)) {
-                _spaceScope.adoptNavigatedRoute(customRoute);
+                _adoptNavigatedRoute(customRoute);
                 _session!.routeRevision++;
                 _resolveArrivalAnchor();
                 _routeIncomplete = false;
@@ -1111,7 +1125,7 @@ class NavigationController extends ChangeNotifier {
         }
         if (route.hasRenderablePath) {
           // Fenced, atomic write-through (INV-6).
-          _spaceScope.adoptNavigatedRoute(route);
+          _adoptNavigatedRoute(route);
           _session!.routeRevision++;
           _resolveArrivalAnchor();
           committed = true;
