@@ -143,6 +143,7 @@ class SpaceProvider extends ChangeNotifier {
     NativePositioningService? nativePositioningService,
     this._locationProvider,
     CacheService? cacheService,
+    CrossBuildingRouter? crossBuildingRouter,
   }) : _repository = repository ?? AnyplaceSpaceRepository(),
        _radioMapRepository = radioMapRepository ?? AnyplaceRadioMapRepository(),
        _floorplanRepository =
@@ -153,31 +154,32 @@ class SpaceProvider extends ChangeNotifier {
        _nativePositioningService =
            nativePositioningService ?? MethodChannelNativePositioningService(),
        _cacheService = cacheService {
-    _crossBuildingRouter = CrossBuildingRouter(
-      isPositionInBuilding: (position, buildingBuid) {
-        return _isPositionInBuilding(position, buildingBuid);
-      },
-      loadPois: (buid, floorNumber) async {
-        try {
-          final client = AnyplaceApiClient();
-          return await client.fetchPoisByFloor(buid, floorNumber);
-        } catch (e) {
-          debugPrint('[SpaceProvider] loadPois callback failed for $buid/$floorNumber: $e');
-          return <PoiModel>[];
-        }
-      },
-      loadFloorNumbers: (buid) async {
-        try {
-          final client = AnyplaceApiClient();
-          final floors = await client.fetchFloorsForBuilding(buid);
-          return floors.map((f) => f.floorNumber).toList();
-        } catch (e) {
-          debugPrint('[SpaceProvider] loadFloorNumbers callback failed for $buid: $e');
-          return <String>[];
-        }
-      },
-      customRouteRepository: _customRouteRepository,
-    );
+    _crossBuildingRouter = crossBuildingRouter ??
+        CrossBuildingRouter(
+          isPositionInBuilding: (position, buildingBuid) {
+            return _isPositionInBuilding(position, buildingBuid);
+          },
+          loadPois: (buid, floorNumber) async {
+            try {
+              final client = AnyplaceApiClient();
+              return await client.fetchPoisByFloor(buid, floorNumber);
+            } catch (e) {
+              debugPrint('[SpaceProvider] loadPois callback failed for $buid/$floorNumber: $e');
+              return <PoiModel>[];
+            }
+          },
+          loadFloorNumbers: (buid) async {
+            try {
+              final client = AnyplaceApiClient();
+              final floors = await client.fetchFloorsForBuilding(buid);
+              return floors.map((f) => f.floorNumber).toList();
+            } catch (e) {
+              debugPrint('[SpaceProvider] loadFloorNumbers callback failed for $buid: $e');
+              return <String>[];
+            }
+          },
+          customRouteRepository: _customRouteRepository,
+        );
   }
 
   /// Binds LocationProvider for indoor floor position scoping.
@@ -694,38 +696,13 @@ class SpaceProvider extends ChangeNotifier {
     // Save to recent waypoints
     _cacheService?.addRecentWaypoint(poi.puid);
 
-    // ── Cross-building / Outdoor→Indoor detection for POI navigation ──
-    final userBuilding = _detectBuildingFromPolygon(currentLocation);
-    final targetPoiBuilding = _spaces.where((s) => s.buid == poi.buid).firstOrNull;
-    final shouldTryCrossBuilding =
-        targetPoiBuilding != null &&
-        (userBuilding == null || userBuilding.buid != targetPoiBuilding.buid);
-
-    if (shouldTryCrossBuilding) {
-      debugPrint(
-        '[SpaceProvider] POI cross-building: user ${userBuilding != null ? "in ${userBuilding.name}" : "outside"} → ${poi.name} in ${targetPoiBuilding.name}',
-      );
-      try {
-        final crossRoute = await _crossBuildingRouter.composeRoute(
-          userLocation: currentLocation.latLng,
-          targetSpace: targetPoiBuilding,
-          allBuildings: _spaces,
-          targetPuid: poi.puid,
-        );
-        if (crossRoute != null) {
-          _navigationRouteStatus = NavigationRouteStatus.ready;
-          _activeNavigationRoute = crossRoute;
-          _navigationRouteErrorMessage = crossRoute.partialRouteWarning;
-          notifyListeners();
-          return;
-        }
-      } catch (e) {
-        debugPrint('[SpaceProvider] POI cross-building router failed: $e');
-        // Fall through to existing cascade
-      }
-    }
-
     // ── Cross-floor detection: destination POI on a different floor ──
+    //
+    // Evaluated BEFORE cross-building routing so that a user outside the
+    // target building heading to another floor of that same building takes
+    // the staged route (GPS → origin-floor connector → destination-floor
+    // connector → POI) instead of being pre-empted by CrossBuildingRouter's
+    // entrance fallback.
     //
     // Never send the user's coordinates together with the DESTINATION floor to
     // /api/navigation/route/coordinates: the server snaps coordinates to the
@@ -788,6 +765,38 @@ class SpaceProvider extends ChangeNotifier {
             'Error planning a route across floors: $e';
         notifyListeners();
         return;
+      }
+    }
+
+    // ── Cross-building / Outdoor→Indoor detection for POI navigation ──
+    final userBuilding = _detectBuildingFromPolygon(currentLocation);
+    final targetPoiBuilding = _spaces.where((s) => s.buid == poi.buid).firstOrNull;
+    final shouldTryCrossBuilding =
+        targetPoiBuilding != null &&
+        !isCrossFloor &&
+        (userBuilding == null || userBuilding.buid != targetPoiBuilding.buid);
+
+    if (shouldTryCrossBuilding) {
+      debugPrint(
+        '[SpaceProvider] POI cross-building: user ${userBuilding != null ? "in ${userBuilding.name}" : "outside"} → ${poi.name} in ${targetPoiBuilding.name}',
+      );
+      try {
+        final crossRoute = await _crossBuildingRouter.composeRoute(
+          userLocation: currentLocation.latLng,
+          targetSpace: targetPoiBuilding,
+          allBuildings: _spaces,
+          targetPuid: poi.puid,
+        );
+        if (crossRoute != null) {
+          _navigationRouteStatus = NavigationRouteStatus.ready;
+          _activeNavigationRoute = crossRoute;
+          _navigationRouteErrorMessage = crossRoute.partialRouteWarning;
+          notifyListeners();
+          return;
+        }
+      } catch (e) {
+        debugPrint('[SpaceProvider] POI cross-building router failed: $e');
+        // Fall through to existing cascade
       }
     }
 
@@ -1491,9 +1500,88 @@ class SpaceProvider extends ChangeNotifier {
     return [userPoint, connector];
   }
 
-  /// Builds a staged multi-floor indoor route:
+  NavigationRoutePoint _outdoorWaypoint(
+    LatLng point,
+    int index,
+    String buid,
+    String floorNumber,
+  ) {
+    // Unique per-point puids so _stitchLegs never collapses the path.
+    return NavigationRoutePoint(
+      latitude: point.latitude,
+      longitude: point.longitude,
+      puid: '__outdoor_${index}__',
+      buid: buid,
+      floorNumber: floorNumber,
+      poisType: 'outdoor',
+      isOutdoor: true,
+    );
+  }
+
+  /// LEG 0: outdoor walking route from the user's position to the nearest
+  /// ground-floor entrance POI (same OSRM source as ground-floor routing).
   ///
-  ///   current position → origin-floor connector (LEG 1)
+  /// Falls back to a straight [user → entrance] segment when OSRM is
+  /// unavailable. Returns an empty leg when the building has no entrance POI
+  /// on the origin floor, leaving the rest of the staged route unchanged.
+  Future<List<NavigationRoutePoint>> _buildOutdoorEntranceLeg({
+    required UserLocation from,
+    required List<PoiModel> originFloorPois,
+    required String buid,
+    required String originFloorNumber,
+  }) async {
+    final entranceCandidates = originFloorPois
+        .where((p) => p.buid == buid && PoiClassification.isEntrance(p))
+        .toList();
+    if (entranceCandidates.isEmpty) {
+      debugPrint('[SpaceProvider] cross-floor: no entrance POI on F$originFloorNumber — skipping outdoor leg');
+      return const [];
+    }
+
+    PoiModel entrance = entranceCandidates.first;
+    double minDist = double.infinity;
+    for (final candidate in entranceCandidates) {
+      final dist = Geolocator.distanceBetween(
+        from.latitude,
+        from.longitude,
+        candidate.latitude,
+        candidate.longitude,
+      );
+      if (dist < minDist) {
+        minDist = dist;
+        entrance = candidate;
+      }
+    }
+
+    final osrmPoints = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
+      fromLat: from.latitude,
+      fromLon: from.longitude,
+      toLat: entrance.latitude,
+      toLon: entrance.longitude,
+    );
+
+    final leg = <NavigationRoutePoint>[
+      for (var i = 0; i < osrmPoints.length; i++)
+        _outdoorWaypoint(osrmPoints[i], i, buid, originFloorNumber),
+      if (osrmPoints.isEmpty)
+        _outdoorWaypoint(
+          LatLng(from.latitude, from.longitude),
+          0,
+          buid,
+          originFloorNumber,
+        ),
+      _poiToRoutePoint(entrance),
+    ];
+    debugPrint(
+      '[SpaceProvider] cross-floor: outdoor entrance leg (${leg.length} points)',
+    );
+    return leg;
+  }
+
+  /// Builds a staged multi-floor route:
+  ///
+  ///   current position → building entrance (LEG 0, outdoor walking)
+  ///     → origin-floor connector (LEG 1)
   ///     → matching destination-floor connector (LEG 2)
   ///     → destination POI (LEG 3)
   ///
@@ -1527,6 +1615,17 @@ class SpaceProvider extends ChangeNotifier {
         'or Floor ${targetPoi.floorNumber}, so no cross-floor route can be built.',
       );
     }
+
+    // ── LEG 0: outdoor walk to the building entrance ──
+    // Reuses the same OSRM walking directions as ground-floor routing so the
+    // journey starts with real outdoor guidance instead of a raw straight
+    // line toward the stair.
+    final leg0 = await _buildOutdoorEntranceLeg(
+      from: from,
+      originFloorPois: originFloorPois,
+      buid: buid,
+      originFloorNumber: originFloorNumber,
+    );
 
     // ── LEG 1: current position → origin-floor connector ──
     List<NavigationRoutePoint> leg1 = const [];
@@ -1589,7 +1688,7 @@ class SpaceProvider extends ChangeNotifier {
       leg3 = [_poiToRoutePoint(pair.destination), _poiToRoutePoint(targetPoi)];
     }
 
-    final stitched = _stitchLegs([leg1, leg2, leg3]);
+    final stitched = _stitchLegs([leg0, leg1, leg2, leg3]);
     if (!_hasRenderablePoints(stitched)) {
       throw _CrossFloorRoutingFailure(
         'Could not build a route from Floor $originFloorNumber to Floor ${targetPoi.floorNumber}.',

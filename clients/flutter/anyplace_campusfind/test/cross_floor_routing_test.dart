@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:anyplace_campusfind/data/datasources/anyplace_api_client.dart';
 import 'package:anyplace_campusfind/data/datasources/location_service.dart';
@@ -8,8 +9,10 @@ import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
 import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
 import 'package:anyplace_campusfind/data/models/position_estimate.dart';
 import 'package:anyplace_campusfind/data/models/poi_model.dart';
+import 'package:anyplace_campusfind/data/models/route_segment.dart';
 import 'package:anyplace_campusfind/data/models/space_model.dart';
 import 'package:anyplace_campusfind/data/models/user_location.dart';
+import 'package:anyplace_campusfind/data/repositories/cross_building_router.dart';
 import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
 import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
 import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
@@ -54,16 +57,21 @@ class _RecordedRouteCall {
 }
 
 class _FakeSpaceRepository implements SpaceRepository {
-  final SpaceModel space;
+  final List<SpaceModel> spaces;
   final List<FloorModel> floors;
-  _FakeSpaceRepository(this.space, this.floors);
+  _FakeSpaceRepository(this.spaces, this.floors);
 
   @override
   Future<List<SpaceModel>> getPublicSpaces({bool forceReload = false}) async =>
-      [space];
+      spaces;
 
   @override
-  Future<SpaceModel?> getSpaceByBuid(String buid) async => space;
+  Future<SpaceModel?> getSpaceByBuid(String buid) async {
+    for (final s in spaces) {
+      if (s.buid == buid) return s;
+    }
+    return null;
+  }
 
   @override
   Future<List<FloorModel>> getFloorsByBuid(
@@ -71,6 +79,35 @@ class _FakeSpaceRepository implements SpaceRepository {
     bool forceReload = false,
   }) async =>
       floors;
+}
+
+/// Records whether CrossBuildingRouter.composeRoute is consulted and what it
+/// is asked for. Returns [routeToReturn] when set, otherwise null.
+class _SpyCrossBuildingRouter extends CrossBuildingRouter {
+  final List<({LatLng userLocation, String targetBuid, String? targetPuid})>
+      calls = [];
+  NavigationRouteModel? routeToReturn;
+
+  _SpyCrossBuildingRouter() : super(
+          isPositionInBuilding: (_, _) => false,
+          loadPois: (_, _) async => const [],
+          loadFloorNumbers: (_) async => const [],
+        );
+
+  @override
+  Future<NavigationRouteModel?> composeRoute({
+    required LatLng userLocation,
+    required SpaceModel targetSpace,
+    required List<SpaceModel> allBuildings,
+    String? targetPuid,
+  }) async {
+    calls.add((
+      userLocation: userLocation,
+      targetBuid: targetSpace.buid,
+      targetPuid: targetPuid,
+    ));
+    return routeToReturn;
+  }
 }
 
 class _FakeRadioMapRepository implements RadioMapRepository {
@@ -202,6 +239,7 @@ class _Harness {
   late SpaceProvider spaceProvider;
   late LocationProvider locationProvider;
   late _ScriptedNavigationRepository navRepo;
+  _SpyCrossBuildingRouter? crossBuildingSpy;
 
   final space = const SpaceModel(
     buid: _buid,
@@ -216,6 +254,7 @@ class _Harness {
   late PoiModel connectorF2;
   late PoiModel destOnF2;
   late PoiModel roomOnF0;
+  late PoiModel entranceF0;
 
   _Harness() {
     floor0 = FloorModel(buid: _buid, floorNumber: '0');
@@ -254,6 +293,14 @@ class _Harness {
       lon: 31.9996,
       name: 'Room 001',
     );
+    entranceF0 = _poi(
+      puid: 'poi_entrance_f0',
+      floor: '0',
+      type: 'Entrance',
+      lat: 30.00006,
+      lon: 32.00002,
+      name: 'Entrance',
+    );
   }
 
   /// Standard fixture: user GPS-grounded (effective floor '0'),
@@ -261,25 +308,36 @@ class _Harness {
   Future<void> pump({
     List<PoiModel>? floor0Pois,
     Map<String, List<PoiModel>>? extraFloors,
+    double userLatitude = 29.9998,
+    double userLongitude = 31.9998,
+    List<SpaceModel>? allSpaces,
+    _SpyCrossBuildingRouter? spyRouter,
   }) async {
     locationProvider = LocationProvider(
       locationService: _StubLocationService(),
       nativePositioningService: _StubNativePositioningService(),
     );
     navRepo = _ScriptedNavigationRepository();
+    crossBuildingSpy = spyRouter;
 
     spaceProvider = SpaceProvider(
-      repository: _FakeSpaceRepository(space, [floor0, floor2]),
+      repository: _FakeSpaceRepository(
+        allSpaces ?? [space],
+        [floor0, floor2],
+      ),
       radioMapRepository: _FakeRadioMapRepository(),
       floorplanRepository: _FakeFloorplanRepository(),
       poiRepository: _FakePoiRepository({
-        '0': floor0Pois ?? [connectorF0, roomOnF0],
+        '0': floor0Pois ?? [connectorF0, roomOnF0, entranceF0],
         '2': [connectorF2, destOnF2],
         ...?extraFloors,
       }),
       navigationRepository: navRepo,
+      crossBuildingRouter: spyRouter,
     );
     spaceProvider.setLocationProvider(locationProvider);
+
+    await spaceProvider.loadSpaces();
 
     spaceProvider.selectSpace(space);
     await spaceProvider.loadFloorsForSelectedSpace();
@@ -287,8 +345,8 @@ class _Harness {
     await spaceProvider.loadPoisForSelectedFloor();
 
     locationProvider.setGpsLocation(UserLocation(
-      latitude: 29.9998,
-      longitude: 31.9998,
+      latitude: userLatitude,
+      longitude: userLongitude,
       accuracy: 5.0,
       timestamp: DateTime.now(),
     ));
@@ -447,6 +505,191 @@ void main() {
 
       expect(h.navRepo.calls.where((c) => c.isCoordinateCall), isEmpty,
           reason: 'no coordinate routing may be attempted when no connector exists');
+
+      await settle(h);
+    },
+  );
+
+  test(
+    'staged cross-floor route prepends an outdoor leg ending at the building entrance',
+    () async {
+      final spy = _SpyCrossBuildingRouter();
+      final h = _Harness();
+      await h.pump(
+        userLatitude: 30.0100,
+        userLongitude: 32.0100,
+        spyRouter: spy,
+      );
+
+      h.navRepo.onCoordinateRoute = (lat, lon, floorNumber, destinationPuid) {
+        return _routeOf([h.roomOnF0, h.connectorF0]);
+      };
+      h.navRepo.onPoiRoute = (fromPuid, toPuid) {
+        if (fromPuid == h.connectorF0.puid && toPuid == h.connectorF2.puid) {
+          return _routeOf([h.connectorF0, h.connectorF2]);
+        }
+        if (fromPuid == h.connectorF2.puid && toPuid == h.destOnF2.puid) {
+          return _routeOf([h.connectorF2, h.destOnF2]);
+        }
+        throw const ApiException('no edge', statusCode: 400);
+      };
+
+      await h.requestRoute();
+
+      expect(h.spaceProvider.navigationRouteStatus, NavigationRouteStatus.ready);
+      final route = h.spaceProvider.activeNavigationRoute!;
+      final puids = route.points.map((p) => p.puid).toList();
+
+      expect(puids.first, startsWith('__outdoor_'),
+          reason: 'the journey must begin with outdoor geometry from the GPS fix');
+      expect(puids, contains(h.entranceF0.puid),
+          reason: 'the outdoor leg must terminate at the entrance POI');
+      expect(
+        puids.indexOf(h.entranceF0.puid),
+        lessThan(puids.indexOf(h.connectorF0.puid)),
+        reason: 'entrance must precede the origin-floor stair',
+      );
+      expect(route.points.where((p) => p.isOutdoor), isNotEmpty);
+
+      // Ordering of the full journey:
+      // outdoor… → entrance → F0 stair → F1 stair → destination POI
+      final order = [
+        0, // first outdoor point
+        puids.indexOf(h.entranceF0.puid),
+        puids.indexOf(h.connectorF0.puid),
+        puids.indexOf(h.connectorF2.puid),
+        puids.indexOf(h.destOnF2.puid),
+      ];
+      final sorted = [...order]..sort();
+      expect(order, sorted,
+          reason: 'journey order must be outdoor → entrance → F0 conn → F1 conn → POI');
+
+      await settle(h);
+    },
+  );
+
+  test(
+    'OUTSIDE user + Floor-1 destination: staged cross-floor routing wins over CrossBuildingRouter',
+    () async {
+      final spy = _SpyCrossBuildingRouter();
+      final h = _Harness();
+      // ~1.4 km from the target building — beyond the 100 m detection radius,
+      // the exact geometry that previously pre-empted with composeRoute().
+      await h.pump(
+        userLatitude: 30.0100,
+        userLongitude: 32.0100,
+        spyRouter: spy,
+      );
+
+      h.navRepo.onCoordinateRoute =
+          (lat, lon, floorNumber, destinationPuid) {
+        expect(floorNumber, '0',
+            reason: 'coordinates must be routed on the USER floor');
+        expect(destinationPuid, h.connectorF0.puid);
+        return _routeOf([h.roomOnF0, h.connectorF0]);
+      };
+      h.navRepo.onPoiRoute = (fromPuid, toPuid) {
+        if (fromPuid == h.connectorF0.puid && toPuid == h.connectorF2.puid) {
+          return _routeOf([h.connectorF0, h.connectorF2]);
+        }
+        if (fromPuid == h.connectorF2.puid && toPuid == h.destOnF2.puid) {
+          return _routeOf([h.connectorF2, h.destOnF2]);
+        }
+        throw const ApiException('no edge', statusCode: 400);
+      };
+
+      await h.requestRoute();
+
+      expect(spy.calls, isEmpty,
+          reason: 'CrossBuildingRouter must NOT run for a cross-floor trip '
+              'to the target building');
+      expect(h.spaceProvider.navigationRouteStatus, NavigationRouteStatus.ready);
+      final route = h.spaceProvider.activeNavigationRoute!;
+      expect(
+        route.points.map((p) => p.puid),
+        containsAll([h.connectorF0.puid, h.connectorF2.puid, h.destOnF2.puid]),
+      );
+      expect(route.floorsInOrder, ['0', '2']);
+
+      await settle(h);
+    },
+  );
+
+  test(
+    'OUTSIDE user + SAME-FLOOR destination still uses CrossBuildingRouter',
+    () async {
+      final canned = NavigationRouteModel.fromSegments(
+        segments: [
+          RouteSegment.outdoor(
+            points: const [
+              LatLng(30.0010, 32.0010),
+              LatLng(30.0005, 32.0005),
+            ],
+            buildingId: _buid,
+          ),
+        ],
+        status: RouteModelStatus.ready,
+      );
+      final spy = _SpyCrossBuildingRouter()..routeToReturn = canned;
+      final h = _Harness();
+      await h.pump(userLatitude: 30.0100, userLongitude: 32.0100, spyRouter: spy);
+
+      h.spaceProvider.selectPoi(h.roomOnF0);
+      await h.requestRoute();
+
+      expect(spy.calls, hasLength(1));
+      expect(spy.calls.single.targetBuid, _buid);
+      expect(spy.calls.single.targetPuid, h.roomOnF0.puid);
+      expect(identical(h.spaceProvider.activeNavigationRoute, canned), isTrue,
+          reason: 'composeRoute result must be adopted as before');
+      expect(h.navRepo.calls, isEmpty,
+          reason: 'cascade must not run after a successful composeRoute');
+      expect(h.spaceProvider.navigationRouteStatus, NavigationRouteStatus.ready);
+
+      await settle(h);
+    },
+  );
+
+  test(
+    'genuinely different building still routes via CrossBuildingRouter',
+    () async {
+      const otherBuilding = SpaceModel(
+        buid: 'bldg_other_9',
+        name: 'Other Building',
+        latitude: 30.0060,
+        longitude: 32.0060,
+      );
+      final canned = NavigationRouteModel.fromSegments(
+        segments: [
+          RouteSegment.outdoor(
+            points: const [
+              LatLng(30.0058, 32.0058),
+              LatLng(30.0005, 32.0005),
+            ],
+            buildingId: _buid,
+          ),
+        ],
+        status: RouteModelStatus.ready,
+      );
+      final spy = _SpyCrossBuildingRouter()..routeToReturn = canned;
+      final h = _Harness();
+      // User near the OTHER building (well inside its 100 m radius, far from
+      // the target), destination POI on Floor 0 of the target building.
+      await h.pump(
+        allSpaces: [h.space, otherBuilding],
+        userLatitude: 30.0062,
+        userLongitude: 32.0062,
+        spyRouter: spy,
+      );
+
+      h.spaceProvider.selectPoi(h.roomOnF0);
+      await h.requestRoute();
+
+      expect(spy.calls, hasLength(1));
+      expect(spy.calls.single.targetBuid, _buid,
+          reason: 'router must be pointed at the destination building');
+      expect(identical(h.spaceProvider.activeNavigationRoute, canned), isTrue);
+      expect(h.navRepo.calls, isEmpty);
 
       await settle(h);
     },
