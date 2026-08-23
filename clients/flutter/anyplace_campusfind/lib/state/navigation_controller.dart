@@ -120,6 +120,12 @@ class NavigationController extends ChangeNotifier {
 
   bool get indoorGuidanceUnavailable => _indoorGuidanceFailed;
 
+  // -- PHASE 9: route-exhaustion visibility --
+  /// Transient flag: segments ended away from the destination anchor.
+  bool _routeIncomplete = false;
+
+  bool get routeIncomplete => _routeIncomplete;
+
   // -- Custom route tracking --
   RouteProgress? _customRouteProgress;
 
@@ -402,6 +408,7 @@ class NavigationController extends ChangeNotifier {
     _rerouteFailed = false;
     _indoorGuidanceEnsured = false;
     _indoorGuidanceFailed = false;
+    _routeIncomplete = false;
     _resolveArrivalAnchor();
 
     if (wasIdle) {
@@ -493,6 +500,7 @@ class NavigationController extends ChangeNotifier {
       _spaceScope.adoptNavigatedRoute(indoorRoute);
       _session!.routeRevision++;
       _resolveArrivalAnchor();
+      _routeIncomplete = false;
       _indoorGuidanceEnsured = true;
       _indoorGuidanceFailed = false;
       debugPrint('[NAV] INDOOR_GUIDANCE_COMMITTED sid=$sid '
@@ -536,6 +544,7 @@ class NavigationController extends ChangeNotifier {
     _rerouteFailed = false;
     _indoorGuidanceEnsured = false;
     _indoorGuidanceFailed = false;
+    _routeIncomplete = false;
     if (endedSessionId != null) {
       debugPrint('[NAV] SESSION_END sid=$endedSessionId');
     }
@@ -598,6 +607,7 @@ class NavigationController extends ChangeNotifier {
     _rerouteFailed = false;
     _indoorGuidanceEnsured = false;
     _indoorGuidanceFailed = false;
+    _routeIncomplete = false;
     notifyListeners();
 
     // 3. Content second: cascade for the new target behind request ids.
@@ -661,6 +671,13 @@ class NavigationController extends ChangeNotifier {
   @visibleForTesting
   void debugBumpRouteRevision() {
     if (_session != null) _session!.routeRevision++;
+  }
+
+  /// Test-only anchor suppression (Phase 9 — drives the exhaustion branch
+  /// where no destination anchor is resolvable).
+  @visibleForTesting
+  void debugClearArrivalAnchorForTest() {
+    _arrivalAnchor = null;
   }
 
   /// Temporarily disables follow mode (e.g., user panned the map).
@@ -1045,6 +1062,7 @@ class NavigationController extends ChangeNotifier {
                 _spaceScope.adoptNavigatedRoute(customRoute);
                 _session!.routeRevision++;
                 _resolveArrivalAnchor();
+                _routeIncomplete = false;
               }
               if (_state == NavigationState.rerouting) {
                 _transition(origin);
@@ -1092,6 +1110,7 @@ class NavigationController extends ChangeNotifier {
           _resolveArrivalAnchor();
           committed = true;
           _rerouteFailed = false;
+          _routeIncomplete = false;
           break;
         }
       } catch (e) {
@@ -1162,6 +1181,12 @@ class NavigationController extends ChangeNotifier {
 
         final dist = Geolocator.distanceBetween(location.latitude, location.longitude, connectorPoint.latitude, connectorPoint.longitude);
         if (dist < NavigationConfig.connectorProximityThreshold) {
+          // PHASE 9 / BUG-15: a connector as the LAST point has no successor.
+          if (idx + 1 >= _activeRoute!.points.length) {
+            debugPrint('[NavigationController] Connector is final point - '
+                'no successor floor; ignoring');
+            continue;
+          }
           // User is near a connector — determine next floor
           final nextFloor = _activeRoute!.points[idx + 1].floorNumber;
           if (nextFloor != currentFloor) {
@@ -1642,8 +1667,7 @@ class NavigationController extends ChangeNotifier {
 
     final nextIdx = _currentSegmentIndex + 1;
     if (nextIdx >= _activeRoute!.segments.length) {
-      debugPrint('[NavigationController] All segments complete — navigation finished');
-      // Navigation complete
+      _handleRouteExhaustion();
       return;
     }
 
@@ -1688,6 +1712,30 @@ class NavigationController extends ChangeNotifier {
     } else {
       _transition(NavigationState.idle);
     }
+    notifyListeners();
+  }
+
+  /// PHASE 9 / BUG-15: segment exhaustion semantics.
+  ///
+  /// When the final segment completes NEAR the arrival anchor, arrival owns
+  /// completion (normal path). Away from it the geometry can no longer guide:
+  /// flag it visibly, keep the session alive, and leave rerouting available.
+  void _handleRouteExhaustion() {
+    debugPrint('[NavigationController] All segments complete');
+    final location = _locationProvider.currentLocation;
+    final anchor = _arrivalAnchor;
+    if (anchor != null && location != null) {
+      final dist = Geolocator.distanceBetween(location.latitude,
+          location.longitude, anchor.latitude, anchor.longitude);
+      if (dist < NavigationConfig.arrivalProximityThresholdMeters) {
+        debugPrint('[NavigationController] Route exhausted within arrival '
+            'radius — arrival owns completion');
+        return;
+      }
+    }
+    _routeIncomplete = true;
+    debugPrint('[NavigationController] Route exhausted away from destination '
+            '— flagged incomplete; session continues');
     notifyListeners();
   }
 

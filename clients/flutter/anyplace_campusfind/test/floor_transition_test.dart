@@ -11,6 +11,7 @@ import 'package:anyplace_campusfind/data/models/floor_transition_event.dart';
 import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
 import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
 import 'package:anyplace_campusfind/data/models/position_estimate.dart';
+import 'package:anyplace_campusfind/data/models/route_segment.dart';
 import 'package:anyplace_campusfind/data/models/poi_model.dart';
 import 'package:anyplace_campusfind/data/models/space_model.dart';
 import 'package:anyplace_campusfind/data/models/user_location.dart';
@@ -19,6 +20,7 @@ import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart
 import 'package:anyplace_campusfind/state/location_provider.dart';
 import 'package:anyplace_campusfind/state/navigation_controller.dart';
 import 'package:anyplace_campusfind/state/navigation_state_model.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // ---------------------------------------------------------------------------
 // ORIGINAL PHASE 5 — Floor Transitions (navigation half).
@@ -679,5 +681,139 @@ void main() {
     expect(h.controller.currentNavigatingFloor, '0');
 
     await h.burnTimers(tester);
+  });
+
+  // ── PHASE 9 — Floor-Transition Hardening & Rendering Continuity ──
+
+  group('PHASE 9: guidance continuity across the transition lifecycle', () {
+    testWidgets('route object identity survives EXPECTED, ABORTED, DETECTED '
+        'and CONFIRMED across one scripted journey', (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.startIndoorOnFloorRoute(tester);
+      final route = h.scope.activeNavigationRoute!;
+
+      // EXPECTED — connector proximity arms the dwell with a held position.
+      await h.approachConnector(tester);
+      expect(h.controller.lastFloorTransitionEvent!.stage,
+          FloorTransitionStage.expected);
+      expect(h.scope.activeNavigationRoute, same(route));
+      expect(h.controller.activeRoute, same(route));
+
+      // ABORTED — timeout reverts safely while still inside the radius
+      // (proximity legitimately re-dwells on that same tick).
+      h.bumpClockBy(NavigationConfig.transitionTimeoutSeconds + 1);
+      await h.emitWifi(tester, floor: '0');
+      expect(
+        h.controller.floorTransitionEvents
+            .any((e) => e.stage == FloorTransitionStage.aborted),
+        isTrue,
+      );
+      expect(h.scope.activeNavigationRoute, same(route));
+
+      // Second timeout with a 22 m hop north out of the radius: abort lands
+      // and STAYS — no re-trigger.
+      h.bumpClockBy(NavigationConfig.transitionTimeoutSeconds + 1);
+      await h.emitWifi(tester, floor: '1', lat: 30.86585);
+      expect(h.controller.navigationState, NavigationState.activeIndoor);
+      expect(h.scope.activeNavigationRoute, same(route));
+
+      // Away from the connector, organic evidence completes the crossing:
+      // scope-confirmation lag means DETECTED lands a few ticks in — emit
+      // enough for the full detected->confirmed cycle.
+      await h.emitWifi(tester, floor: '1', lat: _baseLat, n: 6);
+      expect(h.controller.currentNavigatingFloor, '1');
+      final events = h.controller.floorTransitionEvents;
+      expect(events[events.length - 2].stage, FloorTransitionStage.detected);
+      expect(events.last.stage, FloorTransitionStage.confirmed);
+      expect(h.scope.activeNavigationRoute, same(route));
+      expect(h.controller.activeRoute, same(route));
+
+      await h.burnTimers(tester);
+    });
+  });
+
+  group('PHASE 9: connector-last-point robustness (BUG-15)', () {
+    testWidgets('a route whose final point is a connector neither crashes '
+        'nor fabricates a transition', (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      h.scope.activeNavigationRoute = NavigationRouteModel(points: [
+        NavigationRoutePoint(
+            latitude: 30.86900,
+            longitude: _lng,
+            puid: 'p0',
+            buid: 'b1',
+            floorNumber: '0',
+            poisType: 'waypoint'),
+        NavigationRoutePoint(
+            latitude: 30.86550,
+            longitude: _lng,
+            puid: 'conn-last',
+            buid: 'b1',
+            floorNumber: '0',
+            poisType: 'connector'),
+      ]);
+      await h.startIndoorOnFloorRoute(tester);
+
+      // Walk straight into the final connector point.
+      await h.emitWifi(tester, lat: 30.8655);
+      await h.emitWifi(tester, lat: 30.8655);
+
+      expect(h.controller.navigationState, NavigationState.activeIndoor,
+          reason: 'no successor floor exists — nothing may fire');
+      expect(h.controller.floorTransitionEvents, isEmpty);
+
+      await h.burnTimers(tester);
+    });
+  });
+
+  group('PHASE 9: segment-exhaustion semantics', () {
+    LatLng pLocal(double lat) => LatLng(lat, _lng);
+
+    NavigationRouteModel singleSegRoute() =>
+        NavigationRouteModel.fromSegments(
+          segments: [
+            RouteSegment.indoor(
+              points: [pLocal(30.86600), pLocal(30.86550)],
+              buildingId: 'b1',
+              floorNumber: '0',
+            ),
+          ],
+          status: RouteModelStatus.ready,
+        );
+
+    testWidgets('exhausting segments NEAR the anchor defers to arrival',
+        (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      h.scope.activeNavigationRoute = singleSegRoute();
+      await h.startIndoorOnFloorRoute(tester);
+
+      // Walk onto the segment endpoint in outlier-safe hops.
+      await h.emitWifi(tester, lat: 30.86575);
+      await h.emitWifi(tester, lat: 30.86550);
+
+      expect(h.controller.routeIncomplete, isFalse,
+          reason: 'arrival owns completion near the anchor');
+      expect(h.controller.isActive, isTrue);
+      await h.burnTimers(tester);
+    });
+
+    testWidgets('exhausting segments AWAY from the anchor flags incompleteness'
+        ' and keeps the session alive', (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      h.scope.activeNavigationRoute = singleSegRoute();
+      await h.startIndoorOnFloorRoute(tester);
+      h.controller.debugClearArrivalAnchorForTest();
+
+      await h.emitWifi(tester, lat: 30.86575);
+      await h.emitWifi(tester, lat: 30.86550);
+
+      expect(h.controller.routeIncomplete, isTrue);
+      expect(h.controller.isActive, isTrue);
+      await h.burnTimers(tester);
+    });
   });
 }
