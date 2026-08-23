@@ -86,6 +86,8 @@ class _FakeNativePositioningService implements NativePositioningService {
 }
 
 class _StubNavigationRepository implements NavigationRepository {
+  NavigationRouteModel? served;
+
   @override
   Future<NavigationRouteModel> getRouteBetweenPois({
     required String fromPuid,
@@ -100,7 +102,7 @@ class _StubNavigationRepository implements NavigationRepository {
     String? floorNumber,
     required String destinationPuid,
   }) async =>
-      throw Exception('stub: unexpected call');
+      served ?? (throw Exception('stub: unexpected call'));
 }
 
 class _FakeSpaceScope extends ChangeNotifier implements NavigationRouteScope {
@@ -214,11 +216,13 @@ const _endLat = 30.8560;
 /// Indoor walk target used as a close-range anchor for indoor tests.
 const _indoorAnchorLat = 30.86560;
 
-UserLocation _gps(double lat, {double accuracy = 8.0}) => UserLocation(
+UserLocation _gps(double lat,
+    {double accuracy = 8.0, DateTime? at}) =>
+    UserLocation(
       latitude: lat,
       longitude: _lng,
       accuracy: accuracy,
-      timestamp: DateTime.now(),
+      timestamp: at ?? DateTime.now(),
     );
 
 PositionEstimate _wifi({
@@ -632,6 +636,85 @@ void main() {
     expect(h.controller.isArrived, isTrue);
     h.controller.endNavigation();
     expect(h.controller.navigationState, NavigationState.idle);
+    await h.burnTimers(tester);
+  });
+
+  // ── PHASE 13 — outdoor arrival evidence-quality gating ──
+
+  testWidgets('PHASE 13: a poor-accuracy pair inside the radius does NOT '
+      'arrive; a good pair does', (tester) async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await h.startOutdoor(tester);
+
+    for (var i = 0; i < 2; i++) {
+      h.provider.setGpsLocation(_gps(_endLat, accuracy: 40));
+      await tester.pump();
+    }
+    expect(h.controller.navigationState, NavigationState.activeOutdoor,
+        reason: 'INV-8: poor-band fixes are not arrival evidence');
+
+    await h.arriveOverGps(tester, _endLat);
+    expect(h.controller.navigationState, NavigationState.arrived);
+    await h.burnTimers(tester);
+  });
+
+  testWidgets('PHASE 13: a stale tick resets the confirmation counter',
+      (tester) async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await h.startOutdoor(tester);
+
+    // One good qualifying tick (counter = 1).
+    h.provider.setGpsLocation(_gps(_endLat));
+    await tester.pump();
+
+    // A stale fix inside the radius must reset, not confirm.
+    h.provider.setGpsLocation(_gps(_endLat,
+        at: DateTime.now().subtract(const Duration(seconds: 30))));
+    await tester.pump();
+
+    // A single further good tick is NOT enough after the reset.
+    h.provider.setGpsLocation(_gps(_endLat));
+    await tester.pump();
+    expect(h.controller.navigationState, NavigationState.activeOutdoor);
+
+    // The second good tick completes the fresh pair.
+    h.provider.setGpsLocation(_gps(_endLat));
+    await tester.pump();
+    expect(h.controller.navigationState, NavigationState.arrived);
+    await h.burnTimers(tester);
+  });
+
+  testWidgets('PHASE 13: the anchor is cached per (session, revision) and '
+      're-resolves on committed replacement', (tester) async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await h.startOutdoor(tester);
+    final anchor1 = h.controller.arrivalAnchorForTest;
+    expect(anchor1, isNotNull);
+
+    // Unrelated scope churn cannot move the anchor.
+    h.scope.selectFloor(_floor('0'));
+    expect(identical(h.controller.arrivalAnchorForTest, anchor1), isTrue);
+
+    // A committed reroute bumps the revision → the anchor re-resolves.
+    final replacement = NavigationRouteModel(points: [
+      NavigationRoutePoint.outdoor(latitude: 30.8930, longitude: _lng),
+      NavigationRoutePoint.outdoor(latitude: _endLat, longitude: _lng),
+    ]);
+    h.stub.served = replacement;
+    var now = DateTime.now();
+    h.controller.debugNowOverride = () => now;
+    now = now.add(const Duration(seconds: 20));
+    h.provider.setGpsLocation(_gps(30.9950));
+    h.provider.setGpsLocation(_gps(30.9950));
+    await tester.pump();
+    await tester.pump();
+
+    expect(h.controller.sessionForTest!.routeRevision, 1);
+    expect(identical(h.controller.arrivalAnchorForTest, anchor1), isFalse,
+        reason: 'revision bump re-resolves the anchor');
     await h.burnTimers(tester);
   });
 }

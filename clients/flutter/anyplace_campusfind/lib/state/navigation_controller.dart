@@ -87,9 +87,11 @@ class NavigationController extends ChangeNotifier {
   // -- Building entry detection --
   bool _buildingPreloaded = false;
 
-  // -- Arrival detection (ORIGINAL PHASE 6) --
+  // -- Arrival detection (ORIGINAL PHASE 6; Phase 13 anchor stability) --
   _ArrivalAnchor? _arrivalAnchor;
   int _arrivalConfirmationCounter = 0;
+  String? _anchorSessionId;
+  int _anchorRevision = -1;
 
   // -- Segment tracking for cross-building navigation --
   int _currentSegmentIndex = 0;
@@ -679,6 +681,10 @@ class NavigationController extends ChangeNotifier {
   void debugClearArrivalAnchorForTest() {
     _arrivalAnchor = null;
   }
+
+  /// Test-only identity view of the resolved arrival anchor (Phase 13).
+  @visibleForTesting
+  Object? get arrivalAnchorForTest => _arrivalAnchor;
 
   /// Temporarily disables follow mode (e.g., user panned the map).
   void exitFollowMode() {
@@ -1753,6 +1759,19 @@ class NavigationController extends ChangeNotifier {
   /// POI when resolvable in the scope, otherwise the route's final point
   /// (always present and data-driven).
   void _resolveArrivalAnchor() {
+    // PHASE 13: the anchor is stable per (sessionId, revision). Unrelated
+    // POI-list churn cannot move it; only committed replacements re-resolve.
+    final session = _session;
+    if (session == null) {
+      _arrivalAnchor = null;
+      return;
+    }
+    if (_anchorSessionId == session.sessionId &&
+        _anchorRevision == session.routeRevision &&
+        _arrivalAnchor != null) {
+      return;
+    }
+
     final poi = _spaceScope.pois
         .where((p) => p.puid == destinationPuid)
         .firstOrNull;
@@ -1763,27 +1782,34 @@ class NavigationController extends ChangeNotifier {
         buid: poi.buid,
         floorNumber: poi.floorNumber,
       );
-      return;
+    } else {
+      final route = _activeRoute;
+      final last = route?.hasPoints == true ? route!.points.last : null;
+      if (last != null) {
+        _arrivalAnchor = _ArrivalAnchor(
+          latitude: last.latitude,
+          longitude: last.longitude,
+          buid: last.buid.isEmpty ? null : last.buid,
+          floorNumber: last.floorNumber.isEmpty ? null : last.floorNumber,
+        );
+      } else {
+        _arrivalAnchor = null;
+      }
     }
-
-    final route = _activeRoute;
-    final last = route?.hasPoints == true ? route!.points.last : null;
-    if (last != null) {
-      _arrivalAnchor = _ArrivalAnchor(
-        latitude: last.latitude,
-        longitude: last.longitude,
-        buid: last.buid.isEmpty ? null : last.buid,
-        floorNumber: last.floorNumber.isEmpty ? null : last.floorNumber,
-      );
-      return;
-    }
-    _arrivalAnchor = null;
+    _anchorSessionId = session.sessionId;
+    _anchorRevision = session.routeRevision;
   }
 
-  /// Arrival evidence producer: consecutive positioning ticks within the
-  /// destination radius confirm arrival. Indoors, proximity alone is never
-  /// proof — the fix must carry canonically confirmed identity matching the
-  /// destination building and floor.
+  /// PHASE 13 / INV-8: arrival is evidence, never coincidence.
+  ///
+  /// Indoors, proximity must additionally carry confirmed building+floor
+  /// identity. Outdoors, BOTH confirming ticks must be decision-quality
+  /// (fresh, good-band accuracy) — a poor/stale/held tick resets the
+  /// counter exactly like an indoor identity mismatch does.
+  ///
+  /// Post-arrived policy (product choice): the machine STAYS in ARRIVED —
+  /// the banner's Done terminates the session; there is NO auto-cleanup
+  /// timer.
   void _checkArrival(UserLocation location) {
     if (_state != NavigationState.activeOutdoor &&
         _state != NavigationState.activeIndoor) {
@@ -1799,6 +1825,17 @@ class NavigationController extends ChangeNotifier {
           fix.buildingId == anchor.buid &&
           fix.floor == anchor.floorNumber;
       if (!identityMatches) {
+        _arrivalConfirmationCounter = 0;
+        return;
+      }
+    } else {
+      // Outdoor evidence-quality gate (Phase 5 flags).
+      final fix = _locationProvider.currentFix;
+      final qualifies = fix != null &&
+          fix.source == PositionSource.gps &&
+          fix.status == PositionFixStatus.fresh &&
+          fix.accuracy <= NavigationConfig.gpsGoodAccuracyMeters;
+      if (!qualifies) {
         _arrivalConfirmationCounter = 0;
         return;
       }
