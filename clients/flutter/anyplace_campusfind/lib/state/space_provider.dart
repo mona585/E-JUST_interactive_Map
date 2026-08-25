@@ -809,7 +809,13 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       if (route.hasRenderablePath) {
         debugPrint('[SpaceProvider] Strategy 1 succeeded');
         _navigationRouteStatus = NavigationRouteStatus.ready;
-        _activeNavigationRoute = route;
+        // Same-building indoor geometry adopts the segmented indoorRouting
+        // representation so it renders with the same intended indoor style
+        // as composed cross-building journeys (geometry untouched).
+        _activeNavigationRoute = route.toSegmentedIndoor(
+          fallbackBuildingId: poi.buid,
+          instruction: 'Head to ${poi.name}',
+        );
         _navigationRouteErrorMessage = null;
         notifyListeners();
         return;
@@ -887,7 +893,11 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
         if (route.hasRenderablePath) {
           debugPrint('[SpaceProvider] Strategy 2 succeeded');
           _navigationRouteStatus = NavigationRouteStatus.ready;
-          _activeNavigationRoute = route;
+          // Representation unification — see Strategy 1 commit above.
+          _activeNavigationRoute = route.toSegmentedIndoor(
+            fallbackBuildingId: poi.buid,
+            instruction: 'Head to ${poi.name}',
+          );
           _navigationRouteErrorMessage = null;
           notifyListeners();
           return;
@@ -1454,9 +1464,16 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     if (anchor == null) return null;
 
     try {
-      return await _navigationRepository.getRouteBetweenPois(
+      final route = await _navigationRepository.getRouteBetweenPois(
         fromPuid: anchor.puid,
         toPuid: destinationPuid,
+      );
+      // Representation unification: a legitimately refetched indoor guidance
+      // route renders through the same indoorRouting projection as composed
+      // journeys instead of the legacy path.
+      return route.toSegmentedIndoor(
+        fallbackBuildingId: confirmedBuid,
+        instruction: 'Head to your destination',
       );
     } catch (e) {
       debugPrint('[SpaceProvider] requestIndoorRouteForSession failed: $e');
@@ -1590,7 +1607,11 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
         if (route.hasRenderablePath) {
           debugPrint('[SpaceProvider] Strategy 1 succeeded: ${route.points.length} points');
           _navigationRouteStatus = NavigationRouteStatus.ready;
-          _activeNavigationRoute = route;
+          // Representation unification — see requestRouteToSelectedPoi.
+          _activeNavigationRoute = route.toSegmentedIndoor(
+            fallbackBuildingId: targetSpace.buid,
+            instruction: 'Enter ${targetSpace.name}',
+          );
           _navigationRouteErrorMessage = null;
           notifyListeners();
           return;

@@ -420,7 +420,19 @@ class AnyplaceApiClient {
   /// Calls `POST /api/floorplans64/{buid}/{floor}` with body `{}`.
   ///
   /// Returns decoded PNG [Uint8List] bytes.
-  Future<Uint8List> fetchFloorplanImage(String buid, String floor) async {
+  ///
+  /// The response is streamed (not buffered by the http client) so the
+  /// download can be guarded by a STALL watchdog — [stallTimeout] measured
+  /// between received chunks — while the overall transfer remains bounded by
+  /// [ApiConfig.floorplanImageTimeout]. A slow-but-alive trickle (measured
+  /// ~70-105 KB/s wired, ~24 KB/s on mobile) never trips the stall watchdog,
+  /// but a dead connection fails fast instead of hanging for the whole
+  /// budget. [stallTimeout] is injectable for tests.
+  Future<Uint8List> fetchFloorplanImage(
+    String buid,
+    String floor, {
+    Duration? stallTimeout,
+  }) async {
     final cleanBuid = buid.trim();
     final cleanFloor = floor.trim();
     if (cleanBuid.isEmpty) {
@@ -435,16 +447,36 @@ class AnyplaceApiClient {
     );
     debugPrint('[AnyplaceApi] --> POST floorplan image: $uri');
 
-    // Floorplan payloads are multi-megabyte Base64 responses; on slow links
-    // the default JSON timeout is far too short. Allow a longer window and
-    // retry the download once on transient network failures.
-    Future<http.Response> postOnce() => _client
-        .post(
-          uri,
-          headers: {'Content-Type': 'application/json', 'Accept': '*/*'},
-          body: jsonEncode({}),
-        )
-        .timeout(ApiConfig.floorplanImageTimeout);
+    Future<http.Response> postOnce() async {
+      final effectiveStall = stallTimeout ?? ApiConfig.floorplanStallTimeout;
+      final request = http.Request('POST', uri)
+        ..headers['Content-Type'] = 'application/json'
+        ..headers['Accept'] = '*/*'
+        ..body = jsonEncode({});
+
+      final streamed = await _client.send(request).timeout(effectiveStall);
+
+      // Accumulate streamed chunks; Stream.timeout measures the gap between
+      // events, so it acts as a stall (inter-chunk silence) watchdog.
+      final chunks = await streamed.stream
+          .timeout(effectiveStall)
+          .toList()
+          .timeout(ApiConfig.floorplanImageTimeout);
+      final bodyBytes = Uint8List(
+        chunks.fold<int>(0, (total, chunk) => total + chunk.length),
+      );
+      var offset = 0;
+      for (final chunk in chunks) {
+        bodyBytes.setRange(offset, offset + chunk.length, chunk);
+        offset += chunk.length;
+      }
+
+      return http.Response.bytes(
+        bodyBytes,
+        streamed.statusCode,
+        headers: streamed.headers,
+      );
+    }
 
     http.Response response;
     try {

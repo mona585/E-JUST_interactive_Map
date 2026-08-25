@@ -809,7 +809,16 @@ class CrossBuildingRouter {
   // Step 6: Entrance segment generation
   // ──────────────────────────────────────────────────────────────
 
-  /// Generates an entrance segment from the building entrance to the destination.
+  /// Generates the destination-building leg from the building entrance to
+  /// the destination.
+  ///
+  /// Representation semantics: when REAL indoor geometry exists (server /
+  /// connector-derived), it is typed [RouteSegmentType.indoorRouting] — it
+  /// IS indoor navigation, so it renders with the same intended indoor style
+  /// as every other genuine indoor leg. Only the unknown-geometry fallbacks
+  /// remain [RouteSegmentType.entranceTransition] (an honest boundary-gap
+  /// marker flagged incomplete) — a boundary polyline cannot be fabricated
+  /// from data we do not have.
   Future<RouteSegment?> _generateEntranceSegment({
     required LatLng entrancePoint,
     PoiModel? entrancePoi,
@@ -843,10 +852,11 @@ class CrossBuildingRouter {
 
         if (result.hasRenderablePath) {
           print('[ENTRANCE_DEBUG] POI-to-POI SUCCESS: ${result.points.length} points');
-          return RouteSegment.entrance(
+          return RouteSegment.indoor(
             points: result.polylinePoints,
             buildingId: targetSpace.buid,
             floorNumber: entrancePoi.floorNumber,
+            pointFloors: result.points.map((p) => p.floorNumber).toList(),
             connectorPoiId: entrancePoi.puid,
             instruction: 'Enter ${targetSpace.name}',
           );
@@ -869,10 +879,11 @@ class CrossBuildingRouter {
 
         if (result.hasRenderablePath) {
           print('[ENTRANCE_DEBUG] coord-based SUCCESS: ${result.points.length} points');
-          return RouteSegment.entrance(
+          return RouteSegment.indoor(
             points: result.polylinePoints,
             buildingId: targetSpace.buid,
             floorNumber: entrancePoi.floorNumber,
+            pointFloors: result.points.map((p) => p.floorNumber).toList(),
             connectorPoiId: entrancePoi.puid,
             instruction: 'Enter ${targetSpace.name}',
           );
@@ -895,7 +906,7 @@ class CrossBuildingRouter {
         );
         if (route != null) {
           print('[ENTRANCE_DEBUG] connector-based SUCCESS: ${route.length} points');
-          return RouteSegment.entrance(
+          return RouteSegment.indoor(
             points: route,
             buildingId: targetSpace.buid,
             floorNumber: entrancePoi.floorNumber,

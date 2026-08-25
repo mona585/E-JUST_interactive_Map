@@ -507,19 +507,42 @@ class NavigationController extends ChangeNotifier {
     if (destPuid == null) return;
 
     // Already carrying usable indoor guidance ending at the destination?
+    //
+    // Representation-aware recognition (root-cause fix): legacy/server
+    // routes carry the real destination puid on their final point, while
+    // composed SEGMENT routes project identity-free points with synthetic
+    // '<segmentType>_<n>' puids. For either shape, the decisive fact is that
+    // the route's indoor geometry TERMINATES at the resolved arrival anchor —
+    // the destination POI itself. A valid composed journey is therefore
+    // recognized and kept verbatim instead of being refetched and downgraded
+    // to a different representation.
+    //
+    // The old `last.floorNumber == confirmedFloor` clause is intentionally
+    // NOT applied to recognition: segment metadata flattens multi-floor
+    // geometry onto one floor, so a complete journey legitimately ends on a
+    // floor other than the currently navigated one. Floor-scoped progress
+    // continues through the existing transition machinery.
     final route = _activeRoute;
-    final confirmedFloor = _currentNavigatingFloor;
-    if (route != null &&
-        route.hasIndoorSegment &&
-        route.points.isNotEmpty &&
-        route.points.last.puid == destPuid &&
-        confirmedFloor != null &&
-        route.points.last.floorNumber == confirmedFloor) {
-      _indoorGuidanceEnsured = true;
-      debugPrint('[NAV] INDOOR_GUIDANCE_ALREADY_USABLE sid='
-          '${session.sessionId}');
-      return;
+    final anchor = _arrivalAnchor;
+    if (route != null && route.hasIndoorSegment && route.points.isNotEmpty) {
+      final last = route.points.last;
+      var reachesDestination = last.puid == destPuid;
+      if (!reachesDestination && anchor != null) {
+        reachesDestination =
+            Geolocator.distanceBetween(last.latitude, last.longitude,
+                    anchor.latitude, anchor.longitude) <=
+                NavigationConfig.arrivalProximityThresholdMeters;
+      }
+      if (reachesDestination) {
+        _indoorGuidanceEnsured = true;
+        debugPrint('[NAV] INDOOR_GUIDANCE_ALREADY_USABLE sid='
+            '${session.sessionId} '
+            'representation=${route.hasSegments ? "segmented" : "legacy"}');
+        return;
+      }
     }
+
+    final confirmedFloor = _currentNavigatingFloor;
 
     final sid = session.sessionId;
     final rev = session.routeRevision;
@@ -1174,8 +1197,22 @@ class NavigationController extends ChangeNotifier {
         }
         if (route.hasRenderablePath) {
           // Fenced, atomic write-through (INV-6).
+          //
+          // Representation preservation: an indoor-origin reroute replaces
+          // the route with fresh indoor geometry; adopting it through
+          // [toSegmentedIndoor] keeps the segmented indoorRouting
+          // representation (same style/projection as the rest of the
+          // journey) instead of downgrading to the legacy rendering path.
+          // Outdoor reroutes keep their historical representation.
+          final adoptedRoute =
+              origin == NavigationState.activeOutdoor
+                  ? route
+                  : route.toSegmentedIndoor(
+                      fallbackBuildingId: destinationSpace?.buid,
+                      instruction: 'Rerouted to your destination',
+                    );
           _navEvent('ROUTE_COMMIT', detail: 'source=reroute-api attempt=');
-          _adoptNavigatedRoute(route);
+          _adoptNavigatedRoute(adoptedRoute);
           _session!.routeRevision++;
           _resolveArrivalAnchor();
           committed = true;

@@ -50,10 +50,20 @@ class ApiConfig {
   /// Timeout duration for HTTP requests.
   static const Duration requestTimeout = Duration(seconds: 30);
 
-  /// Timeout for bulk image downloads. Measured transfers of campus
-  /// floorplans from the public Anyplace backend take ~2 minutes (~8-11 MB
-  /// trickled at roughly 70 KB/s), far exceeding [requestTimeout]. The value
-  /// must comfortably exceed that; the on-disk cache makes each floor a
-  /// one-time cost.
-  static const Duration floorplanImageTimeout = Duration(minutes: 5);
+  /// Overall budget for bulk floorplan image downloads.
+  ///
+  /// Measured transfers of campus floorplans from the public Anyplace
+  /// backend are ~8-11 MB of Base64 trickled at roughly 70-105 KB/s
+  /// (~2 minutes wired). On mobile links measured as low as ~24 KB/s the
+  /// same payload legitimately needs ~7.5 minutes, so the budget must
+  /// cover the slow-link case; the on-disk cache makes each floor a
+  /// one-time cost. A dead connection never waits this long — it is cut
+  /// off after [floorplanStallTimeout] of complete silence.
+  static const Duration floorplanImageTimeout = Duration(minutes: 15);
+
+  /// Stall watchdog for floorplan downloads: the request fails if NO bytes
+  /// arrive for this long. Unlike the overall budget this measures
+  /// inter-chunk gaps, so a slow-but-alive trickle never trips it while a
+  /// dead/stalled connection fails fast instead of hanging.
+  static const Duration floorplanStallTimeout = Duration(seconds: 60);
 }

@@ -59,6 +59,15 @@ class RouteSegment {
   /// (not a real connector/entrance POI).
   final bool isFallbackLocation;
 
+  /// Truthful per-point floor numbers, aligned 1:1 with [points].
+  ///
+  /// Server indoor routes legitimately span multiple floors; the single
+  /// [floorNumber] field flattens that geometry onto one floor. When this
+  /// list is provided (length == points.length) it carries each waypoint's
+  /// real floor so derived projections stay faithful. Empty = not provided;
+  /// consumers fall back to [floorNumber].
+  final List<String> pointFloors;
+
   const RouteSegment({
     required this.type,
     required this.points,
@@ -69,6 +78,7 @@ class RouteSegment {
     this.distance = 0.0,
     this.isIncomplete = false,
     this.isFallbackLocation = false,
+    this.pointFloors = const [],
   });
 
   /// Whether this segment has no points.
@@ -111,6 +121,7 @@ class RouteSegment {
     String? instruction,
     double distance = 0.0,
     bool isIncomplete = false,
+    List<String> pointFloors = const [],
   }) {
     return RouteSegment(
       type: RouteSegmentType.indoorRouting,
@@ -121,6 +132,7 @@ class RouteSegment {
       instruction: instruction,
       distance: distance,
       isIncomplete: isIncomplete,
+      pointFloors: pointFloors,
     );
   }
 
@@ -134,6 +146,7 @@ class RouteSegment {
     double distance = 0.0,
     bool isIncomplete = false,
     bool isFallbackLocation = false,
+    List<String> pointFloors = const [],
   }) {
     return RouteSegment(
       type: RouteSegmentType.exitTransition,
@@ -145,6 +158,7 @@ class RouteSegment {
       distance: distance,
       isIncomplete: isIncomplete,
       isFallbackLocation: isFallbackLocation,
+      pointFloors: pointFloors,
     );
   }
 
@@ -158,6 +172,7 @@ class RouteSegment {
     double distance = 0.0,
     bool isIncomplete = false,
     bool isFallbackLocation = false,
+    List<String> pointFloors = const [],
   }) {
     return RouteSegment(
       type: RouteSegmentType.entranceTransition,
@@ -169,6 +184,7 @@ class RouteSegment {
       distance: distance,
       isIncomplete: isIncomplete,
       isFallbackLocation: isFallbackLocation,
+      pointFloors: pointFloors,
     );
   }
 

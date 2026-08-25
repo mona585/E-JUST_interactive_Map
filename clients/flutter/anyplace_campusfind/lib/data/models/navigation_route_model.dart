@@ -214,13 +214,27 @@ class NavigationRouteModel {
       // points — the segment-level buildingId is journey context for
       // instructions, never a claim about the GPS waypoint itself.
       final isOutdoorSeg = seg.type == RouteSegmentType.outdoorWalking;
-      for (final pt in seg.points) {
+      // Per-point truthful floors win over the segment-level floor whenever
+      // they were provided and aligned; otherwise the flattened segment
+      // floor applies exactly as before.
+      final hasAlignedFloors =
+          seg.pointFloors.length == seg.points.length;
+      for (var i = 0; i < seg.points.length; i++) {
+        final pt = seg.points[i];
+        String floorNumber;
+        if (isOutdoorSeg) {
+          floorNumber = '';
+        } else if (hasAlignedFloors && seg.pointFloors[i].isNotEmpty) {
+          floorNumber = seg.pointFloors[i];
+        } else {
+          floorNumber = seg.floorNumber ?? '';
+        }
         allPoints.add(NavigationRoutePoint(
           latitude: pt.latitude,
           longitude: pt.longitude,
           puid: '${seg.type.name}_$pointIndex',
           buid: isOutdoorSeg ? '' : (seg.buildingId ?? ''),
-          floorNumber: isOutdoorSeg ? '' : (seg.floorNumber ?? ''),
+          floorNumber: floorNumber,
           poisType: isOutdoorSeg ? 'outdoor' : seg.type.name,
           isOutdoor: isOutdoorSeg,
         ));
@@ -230,6 +244,45 @@ class NavigationRouteModel {
     return NavigationRouteModel(
       points: allPoints,
       segments: segments,
+      status: status,
+      partialRouteWarning: partialRouteWarning,
+    );
+  }
+
+  /// Wraps a PURELY-INDOOR legacy route into the segmented representation so
+  /// it renders through the same indoorRouting projection as composed
+  /// cross-building journeys.
+  ///
+  /// This is a representation change ONLY:
+  ///  * geometry ([points] coordinates) is carried over verbatim;
+  ///  * per-point floors are preserved via [RouteSegment.pointFloors];
+  ///  * [status] / [partialRouteWarning] pass through unchanged;
+  ///  * routes that already have segments, are not renderable, or contain
+  ///    any outdoor waypoint are returned as-is (they either need no wrap or
+  ///    belong to a different rendering path).
+  NavigationRouteModel toSegmentedIndoor({
+    String? fallbackBuildingId,
+    String? instruction,
+  }) {
+    if (hasSegments || !hasRenderablePath || hasOutdoorSegment) return this;
+    String? buid;
+    String? floor;
+    final pointFloors = <String>[];
+    for (final p in points) {
+      if (buid == null && p.buid.isNotEmpty) buid = p.buid;
+      if (floor == null && p.floorNumber.isNotEmpty) floor = p.floorNumber;
+      pointFloors.add(p.floorNumber);
+    }
+    return NavigationRouteModel.fromSegments(
+      segments: [
+        RouteSegment.indoor(
+          points: polylinePoints,
+          buildingId: buid ?? fallbackBuildingId ?? '',
+          floorNumber: floor ?? '',
+          pointFloors: pointFloors,
+          instruction: instruction,
+        ),
+      ],
       status: status,
       partialRouteWarning: partialRouteWarning,
     );

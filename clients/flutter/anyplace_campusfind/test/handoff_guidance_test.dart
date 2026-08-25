@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:anyplace_campusfind/config/navigation_config.dart';
 import 'package:anyplace_campusfind/data/datasources/location_service.dart';
@@ -11,6 +12,7 @@ import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
 import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
 import 'package:anyplace_campusfind/data/models/position_estimate.dart';
 import 'package:anyplace_campusfind/data/models/poi_model.dart';
+import 'package:anyplace_campusfind/data/models/route_segment.dart';
 import 'package:anyplace_campusfind/data/models/space_model.dart';
 import 'package:anyplace_campusfind/data/models/user_location.dart';
 import 'package:anyplace_campusfind/data/repositories/custom_route_repository.dart';
@@ -356,6 +358,108 @@ void main() {
     final committed = h.scope.activeNavigationRoute!;
     expect(committed.points.last.puid, 'dest');
     expect(committed.points.last.floorNumber, '2');
+    expect(h.controller.indoorGuidanceUnavailable, isFalse);
+
+    await tester.pump(const Duration(seconds: 11));
+  });
+
+  testWidgets('PHASE-R: a composed segmented journey already ending at the '
+      'destination is recognized by the handoff latch and NOT replaced',
+      (tester) async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+
+    // Composed cross-building shape: outdoorWalking + destination-building
+    // indoorRouting leg. The leg starts at the building entrance (where the
+    // corroborating device stands) and ends at the destination POI itself
+    // ((30.8400, _lng) per the _poi fixture). The derived points carry
+    // synthetic '<segmentType>_<n>' puids — exactly the identity shape the
+    // old `points.last.puid == destinationPuid` latch could never recognize.
+    final composed = NavigationRouteModel.fromSegments(
+      segments: [
+        RouteSegment.outdoor(
+          points: const [LatLng(30.8750, _lng), LatLng(30.8500, _lng)],
+          buildingId: 'b1',
+        ),
+        RouteSegment.indoor(
+          points: const [LatLng(30.8650, _lng), LatLng(30.8400, _lng)],
+          buildingId: 'b1',
+          floorNumber: '0',
+          instruction: 'Enter Building One',
+        ),
+      ],
+      status: RouteModelStatus.ready,
+    );
+    h.scope.activeNavigationRoute = composed;
+
+    var fetchAttempts = 0;
+    h.scope.onIndoorRequest = (req) {
+      fetchAttempts++;
+      return null;
+    };
+
+    h.startOutdoorAtEntrance();
+    final seededRoute = h.scope.activeNavigationRoute;
+    final sid = h.controller.sessionId!;
+    expect(seededRoute, same(composed));
+
+    await h.corroborateEntry(tester);
+    // Let any unawaited guidance future run — there must be none.
+    await tester.pump();
+    await tester.pump();
+
+    expect(h.controller.navigationState, NavigationState.activeIndoor);
+    expect(fetchAttempts, 0,
+        reason: 'an already-complete composed journey must not be refetched');
+    expect(h.scope.activeNavigationRoute, same(seededRoute),
+        reason: 'the valid segmented route must be preserved verbatim');
+    expect(h.controller.activeRoute, same(seededRoute));
+    expect(h.controller.sessionId, sid);
+    expect(h.controller.sessionForTest!.routeRevision, 0,
+        reason: 'recognition is not a committed replacement');
+    expect(h.controller.indoorGuidanceUnavailable, isFalse);
+
+    await tester.pump(const Duration(seconds: 11));
+  });
+
+  testWidgets('PHASE-R: an incomplete composed journey (fallback leg ending '
+      'away from the destination) still triggers the guidance refetch',
+      (tester) async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+
+    // Degraded composed shape: the entrance leg ends at the BUILDING CENTROID
+    // (30.8650), far from the destination POI (30.8400) — the journey does
+    // NOT reach the destination, so guidance must legitimately be fetched.
+    final degraded = NavigationRouteModel.fromSegments(
+      segments: [
+        RouteSegment.outdoor(
+          points: const [LatLng(30.8750, _lng), LatLng(30.8500, _lng)],
+          buildingId: 'b1',
+        ),
+        RouteSegment.entrance(
+          points: const [LatLng(30.8655, _lng), LatLng(30.8650, _lng)],
+          buildingId: 'b1',
+          floorNumber: '0',
+          isIncomplete: true,
+          isFallbackLocation: true,
+        ),
+      ],
+      status: RouteModelStatus.partial,
+      partialRouteWarning: 'Route incomplete',
+    );
+    h.scope.activeNavigationRoute = degraded;
+    h.scope.onIndoorRequest =
+        (req) => _indoorRoute('dest', req['floor'] ?? '0');
+
+    h.startOutdoorAtEntrance();
+
+    await h.corroborateEntry(tester);
+    await tester.pump();
+    await tester.pump();
+
+    expect(h.scope.indoorRequests.length, 1,
+        reason: 'a journey that does not reach the destination must refetch');
     expect(h.controller.indoorGuidanceUnavailable, isFalse);
 
     await tester.pump(const Duration(seconds: 11));

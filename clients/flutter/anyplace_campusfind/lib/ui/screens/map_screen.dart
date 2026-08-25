@@ -12,7 +12,6 @@ import '../../config/map_config.dart';
 import '../../config/navigation_config.dart';
 import '../../config/theme.dart';
 import '../../data/datasources/device_heading_service.dart';
-import '../../data/models/route_segment.dart';
 import '../../data/models/space_model.dart';
 import '../../data/models/user_location.dart';
 import '../../state/location_provider.dart';
@@ -798,10 +797,13 @@ class _MapScreenState extends State<MapScreen>
     );
   }
 
-  /// Build polylines for navigation routes and custom KMZ routes
+  /// Build polylines for navigation routes and custom KMZ routes.
   ///
   /// PHASE 12: rendering is a pure projection of (route store, display
-  /// context) — nothing here mutates navigation state.
+  /// context) — nothing here mutates navigation state. The active-route
+  /// projection itself lives in [routePolylineSpecs] so the representation →
+  /// style mapping stays testable; this method only layers the campus KMZ
+  /// polylines underneath and materializes the specs as Google Polylines.
   Set<Polyline> _buildPolylines(
       SpaceProvider spaceProvider, NavigationController? nav) {
     final polylines = <Polyline>{};
@@ -844,99 +846,22 @@ class _MapScreenState extends State<MapScreen>
       }
     }
 
-    if (route == null) return polylines;
-
-    // Segment-based rendering (cross-building navigation), floor-scoped.
-    if (route.hasSegments) {
-      for (var i = 0; i < route.segments.length; i++) {
-        final seg = route.segments[i];
-        if (seg.isEmpty) continue;
-
-        final style = _segmentStyles[seg.type];
-        if (style == null) continue;
-
-        final vis = segmentVisibility(
-          type: seg.type,
-          floorNumber: seg.floorNumber,
-          displayedFloor: displayedFloor,
-          indoorEmphasis: indoorEmphasis,
-        );
-        if (!vis.visible) continue;
-
-        polylines.add(Polyline(
-          polylineId: PolylineId('route_segment_$i'),
-          points: seg.points,
-          width: vis.dimmed ? (style.width - 1).clamp(1, 12) : style.width,
-          color: vis.dimmed ? style.color.withValues(alpha: 0.30) : style.color,
-          patterns: style.patterns ?? [],
-        ));
-      }
-      return polylines;
-    }
-
-    // Legacy rendering (non-segment routes), now floor-aware for the indoor
-    // portion thanks to truthful metadata (Phase 7).
-    if (route.hasOutdoorSegment) {
-      final vis = segmentVisibility(
-        type: RouteSegmentType.outdoorWalking,
-        floorNumber: null,
-        displayedFloor: displayedFloor,
-        indoorEmphasis: indoorEmphasis,
-      );
+    for (final spec in routePolylineSpecs(
+      route: route,
+      displayedFloor: displayedFloor,
+      indoorEmphasis: indoorEmphasis,
+    )) {
       polylines.add(Polyline(
-        polylineId: const PolylineId('route_outdoor'),
-        points: route.outdoorPolylinePoints,
-        width: vis.dimmed ? 4 : 5,
-        color: const Color(0xFF1E88E5)
-            .withValues(alpha: vis.dimmed ? 0.32 : 0.9),
-        patterns: [PatternItem.dot, PatternItem.gap(10)],
+        polylineId: PolylineId(spec.id),
+        points: spec.points,
+        width: spec.width,
+        color: spec.color,
+        patterns: spec.patterns ?? [],
       ));
-    }
-
-    if (route.hasIndoorSegment) {
-      final indoorPoints = displayedFloor != null
-          ? route.polylinePointsForFloor(displayedFloor)
-          : route.indoorPolylinePoints;
-      if (indoorPoints.length >= 2) {
-        polylines.add(Polyline(
-          polylineId: const PolylineId('route_indoor'),
-          points: indoorPoints,
-          width: 6,
-          color: AppTheme.primary.withValues(alpha: 0.85),
-        ));
-      }
     }
 
     return polylines;
   }
-
-  /// Segment type → polyline style mapping.
-  static final Map<RouteSegmentType, _SegmentStyle> _segmentStyles = {
-    RouteSegmentType.outdoorWalking: _SegmentStyle(
-      color: Color(0xFF1E88E5).withValues(alpha: 0.9),
-      width: 5,
-      patterns: [PatternItem.dot, PatternItem.gap(10)],
-    ),
-    RouteSegmentType.indoorRouting: _SegmentStyle(
-      color: AppTheme.primary.withValues(alpha: 0.85),
-      width: 6,
-    ),
-    RouteSegmentType.exitTransition: _SegmentStyle(
-      color: Color(0xFFFF9800).withValues(alpha: 0.85),
-      width: 5,
-      patterns: [PatternItem.dash(20), PatternItem.gap(10)],
-    ),
-    RouteSegmentType.entranceTransition: _SegmentStyle(
-      color: Color(0xFF4CAF50).withValues(alpha: 0.85),
-      width: 5,
-      patterns: [PatternItem.dash(20), PatternItem.gap(10)],
-    ),
-    RouteSegmentType.floorTransition: _SegmentStyle(
-      color: Color(0xFF9C27B0).withValues(alpha: 0.85),
-      width: 4,
-      patterns: [PatternItem.dot, PatternItem.gap(8)],
-    ),
-  };
 
   /// Keeps [_activeFloorplanOverlay] in sync with the selected floorplan.
   ///
@@ -1351,23 +1276,10 @@ class _MapScreenState extends State<MapScreen>
                     ),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Polyline style for a route segment.
-class _SegmentStyle {
-  final Color color;
-  final int width;
-  final List<PatternItem>? patterns;
-
-  const _SegmentStyle({
-    required this.color,
-    required this.width,
-    this.patterns,
-  });
+             ],
+           ),
+         );
+       },
+     );
+   }
 }
