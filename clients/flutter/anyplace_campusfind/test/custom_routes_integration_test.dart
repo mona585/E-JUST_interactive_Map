@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' show sin, cos, atan2, pi, sqrt;
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -75,6 +76,106 @@ void main() {
       final features = KmzLoader.parseKmzBytes(Uint8List.fromList(kmzBytes));
       final line2 = features.firstWhere((f) => f.name == 'Line 2');
       expect(line2.coordinates.length, 25);
+    });
+
+    test('each line resolves its own My Maps LineStyle color', () {
+      // Independent of any particular palette: re-read the raw KML from
+      // the archive, compute each LineString placemark's expected
+      // <LineStyle> color/width via the style chain (styleUrl →
+      // StyleMap.normal → Style), and require the loader to reproduce it
+      // exactly, in document order.
+      final archive = ZipDecoder().decodeBytes(Uint8List.fromList(kmzBytes));
+      var raw = '';
+      for (final f in archive) {
+        if (f.name.toLowerCase().endsWith('.kml')) {
+          raw = String.fromCharCodes(f.content as List<int>);
+        }
+      }
+
+      String? tag(String xml, String name) => RegExp(
+            '<$name[^>]*>(.*?)</$name>',
+            dotAll: true,
+          ).firstMatch(xml)?.group(1)?.trim();
+
+      final styles = <String, String>{};
+      for (final m
+          in RegExp(r'<Style\b([^>]*)>(.*?)</Style>', dotAll: true)
+              .allMatches(raw)) {
+        final id =
+            RegExp(r'\bid\s*=\s*"([^"]*)"').firstMatch(m.group(1)!)?.group(1);
+        if (id != null) styles[id] = m.group(2)!;
+      }
+      final normals = <String, String>{};
+      for (final m in RegExp(r'<StyleMap\b([^>]*)>(.*?)</StyleMap>',
+              dotAll: true)
+          .allMatches(raw)) {
+        final id =
+            RegExp(r'\bid\s*=\s*"([^"]*)"').firstMatch(m.group(1)!)?.group(1);
+        for (final p in RegExp(r'<Pair\b[^>]*>(.*?)</Pair>', dotAll: true)
+            .allMatches(m.group(2)!)) {
+          if (tag(p.group(1)!, 'key') == 'normal') {
+            final url = tag(p.group(1)!, 'styleUrl');
+            if (id != null && url != null && url.startsWith('#')) {
+              normals[id] = url.substring(1);
+            }
+          }
+        }
+      }
+
+      final expected = <(int?, double?)>[];
+      for (final pm in RegExp(r'<Placemark[^>]*>(.*?)</Placemark>',
+              dotAll: true)
+          .allMatches(raw)) {
+        final xml = pm.group(1)!;
+        if (!xml.contains('<LineString')) continue;
+
+        int? color;
+        double? width;
+        String? body;
+        final inline = RegExp(r'<LineStyle[^>]*>(.*?)</LineStyle>',
+                dotAll: true)
+            .firstMatch(xml);
+        if (inline != null) {
+          body = inline.group(1);
+        } else {
+          final url = tag(xml, 'styleUrl');
+          if (url != null && url.startsWith('#')) {
+            var styleId = url.substring(1).trim();
+            styleId = normals[styleId] ?? styleId;
+            final ls = RegExp(r'<LineStyle[^>]*>(.*?)</LineStyle>',
+                    dotAll: true)
+                .firstMatch(styles[styleId] ?? '');
+            body = ls?.group(1);
+          }
+        }
+        if (body != null) {
+          final c = tag(body, 'color');
+          final w = tag(body, 'width');
+          color = c == null ? null : KmzLoader.kmlColorToArgb(c);
+          width = w == null ? null : double.tryParse(w);
+        }
+        expected.add((color, width));
+      }
+
+      final parsed = KmzLoader.parseKmzBytes(Uint8List.fromList(kmzBytes))
+          .where((f) => f.isLineString)
+          .toList();
+
+      // A My Maps export styles every line; whatever it currently declares,
+      // the loader must mirror it one-to-one.
+      expect(parsed.length, expected.length);
+      for (var i = 0; i < expected.length; i++) {
+        expect(parsed[i].lineColorArgb, expected[i].$1,
+            reason: '${parsed[i].name}: wrong resolved color');
+        expect(parsed[i].lineWidth, expected[i].$2,
+            reason: '${parsed[i].name}: wrong resolved width');
+      }
+
+      // Distinct declared colors must stay distinct after resolution.
+      final distinctDeclared = expected.map((e) => e.$1).toSet();
+      final distinctResolved =
+          parsed.map((f) => f.lineColorArgb).toSet();
+      expect(distinctResolved.length, distinctDeclared.length);
     });
   });
 

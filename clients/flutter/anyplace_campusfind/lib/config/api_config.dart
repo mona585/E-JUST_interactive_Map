@@ -3,7 +3,12 @@ class ApiConfig {
   ApiConfig._();
 
   /// Authoritative Anyplace server base URL.
-  static const String _defaultBaseUrl = 'https://ap.cs.ucy.ac.cy:44';
+  ///
+  /// E-JUST SERVER MIGRATION: the app now targets the dedicated E-JUST
+  /// deployment (`map.beout.ai`). Verified against the live server
+  /// (spaces / floors / POIs / floorplans probes — see
+  /// docs/ui-ux-redesign/ejust-server-migration-report.md).
+  static const String _defaultBaseUrl = 'https://map.beout.ai';
 
   /// Server URL, overridable via `--dart-define=SERVER_URL=...`.
   static const String _serverUrl = String.fromEnvironment(

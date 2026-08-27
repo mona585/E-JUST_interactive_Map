@@ -23,6 +23,7 @@ import '../data/repositories/custom_route_repository.dart';
 import '../data/models/user_location.dart';
 import '../services/search_service.dart';
 import '../services/cache_service.dart';
+import '../utils/campus_scope.dart';
 import '../utils/category_deriver.dart';
 import 'location_provider.dart';
 import 'navigation_state_model.dart';
@@ -130,8 +131,12 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   // Batch loading pause flag (user action priority)
   bool _batchPaused = false;
 
-  // Default coordinate if no space selected (Cyprus / UCY area)
-  static const LatLng defaultCenter = LatLng(35.1444, 33.4105);
+  // Fallback center used ONLY when the app has no GPS fix and no selection.
+  //
+  // SERVER MIGRATION: was the Cyprus centroid of the old UCY backend; now
+  // the centroid of the six live E-JUST buildings on map.beout.ai (mean of
+  // the actual /space/public payload coordinates).
+  static const LatLng defaultCenter = LatLng(30.859877, 29.563241);
 
   SpaceProvider({
     SpaceRepository? repository,
@@ -205,6 +210,34 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   /// Access to the custom route repository for map rendering and queries.
   @override
   CustomRouteRepository get customRouteRepository => _customRouteRepository;
+
+  /// SERVER MIGRATION: purges all on-disk dataset caches (POIs, floorplans,
+  /// radiomaps) that may still hold files from the previous backend. Safe to
+  /// call repeatedly. Uses each repository's EXISTING clear-all method — no
+  /// cache-system redesign. Old entries were keyed by old-server buids and
+  /// could never be served again, so this only reclaims space and guarantees
+  /// zero stale-data leakage.
+  Future<void> purgeDatasetCaches() async {
+    debugPrint('[SpaceProvider] purgeDatasetCaches: clearing POIs / '
+        'floorplans / radiomaps from previous backend');
+    try {
+      await _poiRepository.clearAll();
+    } catch (e) {
+      debugPrint('[SpaceProvider] purgeDatasetCaches: pois clear failed: $e');
+    }
+    try {
+      await _floorplanRepository.clearAll();
+    } catch (e) {
+      debugPrint(
+          '[SpaceProvider] purgeDatasetCaches: floorplans clear failed: $e');
+    }
+    try {
+      await _radioMapRepository.clearAllCache();
+    } catch (e) {
+      debugPrint(
+          '[SpaceProvider] purgeDatasetCaches: radiomaps clear failed: $e');
+    }
+  }
 
   /// Loads custom KMZ routes from bundled assets.
   ///
@@ -322,7 +355,12 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
         maxRetries: 2,
         label: 'loadSpaces',
       );
-      _spaces = fetched;
+      // E-JUST GLOBAL SCOPE: keep only the active campus's buildings. This
+      // is the SINGLE filtering point — the panel list, map building
+      // markers, search index and service scoping all consume `_spaces`,
+      // so floors/POIs (loaded per in-scope buid) inherit the scope
+      // structurally. See utils/campus_scope.dart.
+      _spaces = CampusScope.filterSpaces(fetched);
       _errorMessage = null;
 
       // If selected space was previously set, refresh its reference from new list
@@ -1495,6 +1533,105 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     _navigationRouteStatus = NavigationRouteStatus.ready;
     _navigationRouteErrorMessage = null;
     notifyListeners();
+  }
+
+  /// UI/UX REDESIGN PHASE 2 — ADDITIVE custom-origin directions.
+  ///
+  /// Requests an indoor POI→POI route using the EXISTING repository API
+  /// ([NavigationRepository.getRouteBetweenPois] — the identical call used by
+  /// Strategy 2 of [requestRouteToSelectedPoi] and by the O→I handoff above).
+  /// No routing logic is modified or duplicated here.
+  ///
+  /// Destination residency is set up through the navigation-safe selection
+  /// variants (never resetting route fields), mirroring
+  /// [requestRouteForRetarget]. A live session ends through the injected
+  /// clean-restart bridge first — the same pattern as [navigateToPoi].
+  ///
+  /// Returns true when a renderable route for [target] is in the store.
+  Future<bool> requestRouteBetweenPois(
+    PoiModel origin,
+    PoiModel target,
+  ) async {
+    if (_sessionLive) {
+      debugPrint(
+        '[SpaceProvider] requestRouteBetweenPois during live session — '
+        'clean-restart bridge',
+      );
+      terminateActiveSessionForRetarget?.call();
+    }
+
+    final int requestId = ++_navigationRouteRequestId;
+    _navigationRouteStatus = NavigationRouteStatus.loading;
+    _navigationRouteErrorMessage = null;
+    _navigationDestinationPuid = target.puid;
+    notifyListeners();
+
+    // Destination residency context (browsing state only, no field resets).
+    final building = _spaces.where((s) => s.buid == target.buid).firstOrNull;
+    if (building != null) {
+      _selectSpaceInternal(building, resetNavigationFields: false);
+      await loadFloorsForSelectedSpace();
+      final floor = _floors
+              .where((f) => f.floorNumber == target.floorNumber)
+              .firstOrNull ??
+          _floors.where((f) => f.floorNumber == '0').firstOrNull;
+      if (floor != null) {
+        _selectFloorInternal(floor, resetNavigationFields: false);
+        await loadPoisForSelectedFloor();
+      }
+    }
+    if (requestId != _navigationRouteRequestId) return false;
+
+    try {
+      final route = await _navigationRepository.getRouteBetweenPois(
+        fromPuid: origin.puid,
+        toPuid: target.puid,
+      );
+      if (requestId != _navigationRouteRequestId ||
+          _navigationDestinationPuid != target.puid) {
+        return false;
+      }
+      if (route.hasRenderablePath) {
+        _navigationRouteStatus = NavigationRouteStatus.ready;
+        _activeNavigationRoute = route.toSegmentedIndoor(
+          fallbackBuildingId: target.buid,
+          instruction: 'Head to ${target.name}',
+        );
+        _navigationRouteErrorMessage = null;
+        _selectedPoi = target;
+        notifyListeners();
+        debugPrint('[SpaceProvider] requestRouteBetweenPois ready '
+            '(${origin.puid} → ${target.puid})');
+        return true;
+      }
+      _navigationRouteStatus = NavigationRouteStatus.unsupported;
+      _navigationRouteErrorMessage =
+          'No indoor route found between the selected places.';
+      notifyListeners();
+      return false;
+    } on ApiException catch (e) {
+      if (requestId != _navigationRouteRequestId) return false;
+      final msg = e.message.toLowerCase();
+      final unsupported = msg.contains('not supported') ||
+          msg.contains('no route') ||
+          msg.contains('not be connected') ||
+          e.statusCode == 400 ||
+          e.statusCode == 404;
+      _navigationRouteStatus = unsupported
+          ? NavigationRouteStatus.unsupported
+          : NavigationRouteStatus.error;
+      _activeNavigationRoute = null;
+      _navigationRouteErrorMessage = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      if (requestId != _navigationRouteRequestId) return false;
+      _navigationRouteStatus = NavigationRouteStatus.error;
+      _activeNavigationRoute = null;
+      _navigationRouteErrorMessage = 'Error requesting route: $e';
+      notifyListeners();
+      return false;
+    }
   }
 
   /// Requests a route from the user's current location to [targetSpace].

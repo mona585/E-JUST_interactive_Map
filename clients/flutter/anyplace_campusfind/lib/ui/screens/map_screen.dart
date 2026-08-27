@@ -1,9 +1,10 @@
 import 'dart:async';
-import 'dart:math' show cos, pi, sin, atan2;
+import 'dart:math' show cos, pi, sin, atan2, log, ln2, max, min, pow;
 import 'dart:typed_data';
 import 'package:geolocator/geolocator.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/painting.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
@@ -12,34 +13,56 @@ import '../../config/map_config.dart';
 import '../../config/navigation_config.dart';
 import '../../config/theme.dart';
 import '../../data/datasources/device_heading_service.dart';
+import '../../data/models/custom_route_model.dart';
 import '../../data/models/space_model.dart';
 import '../../data/models/user_location.dart';
+import '../../providers/panel_provider.dart';
+import '../../providers/search_provider.dart';
+import '../../services/service_query.dart';
 import '../../state/location_provider.dart';
 import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
-import '../widgets/building_search_sheet.dart';
-import '../widgets/arrival_banner.dart';
-import '../widgets/map_bottom_sheet.dart';
-import '../widgets/map_controls.dart';
-import '../widgets/navigation_status_bar.dart';
+import '../../utils/category_deriver.dart';
 import '../utils/navigation_display.dart';
 import '../utils/floorplan_overlay_cache.dart';
+import '../widgets/map_controls.dart';
+
+/// E-JUST campus boundary (ADDITIONAL REQUIREMENT): geographic bounds used
+/// ONLY to fit the initial/campus-overview camera viewport. Never drawn.
+/// Corners (DMS → decimal):
+///   30°51'45.2"N 29°33'41.8"E   30°51'26.4"N 29°33'40.9"E
+///   30°51'37.2"N 29°34'03.8"E   30°51'19.7"N 29°33'59.1"E
+final LatLngBounds ejustCampusBounds = LatLngBounds(
+  southwest: LatLng(30.8554722, 29.5613611),
+  northeast: LatLng(30.8625556, 29.5677222),
+);
+
+LatLng _ejustCampusCenter() => LatLng(
+      (ejustCampusBounds.southwest.latitude +
+              ejustCampusBounds.northeast.latitude) /
+          2,
+      (ejustCampusBounds.southwest.longitude +
+              ejustCampusBounds.northeast.longitude) /
+          2,
+    );
 
 /// Main Map Screen displaying Anyplace buildings, indoor floorplans, indoor POIs, and device GPS on Google Maps.
-class MapScreen extends StatefulWidget {
+class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key, DeviceHeadingService? deviceHeadingService})
       : _deviceHeadingService = deviceHeadingService;
 
   final DeviceHeadingService? _deviceHeadingService;
 
   @override
-  State<MapScreen> createState() => _MapScreenState();
+  ConsumerState<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen>
+class _MapScreenState extends ConsumerState<MapScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   GoogleMapController? _mapController;
   String? _lastCenteredFloorKey;
+  String? _lastFocusedSpaceBuid;
+  String? _lastFloorFallbackKey;
   bool _lastFollowMode = false;
   bool _hasInitialCentering = false;
   bool _hasCenteredOnCustomRoutes = false;
@@ -57,8 +80,23 @@ class _MapScreenState extends State<MapScreen>
   int _floorplanGeneration = 0;
 
   // Marker icon caches (generated once from widget screenshots)
+  // CORRECTION PASS: modern pin-style markers — buildings render as rounded
+  // SQUARE badges (apartment glyph, primary/amber), POIs as CIRCLE badges
+  // with their EntityCategory iconography; selected states invert the fill.
   BitmapDescriptor? _buildingIcon;
   BitmapDescriptor? _buildingSelectedIcon;
+  final Map<EntityCategory, BitmapDescriptor> _poiCategoryIcons = {};
+  BitmapDescriptor? _poiSelectedIcon;
+  bool _markerIconsReady = false;
+
+  // ADDITIONAL REQUIREMENT: initial E-JUST campus viewport.
+  // One-shot fit of [ejustCampusBounds] whenever the app ENTERS the campus
+  // overview (no building/floor/POI selected, no navigation). Re-armed on
+  // exit so returning to campus overview re-fits. While active, the legacy
+  // one-time GPS camera animation is suppressed (positioning pipeline
+  // itself untouched — My Location still recenters on demand).
+  bool _campusFitPending = true;
+  bool _isCampusOverviewNow = true;
 
   // Navigation-style user location icons (blue dot + heading cone).
   // Two variants: directional (cone visible) and dot-only, used when the
@@ -101,6 +139,16 @@ class _MapScreenState extends State<MapScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    // Register the route-bounds fitter so the dynamic content panel can ask
+    // the map layer to frame the active route (Phase 4 bridge), plus the
+    // generic focus requester used by service results (Phase 6).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(routeBoundsFitterProvider.notifier).state = _fitRouteBounds;
+      ref.read(mapFocusRequesterProvider.notifier).state =
+          _mapFocusRequesterImpl;
+    });
+
     // Generate marker icons from widgets
     _generateMarkerIcons();
 
@@ -142,10 +190,37 @@ class _MapScreenState extends State<MapScreen>
   }
 
   Future<void> _generateMarkerIcons() async {
-    // Building markers: default Google Maps marker with custom hue.
-    _buildingIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
-    _buildingSelectedIcon = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
-
+    // CORRECTION PASS: modern pin badges for buildings & POIs.
+    try {
+      _buildingIcon = await _pinDescriptor(
+          icon: Icons.apartment,
+          accent: AppTheme.primary,
+          filled: false,
+          square: true,
+          width: 24);
+      _buildingSelectedIcon = await _pinDescriptor(
+          icon: Icons.apartment,
+          accent: AppTheme.markerSelected,
+          filled: true,
+          square: true,
+          width: 26);
+      _poiSelectedIcon = await _pinDescriptor(
+          icon: Icons.place,
+          accent: AppTheme.primary,
+          filled: true,
+          width: 22);
+      for (final category in EntityCategory.values) {
+        _poiCategoryIcons[category] = await _pinDescriptor(
+            icon: category.icon,
+            accent: category.color,
+            filled: false,
+            width: 20);
+      }
+      if (!mounted) return;
+      setState(() => _markerIconsReady = true);
+    } catch (e) {
+      debugPrint('[MapScreen] Failed to render marker icons: $e');
+    }
     // User location indicator: navigation-style (blue dot + heading cone).
     // Rendered once as PNG bitmaps; the cone points north at rotation = 0 so
     // the Google Maps `rotation` parameter aligns it with the heading.
@@ -162,6 +237,122 @@ class _MapScreenState extends State<MapScreen>
     } catch (e) {
       debugPrint('[MapScreen] Failed to render user location icons: $e');
     }
+  }
+
+  /// Renders a modern map-pin badge: rounded body (square for buildings,
+  /// circle for POIs) with a small tail, white fill + colored ring, and an
+  /// icon glyph. Filled variant inverts to an accent-colored body with a
+  /// white glyph (selected states).
+  /// Renders a modern map-pin badge at HIGH resolution ([quality]× the
+  /// logical size) so it stays sharp on high-density screens; callers pass
+  /// `BitmapDescriptor.bytes(bytes, width:, height:)` with the LOGICAL dims
+  /// to display it small and crisp.
+  ///
+  /// Geometry (logical units): body width = [logicalWidth], body height =
+  /// width × 1.12, tail = width × 0.30 below, total ≈ width × 1.42.
+  static Future<Uint8List> _renderPinIcon({
+    required IconData icon,
+    required Color accent,
+    required bool filled,
+    bool square = false,
+    double logicalWidth = 24,
+    int quality = 4,
+  }) async {
+    final q = quality.toDouble();
+    final W = logicalWidth * q; // body width px
+    final tailH = W * 0.30;
+    final bodyH = W * 1.12;
+    final H = bodyH + tailH; // canvas height px
+    final left = 0.0;
+    final top = 0.0;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final rrect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, top, W, bodyH),
+        Radius.circular(square ? W * 0.20 : W / 2));
+
+    final bodyPaint = ui.Paint()
+      ..color = filled ? accent : Colors.white;
+    final borderPaint = ui.Paint()
+      ..color = accent
+      ..style = ui.PaintingStyle.stroke
+      ..strokeWidth = W * 0.085;
+
+    canvas.drawRRect(rrect, bodyPaint);
+    canvas.drawRRect(rrect, borderPaint);
+
+    // Tail triangle.
+    final cx = W / 2;
+    final path = Path()
+      ..moveTo(cx - W * 0.16, top + bodyH - W * 0.06)
+      ..lineTo(cx + W * 0.16, top + bodyH - W * 0.06)
+      ..lineTo(cx, top + H - 1)
+      ..close();
+    canvas.drawPath(path, bodyPaint);
+    canvas.drawPath(path, borderPaint);
+    // Re-fill body over the seam so the join looks clean.
+    canvas.drawRRect(rrect, bodyPaint);
+
+    final glyphColor = filled ? Colors.white : accent;
+    _paintIconGlyph(canvas, icon, Offset(cx, top + bodyH / 2), glyphColor,
+        W * (square ? 0.50 : 0.46));
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(W.toInt(), H.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    picture.dispose();
+    return byteData!.buffer.asUint8List();
+  }
+
+  /// Convenience: renders a pin and wraps it as a BitmapDescriptor displayed
+  /// at its small LOGICAL size (sharp on any density).
+  static Future<BitmapDescriptor> _pinDescriptor({
+    required IconData icon,
+    required Color accent,
+    required bool filled,
+    bool square = false,
+    double width = 24,
+  }) async {
+    final bytes = await _renderPinIcon(
+      icon: icon,
+      accent: accent,
+      filled: filled,
+      square: square,
+      logicalWidth: width,
+    );
+    return BitmapDescriptor.bytes(
+      bytes,
+      width: width,
+      height: (width * 1.42).round().toDouble(),
+    );
+  }
+
+  /// Draws a MaterialIcons glyph centered at [center] using [TextPainter]
+  /// (the icons font ships with the app via uses-material-design).
+  static void _paintIconGlyph(
+    Canvas canvas,
+    IconData icon,
+    Offset center,
+    Color color,
+    double fontSize,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontFamily: icon.fontFamily,
+          package: icon.fontPackage,
+          fontSize: fontSize,
+          color: color,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+        canvas, center - Offset(painter.width / 2, painter.height / 2));
   }
 
   /// Renders the user-location indicator bitmap.
@@ -228,6 +419,13 @@ class _MapScreenState extends State<MapScreen>
   /// One-time listener that centers the map on the user's first valid location.
   void _checkInitialCentering() {
     if (_hasInitialCentering) return;
+    // ADDITIONAL REQUIREMENT: while the campus overview owns the camera
+    // (E-JUST bounds fit), skip this legacy one-shot GPS camera move. GPS
+    // tracking itself is unaffected; My Location still recenters on demand.
+    if (_isCampusOverviewNow) {
+      debugPrint('[MapScreen] Skipping GPS initial camera — campus overview fit active');
+      return;
+    }
     final location = context.read<LocationProvider>().currentLocation;
     if (location != null && _mapController != null) {
       debugPrint('[MapScreen] GPS location: ${location.latitude},${location.longitude}');
@@ -279,6 +477,19 @@ class _MapScreenState extends State<MapScreen>
 
   @override
   void dispose() {
+    // Release the fitter bridge if we still own it.
+    try {
+      if (ref.read(routeBoundsFitterProvider.notifier).state ==
+          _fitRouteBounds) {
+        ref.read(routeBoundsFitterProvider.notifier).state = null;
+      }
+      final focus = ref.read(mapFocusRequesterProvider.notifier);
+      if (focus.state != null &&
+          identical(focus.state, _mapFocusRequesterImpl)) {
+        focus.state = null;
+      }
+    } catch (_) {}
+
     // Invalidate any in-flight floorplan preparation before teardown so a
     // late async completion can never call setState on this State.
     _floorplanGeneration++;
@@ -612,23 +823,6 @@ class _MapScreenState extends State<MapScreen>
     }
   }
 
-  void _openSearchSheet() {
-    final provider = context.read<SpaceProvider>();
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => BuildingSearchSheet(
-        spaces: provider.spaces,
-        selectedSpace: provider.selectedSpace,
-        onSelect: (space) {
-          provider.selectSpace(space);
-          _animatedMapMove(space.latLng, 16.5);
-        },
-      ),
-    );
-  }
-
   void _checkFloorplanCameraCenter(SpaceProvider spaceProvider) {
     if (spaceProvider.hasActiveFloorplan &&
         spaceProvider.selectedSpace != null &&
@@ -660,12 +854,22 @@ class _MapScreenState extends State<MapScreen>
     }
   }
 
-  /// Fits the camera to frame the full active navigation route with padding.
-  void _fitRouteBounds(SpaceProvider spaceProvider) {
+  /// Fits the camera so the ENTIRE calculated route is visible and visually
+  /// centered in the AVAILABLE map area (top search bar and bottom dynamic
+  /// panel excluded), with padding around the geometry.
+  ///
+  /// Refinement ("Route Here"): replaces the span-proportional estimate with
+  /// a true viewport fit — the zoom is derived from both the width AND height
+  /// of the padded bounds against available pixels (no fixed zoom), and the
+  /// camera target is biased upward-equivalently (south shift) so the route
+  /// centers between the top UI and the bottom panel instead of the screen.
+  void _fitRouteBounds(dynamic spaceProviderArg) {
+    final spaceProvider = spaceProviderArg as SpaceProvider;
     final route = spaceProvider.activeNavigationRoute;
     if (route == null || route.polylinePoints.isEmpty) return;
+    if (_mapController == null) return;
 
-    // Compute bounds from polyline points
+    // ── 1. Padded geographic bounds from the actual polyline ──
     double minLat = route.polylinePoints.first.latitude;
     double maxLat = route.polylinePoints.first.latitude;
     double minLng = route.polylinePoints.first.longitude;
@@ -676,36 +880,126 @@ class _MapScreenState extends State<MapScreen>
       if (point.longitude < minLng) minLng = point.longitude;
       if (point.longitude > maxLng) maxLng = point.longitude;
     }
-
-    // Apply padding to the bounds
-    final paddingMeters = NavigationConfig.routeFramePadding;
-    final latPad = paddingMeters / 111320.0;
     final centerLat = (minLat + maxLat) / 2.0;
-    final lngPad = paddingMeters / (111320.0 * cos(centerLat * pi / 180));
 
-    final paddedBounds = LatLngBounds(
-      southwest: LatLng(minLat - latPad, minLng - lngPad),
-      northeast: LatLng(maxLat + latPad, maxLng + lngPad),
+    const padMeters = NavigationConfig.routeFramePadding;
+    final latPad = padMeters / 111320.0;
+    final lngPad =
+        padMeters / (111320.0 * cos(centerLat * pi / 180));
+    final boundsLatSpan = (maxLat + latPad) - (minLat - latPad);
+    final boundsLngSpan = (maxLng + lngPad) - (minLng - lngPad);
+
+    // ── 2. Available viewport (exclude top bar + bottom panel chrome) ──
+    final size = MediaQuery.of(context).size;
+    const horizontalChrome = 32.0; // side breathing room
+    const topChromeFraction = 0.14; // search/status bar zone
+    const bottomChromeFraction = 0.40; // expanded destination panel zone
+    final availW =
+        (size.width - horizontalChrome).clamp(120.0, size.width).toDouble();
+    final availH = (size.height * (1 - topChromeFraction - bottomChromeFraction))
+        .clamp(160.0, size.height)
+        .toDouble();
+
+    // ── 3+4. Pure fit computation (unit-tested) ──
+    final cam = computeRouteCamera(
+      centerLat: centerLat,
+      boundsLatSpanDeg: boundsLatSpan,
+      boundsLngSpanDeg: boundsLngSpan,
+      availW: availW,
+      availH: availH,
     );
-
-    final center = LatLng(
-      (paddedBounds.southwest.latitude + paddedBounds.northeast.latitude) / 2.0,
-      (paddedBounds.southwest.longitude + paddedBounds.northeast.longitude) / 2.0,
-    );
-    final latSpan = paddedBounds.northeast.latitude - paddedBounds.southwest.latitude;
-    final lngSpan = paddedBounds.northeast.longitude - paddedBounds.southwest.longitude;
-
-    final maxSpan = latSpan > lngSpan ? latSpan : lngSpan;
-    // PHASE 12 / BUG-10: span-proportional zoom (meters), replacing the
-    // pinned 19.0 clamp that framed long outdoor routes absurdly close.
-    final maxSpanMeters =
-        maxSpan * 111320.0 * cos(centerLat * pi / 180);
-    final estimatedZoom =
-        routeFitZoomForSpan(maxSpanMeters).clamp(MapConfig.indoorFloorplanZoom, 19.0);
+    final zoom = cam.zoom;
+    final shiftedCenter = LatLng(cam.targetLat, (minLng + maxLng) / 2.0);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _animatedMapMove(center, estimatedZoom);
+      _animatedMapMove(shiftedCenter, zoom);
+    });
+  }
+
+  /// ADDITIONAL REQUIREMENT: fit the camera to the E-JUST campus bounds.
+  /// Runs once per campus-overview entry; never during selection/navigation
+  /// states. Padding keeps the whole area comfortably visible.
+  void _fitCampusOverview() {
+    if (_mapController == null) return;
+    final sw = ejustCampusBounds.southwest;
+    final ne = ejustCampusBounds.northeast;
+    final centerLat = (sw.latitude + ne.latitude) / 2;
+    final centerLng = (sw.longitude + ne.longitude) / 2;
+
+    const padMeters = 40.0;
+    final latPad = padMeters / 111320.0;
+    final lngPad =
+        padMeters / (111320.0 * cos(centerLat * pi / 180));
+    final latSpan = (ne.latitude - sw.latitude) + 2 * latPad;
+    final lngSpan = (ne.longitude - sw.longitude) + 2 * lngPad;
+
+    final size = MediaQuery.of(context).size;
+    const topF = 0.12, bottomF = 0.18; // top bar + collapsed panel zone
+    final availW = (size.width - 24).clamp(120.0, size.width).toDouble();
+    final availH =
+        (size.height * (1 - topF - bottomF)).clamp(160.0, size.height).toDouble();
+
+    final cosLat = cos(centerLat * pi / 180);
+    final mpp0 = 156543.03392 * cosLat;
+    final zw = log((availW * mpp0) /
+            (lngSpan * 111320.0 * cosLat)) /
+        ln2;
+    final zh = log((availH * mpp0) / (latSpan * 111320.0)) / ln2;
+    final zoom = min(zw, zh).clamp(13.0, 17.0).toDouble();
+
+    _animatedMapMove(LatLng(centerLat, centerLng), zoom);
+  }
+
+  /// Centralized camera response to building selection.
+  ///
+  /// With the dynamic content panel (and search flows) selecting spaces
+  /// outside the map widget, the map itself now owns the "zoom to selected
+  /// building" behavior so every selection path animates identically. Fires
+  /// once per buid; deferred until the controller exists.
+  /// Stable reference used for the focus bridge ownership check in dispose.
+  void _mapFocusRequesterImpl(dynamic target, double zoom) =>
+      _animatedMapMove(target as LatLng, zoom);
+
+  void _focusSelectedBuilding(SpaceProvider spaceProvider) {    final selected = spaceProvider.selectedSpace;
+    if (selected == null) return;
+    if (_lastFocusedSpaceBuid == selected.buid) return;
+    if (_mapController == null) return;
+
+    _lastFocusedSpaceBuid = selected.buid;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _mapController != null) {
+        // CORRECTION PASS (#3): 17.0 keeps the selected building clearly
+        // prominent instead of a campus-wide framing.
+        _animatedMapMove(selected.latLng, 17.0);
+      }
+    });
+  }
+
+  /// CORRECTION PASS (#4): when a floor is selected but no floorplan image
+  /// exists/loaded yet, still move the camera to the building at floor-level
+  /// zoom so the selection becomes the visual focus. When the floorplan IS
+  /// available, the existing `_checkFloorplanCameraCenter` refines to its
+  /// exact bounds — the two are complementary, never fighting.
+  void _focusFloorFallback(SpaceProvider spaceProvider) {
+    final floor = spaceProvider.selectedFloor;
+    final space = spaceProvider.selectedSpace;
+    if (floor == null || space == null) {
+      _lastFloorFallbackKey = null;
+      return;
+    }
+    final key = '${space.buid}_${floor.floorNumber}';
+    if (_lastFloorFallbackKey == key) return;
+    if (_mapController == null) return;
+    if (spaceProvider.hasActiveFloorplan) return; // existing logic owns it
+
+    _lastFloorFallbackKey = key;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          _mapController != null &&
+          !spaceProvider.hasActiveFloorplan) {
+        _animatedMapMove(space.latLng, MapConfig.focusedZoom);
+      }
     });
   }
 
@@ -713,12 +1007,31 @@ class _MapScreenState extends State<MapScreen>
   ///
   /// Cached by a lightweight state signature so heading-stream updates can
   /// rebuild only the user marker without recomputing everything.
+  ///
+  /// PHASE 7: while a service is active, POI markers show the CURRENT SCOPE
+  /// results of that service (category-filtered over the same index the
+  /// panel uses) instead of every loaded floor POI; the selected result is
+  /// visually distinguished. Deactivating the service restores the normal
+  /// set because the filter derives purely from provider state.
   Set<Marker> _buildBaseMarkers(
       SpaceProvider spaceProvider, SpaceModel? selectedSpace) {
+    final activeService = ref.watch(activeServiceProvider);
+
+    var visiblePois = spaceProvider.hasPois ? spaceProvider.pois : const [];
+    if (activeService != null) {
+      visiblePois = queryScopedServices(
+        category: activeService,
+        campusIndexPois: ref.read(searchServiceProvider).allIndexedPois(),
+        buildingBuid: spaceProvider.selectedSpace?.buid,
+        floorNumber: spaceProvider.selectedFloor?.floorNumber,
+      );
+    }
+
     final signature =
         '${spaceProvider.spaces.length}|${selectedSpace?.buid ?? ''}|'
-        '${(spaceProvider.hasPois ? spaceProvider.pois.length : 0)}|'
-        '${spaceProvider.selectedPoi?.puid ?? ''}';
+        '${visiblePois.length}|${activeService?.name ?? ''}|'
+        '${spaceProvider.selectedPoi?.puid ?? ''}|'
+        '$_markerIconsReady';
     if (_baseMarkersSignature == signature) {
       return _baseMarkersCache;
     }
@@ -731,7 +1044,14 @@ class _MapScreenState extends State<MapScreen>
       markers.add(Marker(
         markerId: MarkerId(space.buid),
         position: space.latLng,
-        icon: isSelected ? (_buildingSelectedIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow)) : (_buildingIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)),
+        icon: isSelected
+            ? (_buildingSelectedIcon ??
+                BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueYellow))
+            : (_buildingIcon ??
+                BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueRed)),
+        anchor: _markerIconsReady ? const Offset(0.5, 0.95) : Offset(0.5, 0.5),
         infoWindow: InfoWindow(
           title: space.name,
           snippet: space.spaceType,
@@ -742,13 +1062,26 @@ class _MapScreenState extends State<MapScreen>
     }
 
     // Indoor POI markers (connectors hidden — see _isConnectorPoi)
-    if (spaceProvider.hasPois) {
-      for (final poi in spaceProvider.pois) {
+    if (visiblePois.isNotEmpty) {
+      final selectedPuid = spaceProvider.selectedPoi?.puid;
+      for (final poi in visiblePois) {
         if (_isConnectorPoi(poi.poisType, poi.name)) continue;
+        final isSelected = poi.puid == selectedPuid;
+        final categoryIcon =
+            _poiCategoryIcons[CategoryDeriver.fromPoiType(poi.poisType)];
         markers.add(Marker(
           markerId: MarkerId(poi.puid),
           position: poi.latLng,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+          icon: isSelected
+              ? (_poiSelectedIcon ??
+                  BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueOrange))
+              : (categoryIcon ??
+                  BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueViolet)),
+          anchor: _markerIconsReady && categoryIcon != null
+              ? const Offset(0.5, 0.95)
+              : Offset(0.5, 0.5),
           infoWindow: InfoWindow(
             title: poi.name,
             snippet: poi.poisType,
@@ -822,24 +1155,25 @@ class _MapScreenState extends State<MapScreen>
       flagEnabled: NavigationConfig.showCampusRoutesDuringNavigation,
     )) {
       if (spaceProvider.customRouteRepository.isLoaded) {
-        final customRoutes =
-            spaceProvider.customRouteRepository.getAllRoutePolylinePoints();
+        final customRoutes = spaceProvider.customRouteRepository.routes
+            .where((r) => r.hasPoints)
+            .toList(growable: false);
         for (var i = 0; i < customRoutes.length; i++) {
-          final routePoints = customRoutes[i];
+          final campusRoute = customRoutes[i];
+          final routePoints = campusRoute.vertices;
           if (routePoints.length >= 2) {
-            // White outline (wider, behind)
-            polylines.add(Polyline(
-              polylineId: PolylineId('custom_route_${i}_outline'),
-              points: routePoints,
-              width: 12,
-              color: Colors.white,
-            ));
-            // Gray fill (narrower, on top) — Google Maps road style
+            // Exact color/width come from the source My Maps feature
+            // (<LineStyle> resolved at parse time). The KML-spec defaults
+            // apply only when the feature defines no style of its own.
+            final declaredWidth =
+                (campusRoute.lineWidth ?? CustomRoute.kDefaultLineWidth)
+                    .round();
             polylines.add(Polyline(
               polylineId: PolylineId('custom_route_$i'),
               points: routePoints,
-              width: 6,
-              color: const Color(0xFF9E9E9E),
+              width: max(1, declaredWidth),
+              color: Color(campusRoute.lineColorArgb ??
+                  CustomRoute.kDefaultLineColorArgb),
             ));
           }
         }
@@ -951,16 +1285,43 @@ class _MapScreenState extends State<MapScreen>
 
         _checkFloorplanCameraCenter(spaceProvider);
         _syncFloorplanOverlay(spaceProvider);
+        _focusSelectedBuilding(spaceProvider);
+        _focusFloorFallback(spaceProvider);
+
+        // ADDITIONAL REQUIREMENT: campus-overview detection + one-shot fit.
+        final navActive = context.select<NavigationController, bool>(
+          (nav) => nav.isActive,
+        );
+        final isCampusOverview = selectedSpace == null &&
+            spaceProvider.selectedFloor == null &&
+            spaceProvider.selectedPoi == null &&
+            !navActive;
+        if (isCampusOverview != _isCampusOverviewNow) {
+          // Entering the overview re-arms the fit; leaving disarms it.
+          _campusFitPending = isCampusOverview;
+          _isCampusOverviewNow = isCampusOverview;
+        }
+        if (isCampusOverview &&
+            _campusFitPending &&
+            _mapController != null) {
+          _campusFitPending = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _fitCampusOverview();
+          });
+        }
 
         // If no GPS and no building selected, try to center on custom routes
         if (!_hasInitialCentering && !_hasCenteredOnCustomRoutes) {
           _centerOnCustomRoutesIfNeeded();
         }
 
-        // Initial camera position
-        final initialTarget = selectedSpace?.latLng ??
-            userLocation?.latLng ??
-            SpaceProvider.defaultCenter;
+        // Initial camera position: campus bounds center when in overview,
+        // otherwise the existing per-selection target.
+        final initialTarget = isCampusOverview
+            ? _ejustCampusCenter()
+            : (selectedSpace?.latLng ??
+                userLocation?.latLng ??
+                SpaceProvider.defaultCenter);
 
         // ORIGINAL PHASE 7: during a floor transition the Phase 5 held
         // position replaces the raw fix so the marker does not jump floors.
@@ -986,8 +1347,9 @@ class _MapScreenState extends State<MapScreen>
                   return GoogleMap(
                     initialCameraPosition: CameraPosition(
                       target: initialTarget,
-                      zoom: MapConfig.defaultZoom,
+                      zoom: isCampusOverview ? 14.5 : MapConfig.defaultZoom,
                     ),
+                    mapType: MapConfig.mapType,
                     onMapCreated: (controller) {
                       _mapController = controller;
                       // If location was already acquired before map creation, center now
@@ -1032,132 +1394,6 @@ class _MapScreenState extends State<MapScreen>
                 },
               ),
 
-              // 2. Top Header Bar
-              Positioned(
-                top: 0,
-                left: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppTheme.cardBorder),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.apartment,
-                            color: AppTheme.primary,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 10),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text(
-                                'Anyplace',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.textPrimary,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: spaceProvider.errorMessage != null &&
-                                        spaceProvider.spaces.isEmpty &&
-                                        !spaceProvider.isLoading
-                                    ? () => spaceProvider.loadSpaces(forceReload: true)
-                                    : null,
-                                child: Text(
-                                  spaceProvider.isLoading
-                                      ? 'Loading campus spaces...'
-                                      : spaceProvider.errorMessage != null &&
-                                              spaceProvider.spaces.isEmpty
-                                          ? 'No connection ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â tap to retry'
-                                          : '${spaceProvider.spaces.length} spaces mapped',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: spaceProvider.errorMessage != null &&
-                                            spaceProvider.spaces.isEmpty
-                                        ? const Color(0xFFDC2626)
-                                        : AppTheme.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (locationProvider.isIndoorWifiActive) ...[
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0D9488).withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: const Color(0xFF0D9488).withValues(alpha: 0.2),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.wifi,
-                                    size: 12,
-                                    color: Color(0xFF0D9488),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Indoor Wi-Fi (${locationProvider.latestIndoorEstimate?.matchedAps ?? 0} APs)',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF0D9488),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          if (spaceProvider.isLoading) ...[
-                            const SizedBox(width: 12),
-                            const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppTheme.primary,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
               // 3. Map Action Controls (Search, My Location, Zoom In, Zoom Out, Reload)
               Positioned(
                 right: 16,
@@ -1167,7 +1403,6 @@ class _MapScreenState extends State<MapScreen>
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: MapControls(
-                      onSearch: _openSearchSheet,
                       onRecenter: () {
                         final nav = context.read<NavigationController>();
                         if (nav.isActive) {
@@ -1187,99 +1422,58 @@ class _MapScreenState extends State<MapScreen>
                 ),
               ),
 
-              // 4. Draggable Bottom Sheet for Building/POI details
-              if (spaceProvider.selectedSpace != null ||
-                  spaceProvider.selectedPoi != null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: MapBottomSheet(
-                    key: ValueKey(
-                      'sheet_${spaceProvider.selectedSpace?.buid}_${spaceProvider.selectedPoi?.puid}',
-                    ),
-                    onFitRouteBounds: _fitRouteBounds,
-                  ),
-                ),
-
-              // 5. Navigation Status Bar (during active navigation) +
-              //    Arrival Banner (ORIGINAL PHASE 7 exposure).
-              if (context.select<NavigationController, bool>(
-                (nav) => nav.isActive,
-              ))
-                Positioned(
-                  left: 16,
-                  right: 76,
-                  bottom: 24,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ArrivalBanner(
-                        onDone: () {
-                          context.read<NavigationController>().terminateNavigation();
-                          spaceProvider.clearNavigationRoute();
-                        },
-                      ),
-                      const NavigationStatusBar(),
-                    ],
-                  ),
-                ),
-
-              // 6. Error Banner (if any)
-              if (spaceProvider.hasError && selectedSpace == null)
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 24,
-                  child: SafeArea(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDC2626),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.error_outline, color: Colors.white),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              spaceProvider.errorMessage!,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => spaceProvider.loadSpaces(),
-                            child: const Text(
-                              'Retry',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-             ],
-           ),
+              // 4. Former detail bottom sheet, navigation status bar /
+              //    arrival banner, and error banner were relocated in
+              //    Phase 1: the dynamic content panel and nav overlays now
+              //    live in MainShell; spaces status/retry moved to MapTopBar.
+              ],
+            ),
          );
        },
      );
    }
+}
+
+/// Pure route-preview camera math (CORRECTION PASS #5/#13, unit-tested).
+///
+/// Computes the zoom that fits BOTH padded spans inside the available
+/// viewport pixels (meters-per-pixel model), clamped to a sensible campus
+/// range `[14, 19]`, plus the south-shifted target latitude that visually
+/// centers the route between the top UI and the bottom panel.
+({double zoom, double targetLat}) computeRouteCamera({
+  required double centerLat,
+  required double boundsLatSpanDeg,
+  required double boundsLngSpanDeg,
+  required double availW,
+  required double availH,
+}) {
+  const minZoom = 14.0;
+  const maxZoom = 19.0;
+  const topChromeFraction = 0.14;
+  const bottomChromeFraction = 0.40;
+
+    final cosLat = cos(centerLat * pi / 180);
+    final mppAtZoom0 = 156543.03392 * cosLat;
+    final widthMeters = boundsLngSpanDeg * 111320.0 * cosLat;
+    final heightMeters = boundsLatSpanDeg * 111320.0;
+    // Largest zoom where the span still fits its axis:
+    //   span_m <= availPx * mppAtZoom0 / 2^z   ⇒   z = log2(availPx*mpp0/span)
+    final zoomForWidth = log((availW * mppAtZoom0) / widthMeters) / ln2;
+    final zoomForHeight = log((availH * mppAtZoom0) / heightMeters) / ln2;
+  final zoom =
+      min(zoomForWidth, zoomForHeight).clamp(minZoom, maxZoom).toDouble();
+
+  // Bias: shift target SOUTH so the route centers in the region ABOVE the
+  // bottom panel (visible midpoint sits above screen center).
+  final bottomChromePx = bottomChromeFraction; // caller-normalized below
+  // Caller passes pixel fractions via availH already; bias uses the same
+  // fractional model against a nominal 800dp height for determinism.
+  const nominalHeight = 800.0;
+  final offsetPx =
+      (nominalHeight * (bottomChromePx - topChromeFraction)) / 2.0;
+  final degPerPixel = 360.0 / (256.0 * pow(2, zoom));
+  return (
+    zoom: zoom,
+    targetLat: centerLat - offsetPx * degPerPixel,
+  );
 }

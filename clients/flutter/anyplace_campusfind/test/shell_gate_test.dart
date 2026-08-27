@@ -13,7 +13,12 @@ import 'package:anyplace_campusfind/screens/profile_screen.dart';
 import 'package:anyplace_campusfind/screens/search_screen.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
+import 'package:anyplace_campusfind/state/location_provider.dart';
+import 'package:anyplace_campusfind/state/navigation_controller.dart';
 import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/ui/widgets/campus_content_panel.dart';
+
+import 'helpers/fake_google_maps_platform.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,16 +28,29 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    installFakeGoogleMapsPlatform();
     cache = CacheService();
     container = ProviderContainer();
     addTearDown(container.dispose);
   });
 
   Widget wrap() {
+    final space = _FakeSpaceProvider();
+    final location = LocationProvider();
+    final navController = NavigationController(
+      spaceProvider: space,
+      locationProvider: location,
+    );
     return UncontrolledProviderScope(
       container: container,
-      child: provider.ChangeNotifierProvider<SpaceProvider>.value(
-        value: _FakeSpaceProvider(),
+      child: provider.MultiProvider(
+        providers: [
+          provider.ChangeNotifierProvider<SpaceProvider>.value(value: space),
+          provider.ChangeNotifierProvider<LocationProvider>.value(
+              value: location),
+          provider.ChangeNotifierProvider<NavigationController>.value(
+              value: navController),
+        ],
         child: const MaterialApp(home: MainShell()),
       ),
     );
@@ -44,7 +62,8 @@ void main() {
     );
   }
 
-  testWidgets('tabs are always visible even while data loads', (tester) async {
+  testWidgets('map-first shell renders immediately while data loads',
+      (tester) async {
     final completer = Completer<BulkLoadResult>();
     container = ProviderContainer(overrides: [
       loaderOverride(() => completer.future),
@@ -53,12 +72,14 @@ void main() {
     addTearDown(container.dispose);
 
     await tester.pumpWidget(wrap());
-    expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.text('Home'), findsOneWidget);
+    // No bottom tab bar in the map-first shell; the dynamic content area is
+    // present from the first frame.
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(CampusContentPanel), findsOneWidget);
 
     completer.complete(const BulkLoadResult());
     await tester.pumpAndSettle();
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(CampusContentPanel), findsOneWidget);
   });
 
   testWidgets('shows offline banner when data came from snapshot',
@@ -74,10 +95,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Offline — showing cached campus data'), findsOneWidget);
-    expect(find.byType(NavigationBar), findsOneWidget);
   });
 
-  testWidgets('bottom nav contains exactly Home and Map', (tester) async {
+  testWidgets('map-first shell has no bottom navigation destinations',
+      (tester) async {
     container = ProviderContainer(overrides: [
       loaderOverride(() async => const BulkLoadResult()),
       cacheServiceProvider.overrideWithValue(cache),
@@ -87,42 +108,14 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
-    expect(nav.destinations.length, 2);
+    expect(find.byType(NavigationBar), findsNothing);
 
-    expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.text('Home'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.text('Map'),
-      ),
-      findsOneWidget,
-    );
-
-    // Search and Profile are NOT bottom-navigation destinations.
-    expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.text('Search'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.text('Profile'),
-      ),
-      findsNothing,
-    );
+    // Profile is reachable via the top-bar avatar, never mounted by default.
+    expect(find.byType(ProfileScreen), findsNothing);
   });
 
-  testWidgets('Home search bar opens the Search screen', (tester) async {
+  testWidgets('Top search bar opens the From/To search overlay',
+      (tester) async {
     container = ProviderContainer(overrides: [
       loaderOverride(() async => const BulkLoadResult()),
       cacheServiceProvider.overrideWithValue(cache),
@@ -132,14 +125,17 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Search professors, rooms, halls...'));
+    await tester.tap(find.text('Search buildings, rooms, services…'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(SearchScreen), findsOneWidget);
-    expect(find.text('Search Directory'), findsOneWidget);
+    // Phase 2: the top bar opens the From/To overlay, not the directory.
+    expect(find.byType(SearchScreen), findsNothing);
+    expect(find.text('Where to?'), findsOneWidget);
+    expect(find.text('From'), findsOneWidget);
+    expect(find.text('My Location'), findsOneWidget);
   });
 
-  testWidgets('Home profile button opens the Profile screen', (tester) async {
+  testWidgets('Top bar avatar opens the Profile screen', (tester) async {
     container = ProviderContainer(overrides: [
       loaderOverride(() async => const BulkLoadResult()),
       cacheServiceProvider.overrideWithValue(cache),

@@ -709,6 +709,118 @@ void main() {
       expect(hybrid.last, destination);
     });
   });
+
+  group('KmzLoader line styles (My Maps fidelity)', () {
+    test('kmlColorToArgb converts aabbggrr to AARRGGBB', () {
+      // ff757575 is grayscale so channels coincide; use a mixed value:
+      // KML aabbggrr = '80ff0000' → pure blue at 50% alpha.
+      expect(KmzLoader.kmlColorToArgb('80ff0000'), 0x800000FF);
+      // Opaque red in KML ('ff0000ff') → 0xFFFF0000.
+      expect(KmzLoader.kmlColorToArgb('ff0000ff'), 0xFFFF0000);
+      // Malformed input yields null.
+      expect(KmzLoader.kmlColorToArgb('fff'), isNull);
+      expect(KmzLoader.kmlColorToArgb('zzzzzzzz'), isNull);
+    });
+
+    test('styleUrl through StyleMap resolves normal LineStyle', () {
+      const kml = '''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Style id="line-123456-32000-nodesc-normal">
+      <LineStyle>
+        <color>ff123456</color>
+        <width>32</width>
+      </LineStyle>
+    </Style>
+    <Style id="line-123456-32000-nodesc-highlight">
+      <LineStyle>
+        <color>ff654321</color>
+        <width>48</width>
+      </LineStyle>
+    </Style>
+    <StyleMap id="line-123456-32000-nodesc">
+      <Pair><key>normal</key>
+        <styleUrl>#line-123456-32000-nodesc-normal</styleUrl></Pair>
+      <Pair><key>highlight</key>
+        <styleUrl>#line-123456-32000-nodesc-highlight</styleUrl></Pair>
+    </StyleMap>
+    <Placemark>
+      <name>A</name>
+      <styleUrl>#line-123456-32000-nodesc</styleUrl>
+      <LineString><coordinates>
+        30.8591,29.5635,0
+        30.8600,29.5630,0
+      </coordinates></LineString>
+    </Placemark>
+  </Document>
+</kml>''';
+
+      final features = KmzLoader.parseKml(kml);
+      // KML writes aabbggrr: 'ff123456' → alpha ff, blue 12, green 34,
+      // red 56 → Flutter ARGB 0xFF563412. The highlight variant
+      // ('ff654321' → 0xFF214365) must NOT be picked.
+      expect(features.single.lineColorArgb, 0xFF563412);
+      expect(features.single.lineWidth, 32);
+    });
+
+    test('inline Style takes precedence over styleUrl', () {
+      const kml = '''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Style id="shared">
+      <LineStyle><color>ff111111</color></LineStyle>
+    </Style>
+    <Placemark>
+      <name>A</name>
+      <styleUrl>#shared</styleUrl>
+      <Style>
+        <LineStyle><color>ff222222</color><width>7</width></LineStyle>
+      </Style>
+      <LineString><coordinates>
+        30.8591,29.5635,0
+        30.8600,29.5630,0
+      </coordinates></LineString>
+    </Placemark>
+  </Document>
+</kml>''';
+
+      final features = KmzLoader.parseKml(kml);
+      // 'ff222222' is grayscale, so the aabbggrr swizzle is identity.
+      expect(features.single.lineColorArgb, 0xFF222222);
+      expect(features.single.lineWidth, 7);
+    });
+
+    test('unstyled features carry no color/width', () {
+      const kml = '''<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>Bare</name>
+      <LineString><coordinates>
+        30.8591,29.5635,0
+        30.8600,29.5630,0
+      </coordinates></LineString>
+    </Placemark>
+  </Document>
+</kml>''';
+
+      final features = KmzLoader.parseKml(kml);
+      expect(features.single.lineColorArgb, isNull);
+      expect(features.single.lineWidth, isNull);
+    });
+
+    test('repository threads source style into CustomRoute', () {
+      final repository = CustomRouteRepository();
+      repository.loadFromBytes(_createTestKmz());
+
+      // _createTestKmz has no styles: model must expose nulls so renderers
+      // can fall back to the KML-spec defaults.
+      for (final route in repository.routes) {
+        expect(route.lineColorArgb, isNull);
+        expect(route.lineWidth, isNull);
+      }
+    });
+  });
 }
 
 /// Creates a minimal KMZ byte array for testing.

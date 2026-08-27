@@ -129,4 +129,47 @@ class CacheService {
     final prefs = await _ensurePrefs();
     await prefs.remove(AppConstants.prefSavedPois);
   }
+
+  // ---- Dataset epoch migration (backend server switch) ----
+
+  /// The dataset epoch this device's local user data belongs to, or null
+  /// when the device has never recorded one.
+  Future<String?> getDatasetEpoch() async {
+    final prefs = await _ensurePrefs();
+    return prefs.getString(AppConstants.prefDatasetEpoch);
+  }
+
+  Future<void> setDatasetEpoch(String epoch) async {
+    await _setString(AppConstants.prefDatasetEpoch, epoch);
+  }
+
+  /// ONE-TIME silent migration for a backend server switch
+  /// (E-JUST SERVER MIGRATION: UCY backend → map.beout.ai).
+  ///
+  /// Returns true when a migration was performed. Performed actions:
+  ///  * REMOVES the Quick Access key entirely (so the existing first-run
+  ///    seeding gate re-seeds defaults against the NEW server's dataset —
+  ///    clearing to an empty list would permanently suppress seeding),
+  ///  * removes Recent Waypoints (old puids cannot resolve on the new
+  ///    backend) and the legacy Saved-POIs source,
+  ///  * writes the current [AppConstants.datasetEpoch] marker.
+  ///
+  /// Disk caches are purged separately by `SpaceProvider.purgeDatasetCaches`
+  /// (called by the composition root when this returns true). Idempotent:
+  /// returns false once the stored epoch matches.
+  Future<bool> consumeDatasetEpochMigration() async {
+    final prefs = await _ensurePrefs();
+    final stored = prefs.getString(AppConstants.prefDatasetEpoch);
+    if (stored == AppConstants.datasetEpoch) return false;
+
+    debugPrint('[CacheService] dataset epoch migration: '
+        '"$stored" → "${AppConstants.datasetEpoch}" — clearing old-backend '
+        'user data');
+    await prefs.remove(AppConstants.prefQuickAccess);
+    await prefs.remove(AppConstants.prefRecentWaypoints);
+    await prefs.remove(AppConstants.prefSavedPois);
+    await prefs.setString(AppConstants.prefDatasetEpoch, AppConstants.datasetEpoch);
+    onDataChanged?.call();
+    return true;
+  }
 }

@@ -29,72 +29,101 @@ class AppConstants {
   static const String prefQuickAccess = 'quick_access';
   static const String prefHasCompletedOnboarding = 'onboarding_done';
 
+  /// SharedPreferences key storing the dataset epoch this device's local
+  /// data (Quick Access, Recent Waypoints, disk caches) belongs to.
+  static const String prefDatasetEpoch = 'dataset_epoch';
+
+  /// SERVER MIGRATION epoch marker. When the stored epoch differs from this
+  /// value, startup performs a ONE-TIME silent migration: Quick Access and
+  /// Recent Waypoints are cleared (their buids/puids belonged to the old
+  /// backend) and the disk caches are purged via
+  /// `SpaceProvider.purgeDatasetCaches()`. Quick Access then re-seeds from
+  /// [kDefaultQuickAccessLocations] against the new server's real dataset.
+  ///
+  /// Bump this constant whenever the backend identity changes again.
+  static const String datasetEpoch = 'beout-2026-08';
+
   /// Predefined Quick Access locations seeded on first launch.
   ///
-  /// Each entry identifies a VERIFIED E-JUST entity resolved against the live
-  /// Anyplace backend dataset (`space/public` on ap.cs.ucy.ac.cy:44). The
-  /// `buid` values are the actual API entity identifiers observed in that
-  /// dataset, NOT invented identifiers, and no coordinates are hardcoded.
+  /// Each entry identifies a VERIFIED E-JUST entity resolved against the
+  /// live E-JUST backend (`map.beout.ai`, post-migration). The `buid`
+  /// values are the actual API entity identifiers returned by that
+  /// server's `/api/mapping/space/public` payload — NOT invented — and no
+  /// coordinates are hardcoded.
   ///
-  /// On first launch only, each default is resolved by its real `buid` against
-  /// the spaces already loaded by the application. Only entities present in the
-  /// loaded dataset are seeded (from their live `SpaceModel`, so identity is
-  /// always the actual API entity). A default whose buid is not present in the
-  /// loaded data is REPORTED and skipped — never substituted with a similarly
-  /// named location. These defaults are never re-injected once the Quick Access
-  /// preference key exists.
+  /// On first launch only, each default is resolved by its real `buid`
+  /// against the spaces already loaded by the application. Only entities
+  /// present in the loaded dataset are seeded. A default whose buid is not
+  /// present is REPORTED and skipped — never substituted.
+  ///
+  /// SERVER MIGRATION NOTE: the previous UCY-backend buids no longer exist
+  /// on map.beout.ai; this list was re-pointed to the new server's real
+  /// entities during the backend migration (Stationery shop dropped — the
+  /// entity does not exist on the new server; B7 and the Administrative
+  /// Building added).
   static const List<DefaultQuickAccessLocation> kDefaultQuickAccessLocations = [
     DefaultQuickAccessLocation(
       label: 'Library',
-      name: 'Library',
-      buid: 'building_163182b1-2875-46a0-a398-a722b83f4ede_1787170088312',
+      name: 'E-JUST Library',
+      buid: 'building_39d12406-5167-4ab6-b01e-1ec5f60e9c48_1787691620141',
     ),
     DefaultQuickAccessLocation(
       label: 'Blue Hall Cafeteria',
-      name: 'Blue hall Cafeteria',
-      buid: 'building_aa532328-faa2-406b-9b6e-2a4640e3cbe2_1787170286644',
-    ),
-    DefaultQuickAccessLocation(
-      label: 'Stationery / Sales Library',
-      name: 'Stationery shop',
-      buid: 'building_5aee1ddd-3736-4100-977b-31fb3c3d2576_1787170410290',
-    ),
-    DefaultQuickAccessLocation(
-      label: 'Bank',
-      name: 'National Bank branch',
-      buid: 'building_6dc90d58-81fb-4f3c-ad29-43d825fb5b77_1787170194408',
+      name: 'E-JUST Blue Hall',
+      buid: 'building_90580bbe-a411-47a1-8486-57578e35ffb7_1787691406039',
     ),
     DefaultQuickAccessLocation(
       label: 'Food Court',
       name: 'Food court',
-      buid: 'building_638b4ab9-0f48-4c0f-8e9a-a9477b251259_1787170631136',
+      buid: 'building_0cee133d-7afc-4c23-8c01-efc53afb33ed_1787691448415',
     ),
     DefaultQuickAccessLocation(
-      label: 'Student Affairs',
-      name: 'Student Affairs',
-      buid: 'building_48c4eb03-8424-4b09-8563-13cfc1c720c9_1787170689278',
+      label: 'Bank',
+      name: 'National Bank branch',
+      buid: 'building_d475fb95-a1cb-4d4e-b473-dbc1fedf31a5_1787691464505',
+    ),
+    DefaultQuickAccessLocation(
+      label: 'B7',
+      name: 'B7',
+      buid: 'building_98c4def5-553d-452a-baf2-da184f7b19ee_1787690379788',
+    ),
+    DefaultQuickAccessLocation(
+      label: 'Administrative Building',
+      name: 'E-JUST Administrative Building',
+      buid: 'building_818fac74-6005-4877-bb70-89e307716914_1787691595861',
     ),
   ];
 
-  /// Default floor number probed when a building has no floor list (the
-  /// public backend returns no floors for most UCY buildings).
+  /// Default floor number probed when a building has no floor list.
   static const String probeFloorNumber = '0';
 
-  /// CampusFind ships with exactly ONE primary campus: the University of
-  /// Cyprus (UCY) campus on the public Anyplace backend (`ap.cs.ucy.ac.cy`).
+  /// CampusFind ships with exactly ONE primary campus: **E-JUST**.
   ///
   /// CampusFind is single-campus by design — there is no campus picker and no
-  /// runtime selection. The campus CUID (`ucy`) matches the official Anyplace
-  /// campus entry (see https://anyplace.cs.ucy.ac.cy/viewer/?cuid=ucy).
+  /// runtime selection. E-JUST is the implicit GLOBAL browsing scope: every
+  /// building / floor / POI / service / search result shown by the app is
+  /// scoped to this campus (see `utils/campus_scope.dart`).
   ///
-  /// WARNING: the live backend has no public "list campuses" endpoint and
-  /// rejects `campus/get` at the load balancer, so building data is loaded
-  /// from the `space/public` endpoint (all published buildings), exactly like
-  /// the pre-merge working CampusFind version.
-  static const String primaryCampusCuid = 'ucy';
+  /// Both values are overridable at build time without code changes:
+  ///   --dart-define=CAMPUS_CUID=... --dart-define=CAMPUS_NAME=...
+  ///
+  /// NOTE on the upstream dataset: the public Anyplace backend historically
+  /// served the UCY campus (`ap.cs.ucy.ac.cy`, cuid `ucy`). The E-JUST fork
+  /// targets the E-JUST deployment whose spaces belong to the E-JUST campus;
+  /// when space payloads carry a campus id (`cuid`), entities outside
+  /// [primaryCampusCuid] are filtered out at load time. Entities that do not
+  /// carry any campus id (single-campus deployments) are treated as in-scope,
+  /// which keeps the app working against an E-JUST-only backend unchanged.
+  static const String primaryCampusCuid = String.fromEnvironment(
+    'CAMPUS_CUID',
+    defaultValue: 'ejust',
+  );
 
   /// Display name of the single primary campus.
-  static const String primaryCampusName = 'University of Cyprus';
+  static const String primaryCampusName = String.fromEnvironment(
+    'CAMPUS_NAME',
+    defaultValue: 'E-JUST',
+  );
 
   /// CAMPUS_IDS is no longer required (or consumed) — CampusFind is single-
   /// campus. Kept as an empty default so any stray `--dart-define=CAMPUS_IDS`
@@ -104,7 +133,7 @@ class AppConstants {
 
   static final List<String> configuredCampusIds = _parseCampusIds(_campusIdsEnv);
 
-  /// Name used for the primary campus dataset. Always the UCY campus.
+  /// Name used for the primary campus dataset. Always the primary campus.
   static const String defaultCampusName = primaryCampusName;
 
   /// cuid used to persist the single primary campus selection locally.

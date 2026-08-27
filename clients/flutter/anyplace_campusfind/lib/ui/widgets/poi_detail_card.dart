@@ -86,35 +86,48 @@ class PoiDetailCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
+                      // Phase 4 hosting note: this card renders inside the
+                      // dynamic content panel; both metadata chips must be
+                      // allowed to shrink instead of overflowing.
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF6366F1).withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: const Color(0xFF6366F1).withValues(alpha: 0.2),
-                              ),
-                            ),
-                            child: Text(
-                              poi.poisType,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF6366F1),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF6366F1).withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                child: Text(
+                                  poi.poisType,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF6366F1),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            'Floor ${poi.floorNumber}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textSecondary,
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Floor ${poi.floorNumber}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -157,12 +170,21 @@ class PoiDetailCard extends StatelessWidget {
                   color: AppTheme.textSecondary,
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  '${poi.latitude.toStringAsFixed(6)}, ${poi.longitude.toStringAsFixed(6)}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    color: AppTheme.textSecondary,
+                // Phase 4 hosting note: this card now renders inside the
+                // dynamic content panel (narrower than the old sheet), so
+                // the fixed-format coordinates must be allowed to shrink
+                // instead of overflowing.
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '${poi.latitude.toStringAsFixed(6)}, ${poi.longitude.toStringAsFixed(6)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
                   ),
                 ),
               ],

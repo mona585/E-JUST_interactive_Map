@@ -37,6 +37,14 @@ class SpaceModel {
   /// provided by the backend and should not be hardcoded or fabricated.
   final String? lastModified;
 
+  /// Optional campus ownership id (`cuid`) from the backend payload.
+  ///
+  /// E-JUST SCOPE ADJUSTMENT: some deployments include the owning campus in
+  /// each space payload. When present, `CampusScope` uses it to keep only
+  /// the active campus's buildings; when absent (single-campus backends) the
+  /// entity is treated as in-scope. Never fabricated client-side.
+  final String? cuid;
+
   const SpaceModel({
     required this.buid,
     required this.name,
@@ -49,6 +57,7 @@ class SpaceModel {
     this.isPublished = true,
     this.spaceType = 'building',
     this.lastModified,
+    this.cuid,
   });
 
   /// LatLng coordinate helper for Flutter Map.
@@ -86,6 +95,8 @@ class SpaceModel {
 
     final spaceType = (json['space_type'] ?? 'building').toString().trim();
 
+    final cuidRaw = json['cuid']?.toString().trim();
+
     return SpaceModel(
       buid: buid,
       name: name,
@@ -98,6 +109,7 @@ class SpaceModel {
       isPublished: isPublished,
       spaceType: spaceType.isNotEmpty ? spaceType : 'building',
       lastModified: lastModified,
+      cuid: cuidRaw != null && cuidRaw.isNotEmpty ? cuidRaw : null,
     );
   }
 
@@ -113,6 +125,7 @@ class SpaceModel {
       if (address != null) 'address': address,
       if (url != null) 'url': url,
       if (lastModified != null) 'last_modified': lastModified,
+      if (cuid != null) 'cuid': cuid,
       'is_published': isPublished.toString(),
       'space_type': spaceType,
     };
@@ -140,6 +153,7 @@ class SpaceModel {
     bool? isPublished,
     String? spaceType,
     String? lastModified,
+    String? cuid,
   }) {
     return SpaceModel(
       buid: buid ?? this.buid,
@@ -153,6 +167,7 @@ class SpaceModel {
       isPublished: isPublished ?? this.isPublished,
       spaceType: spaceType ?? this.spaceType,
       lastModified: lastModified ?? this.lastModified,
+      cuid: cuid ?? this.cuid,
     );
   }
 

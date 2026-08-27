@@ -20,11 +20,30 @@ class CustomRoute {
   /// Index of the last vertex in the merged graph.
   final int graphEndIndex;
 
+  /// Exact line color declared by the source My Maps/KML feature, as an
+  /// 0xAARRGGBB integer (converted from KML `aabbggrr`). Null when the
+  /// feature defines no explicit line color.
+  final int? lineColorArgb;
+
+  /// Line width declared by the source `<LineStyle><width>` (KML units).
+  /// Null when the feature defines no explicit width.
+  final double? lineWidth;
+
+  /// OGC KML 2.2 default LineStyle color (opaque white), applied only
+  /// when a feature carries no explicit style of its own.
+  static const int kDefaultLineColorArgb = 0xFFFFFFFF;
+
+  /// OGC KML 2.2 default LineStyle width, same fallback condition as
+  /// [kDefaultLineColorArgb].
+  static const double kDefaultLineWidth = 1.0;
+
   const CustomRoute({
     required this.name,
     required this.vertices,
     this.graphStartIndex = -1,
     this.graphEndIndex = -1,
+    this.lineColorArgb,
+    this.lineWidth,
   });
 
   /// Total geodesic length of this route in meters.
@@ -49,12 +68,16 @@ class CustomRoute {
       vertices: vertices,
       graphStartIndex: graphStartIndex ?? this.graphStartIndex,
       graphEndIndex: graphEndIndex ?? this.graphEndIndex,
+      lineColorArgb: lineColorArgb,
+      lineWidth: lineWidth,
     );
   }
 
   @override
   String toString() =>
-      'CustomRoute($name, ${vertices.length} verts, ${lengthMeters.toStringAsFixed(0)}m)';
+      'CustomRoute($name, ${vertices.length} verts, '
+      '${lengthMeters.toStringAsFixed(0)}m, '
+      'color: ${lineColorArgb?.toRadixString(16)}, width: $lineWidth)';
 
   /// Haversine distance in meters between two [LatLng] points.
   static double _haversine(LatLng a, LatLng b) {

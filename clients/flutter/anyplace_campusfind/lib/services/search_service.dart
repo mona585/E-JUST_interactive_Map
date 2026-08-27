@@ -161,7 +161,13 @@ class SearchService extends ChangeNotifier {
 
   /// Searches the index with multi-field matching and relevance ranking.
   ///
-  /// Only POI results are returned — buildings and floors are excluded.
+  /// By default only POI results are returned — buildings and floors are
+  /// excluded (legacy directory behavior, unchanged).
+  ///
+  /// [includeSpacesAndFloors] — when true, building (space) and floor entries
+  /// are also eligible. UI/UX REDESIGN PHASE 2: used by the From/To search
+  /// overlay so buildings/floors can appear as suggestions; the default keeps
+  /// every existing caller byte-identical.
   ///
   /// [buid] — when non-null, restricts results to POIs belonging to this building.
   /// [category] — when non-null, restricts results to POIs matching this category.
@@ -171,12 +177,13 @@ class SearchService extends ChangeNotifier {
     EntityCategory? category,
     String? buid,
     int limit = 15,
+    bool includeSpacesAndFloors = false,
   }) {
     final q = rawQuery.toLowerCase().trim();
     final scored = <(_SearchableItem, int)>[];
 
     for (final item in _items) {
-      if (item.entityType != 'poi') continue;
+      if (item.entityType != 'poi' && !includeSpacesAndFloors) continue;
       final score = _scoreItem(item, q);
       if (score > 0) {
         scored.add((item, score));
@@ -222,6 +229,17 @@ class SearchService extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// All POIs currently indexed (UI/UX REDESIGN PHASE 5).
+  ///
+  /// Additive accessor used by service scoping so Services can run over the
+  /// same progressive campus index the directory search already uses.
+  List<PoiModel> allIndexedPois() {
+    return [
+      for (final item in _items)
+        if (item.entityType == 'poi' && item.poi != null) item.poi!,
+    ];
   }
 
   /// Discovers all unique building buid+name pairs currently indexed.

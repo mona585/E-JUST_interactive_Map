@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FORENSIC REMEDIATION (API-008): scoped cleartext policy.
+  The OSRM foot-routing tier is plain HTTP by upstream contract
+  (http://router.project-osrm.org). Instead of enabling cleartext for every
+  domain (the previous android:usesCleartextTraffic="true"), allow it ONLY
+  for that host and require TLS everywhere else.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true" />
+    </domain-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">router.project-osrm.org</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -7,28 +7,55 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
 import 'package:anyplace_campusfind/screens/main_shell.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
+import 'package:anyplace_campusfind/state/location_provider.dart';
+import 'package:anyplace_campusfind/state/navigation_controller.dart';
 import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/ui/widgets/campus_content_panel.dart';
+
+import 'helpers/fake_google_maps_platform.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('App renders the main shell on launch', (WidgetTester tester) async {
+  setUp(installFakeGoogleMapsPlatform);
+
+  testWidgets('App renders the map-first shell on launch',
+      (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
+    final space = _FakeSpaceProvider();
+    final location = LocationProvider();
+    final nav = NavigationController(
+      spaceProvider: space,
+      locationProvider: location,
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           bulkLoaderProvider.overrideWithValue(_FakeBulkLoader()),
         ],
-        child: provider.ChangeNotifierProvider<SpaceProvider>.value(
-          value: _FakeSpaceProvider(),
+        child: provider.MultiProvider(
+          providers: [
+            provider.ChangeNotifierProvider<SpaceProvider>.value(value: space),
+            provider.ChangeNotifierProvider<LocationProvider>.value(
+                value: location),
+            provider.ChangeNotifierProvider<NavigationController>.value(
+                value: nav),
+          ],
           child: const MaterialApp(home: MainShell()),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.text('Home'), findsOneWidget);
+    // Map-first shell: no bottom tab bar anymore.
+    expect(find.byType(NavigationBar), findsNothing);
+
+    // The single dynamic content area is present at launch.
+    expect(find.byType(CampusContentPanel), findsOneWidget);
+
+    // Campus context shows the Buildings section and the top search bar.
+    expect(find.text('Buildings'), findsWidgets);
+    expect(find.text('Search buildings, rooms, services…'), findsOneWidget);
   });
 }
 

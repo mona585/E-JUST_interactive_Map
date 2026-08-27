@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../config/theme.dart';
 
-/// Floating map controls (zoom, search, recenter, reload).
+/// Floating map controls (recenter, zoom, reload).
+///
+/// PHASE 8: the former search button is gone — search lives in the top bar.
 class MapControls extends StatelessWidget {
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final VoidCallback onRecenter;
-  final VoidCallback onSearch;
   final VoidCallback onReload;
   final bool isLoading;
   final bool isTrackingLocation;
@@ -18,7 +19,6 @@ class MapControls extends StatelessWidget {
     required this.onZoomIn,
     required this.onZoomOut,
     required this.onRecenter,
-    required this.onSearch,
     required this.onReload,
     this.isLoading = false,
     this.isTrackingLocation = false,
@@ -30,13 +30,6 @@ class MapControls extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildControlButton(
-          icon: Icons.search,
-          tooltip: 'Browse / Search Buildings',
-          onPressed: onSearch,
-          highlight: true,
-        ),
-        const SizedBox(height: 10),
         _buildControlButton(
           icon: isLocating
               ? Icons.gps_fixed

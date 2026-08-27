@@ -54,6 +54,8 @@ class CustomRouteRepository {
           .map((f) => CustomRoute(
                 name: f.name,
                 vertices: f.coordinates,
+                lineColorArgb: f.lineColorArgb,
+                lineWidth: f.lineWidth,
               ))
           .toList();
 
@@ -82,6 +84,8 @@ class CustomRouteRepository {
         .map((f) => CustomRoute(
               name: f.name,
               vertices: f.coordinates,
+              lineColorArgb: f.lineColorArgb,
+              lineWidth: f.lineWidth,
             ))
         .toList();
 
