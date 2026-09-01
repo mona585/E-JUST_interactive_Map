@@ -40,6 +40,7 @@ dependencies:
   flutter_riverpod: ^2.6.1
   path: ^1.9.1
   provider: ^6.1.2
+  connectivity_plus: ^6.0.0
   google_maps_flutter: ^2.10.0
   geolocator: ^13.0.2
   archive: ^3.6.1
@@ -70,6 +71,8 @@ flutter:
 
   assets:
     - assets/navigation/university roads.kmz
+    - assets/config/university gates.kmz
+    - assets/config/gate_policy.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

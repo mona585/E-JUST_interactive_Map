@@ -1,32 +1,39 @@
 # anyplace_campusfind
 
-Public [Anyplace](https://github.com/dmsl/anyplace) campus navigation app
-(Flutter, Android-first). Built on the Anyplace indoor-navigation platform:
-browse campus buildings, search rooms/professors, view floorplans, get indoor +
-outdoor directions, and use GPS/Wi-Fi positioning. Data is loaded dynamically
-from the public Anyplace backend (`https://ap.cs.ucy.ac.cy:44`) with no build-time
-campus configuration required.
+E-JUST CampusFind — an indoor/outdoor campus navigation app (Flutter, Android-first)
+built on the Anyplace platform. Browse campus buildings, search rooms/places, view
+floorplans, and get indoor + outdoor directions using GPS and Wi-Fi fingerprint
+positioning.
+
+The app is intentionally connected to the dedicated E-JUST backend
+**`https://map.beout.ai`** and is scoped to the **E-JUST campus**, which is
+**hard-coded** (there is no campus picker / first-launch selection).
 
 ## Features
 
-- **Campus selection** on first launch (auto-derived from published buildings)
-- **Home** — quick access by category and recent waypoints
-- **Map** — Google Maps with building/POI markers, marker clustering, tiled
-  floorplan overlay with floor switcher, GPS blue-dot and nearest-location card
-- **Search** — live cross-entity search (buildings + POIs) with category filters
-- **Building detail / Professor profile** — parsed metadata, floor directory,
-  room search, accessibility & facilities, navigate buttons
-- **Navigation** — indoor routes via the Anyplace backend, outdoor legs via
-  OSRM, combined blue/red polyline display with per-floor switching
-- **Positioning** — GPS + Wi-Fi fingerprint estimates with graceful fallbacks
-- **Offline support** — campus dataset snapshot + cached floorplan tiles keep
-  the app usable without a connection (with an "offline" banner)
+- **Map** — Google Maps (hybrid) framed on the E-JUST campus, building and POI
+  markers, floorplan ground-overlay with a floor switcher, and a user position marker.
+- **Building / POI browse** — tap a building to inspect its floors, POIs and
+  floorplan; open a POI for details and "Start Directions".
+- **Search** — live cross-entity search across buildings, floors and POIs with a
+  From/My-Location → To flow.
+- **Navigation** — indoor routes from the Anyplace backend (`/api/navigation/route`)
+  plus outdoor legs (OSRM), rendered as per-floor polylines with floor switching,
+  rerouting, and arrival detection.
+- **Positioning** — GPS (outdoor) and Wi-Fi fingerprint estimates (indoor, Android
+  native engine) with source arbitration, indoor/outdoor transitions, floor
+  transitions and stale/invalid handling. *(Indoor Wi-Fi positioning requires the
+  Android native engine; iOS support is not included in this build.)*
+- **Offline** — recently viewed floorplans, POIs and radiomaps are cached on disk
+  (`<appSupport>/floorplans/`, `pois/`, `radiomaps/`) so they remain available
+  without a connection. A connectivity-aware offline banner is shown when the
+  network is unavailable.
 
 ## Prerequisites
 
-- Flutter (stable) — this project pins Dart `^3.12`
-- An Anyplace backend (see the repo root `AGENTS.md` / recovery docs)
-- Android SDK 29+ (build-tools 29.0.2)
+- Flutter (stable); this project pins Dart `^3.12`.
+- Android SDK 29+ (build-tools 29.0.2) for device/emulator builds.
+- A `MAPS_API_KEY` for Google Maps (supplied natively, see below).
 
 ## Setup
 
@@ -37,31 +44,31 @@ flutter pub get
 
 ### Build-time configuration
 
-The app reads three `--dart-define` values; all default to sensible dev values.
+The app is configured with `--dart-define` values. All have safe defaults.
 
 | Define | Default | Purpose |
 | --- | --- | --- |
-| `SERVER_URL` | `https://ap.cs.ucy.ac.cy:44` | Backend base URL (public UCY Anyplace; port 44 required) |
-| `CAMPUS_IDS` | *(empty)* | Comma-separated campus cuids offered on first launch. When empty, the app auto-derives a single default campus from all published buildings (`space/public`), so a zero-config build shows a default campus on first launch. |
-| `CAMPUS_NAME` | `Anyplace Campus` | Name of the auto-derived default campus |
+| `SERVER_URL` | `https://map.beout.ai` | Backend base URL. Override only to point at another Anyplace deployment. |
+| `CAMPUS_CUID` | `ejust` | Campus scope. The E-JUST campus is fixed; there is no campus picker. |
+| `CAMPUS_NAME` | `E-JUST` | Display name for the fixed campus. |
+| `OSRM_URL` | *(public OSRM over HTTPS)* | Outdoor-routing endpoint used for cross-building/outdoor legs. |
+
+> **Note:** `CAMPUS_IDS` is **not** supported — the campus is hard-coded to E-JUST.
+> The Google Maps `MAPS_API_KEY` is **not** consumed as a Dart define; it must be
+> supplied natively via `android/app/src/main/AndroidManifest.xml`
+> (`meta-data android:name="com.google.android.geo.API_KEY"`) and the equivalent
+> iOS `Info.plist`/`AppDelegate` configuration.
 
 ```bash
-flutter run \
-  --dart-define=MAPS_API_KEY=YOUR_KEY
+flutter run --dart-define=MAPS_API_KEY=YOUR_KEY
 ```
 
-> `10.0.2.2` is the emulator alias for the host machine's `localhost`. The
-> debug manifest and `usesCleartextTraffic` allow plain-HTTP during
-> development; production should use HTTPS.
+> `10.0.2.2` is the emulator alias for the host machine's `localhost`.
 
-## Running the app
+## Running
 
 ```bash
-# No config needed — the default campus is auto-derived from the backend.
 flutter run
-
-# Multi-campus deployments can pin the offered campuses explicitly.
-flutter run --dart-define=CAMPUS_IDS=<cuid-a>,<cuid-b>
 flutter build apk --debug
 ```
 
@@ -71,37 +78,44 @@ flutter build apk --debug
 flutter test
 ```
 
-Coverage includes: models (JSON parsing), API service (endpoints + error
-mapping), cache + offline snapshot, search index, route/OSRM logic, tile
-service (caching/offline), and widget tests for the main-shell gates, campus
-selection (error/retry), building detail and professor profile.
+Coverage includes: models (JSON parsing), API service (endpoints + error mapping),
+per-entity cache (floorplan/POI/radiomap), search index, route/OSRM logic, navigation
+state machine (arrival, floor transitions, rerouting), positioning arbitration, and
+widget tests for the main-shell gates, E-JUST scope, building/POI detail and
+navigation UI.
 
 ## Offline behaviour
 
-- The bulk campus dataset is snapshotted to `<appSupport>/campus_data_snapshot.json`
-  after each successful fetch and restored when the live fetch fails.
-- Floorplan tiles are cached under `<appSupport>/floorplan_tiles/` and are
-  served from disk without a network call once downloaded.
-- When running on cached data the app shows an "Offline" banner with a Retry
-  action.
+- Floorplan images are cached under `<appSupport>/floorplans/<buid>/<floor>/`.
+- POI and radiomap data are cached on disk and reused when available.
+- When the live network is unavailable the app shows an offline banner with a Retry
+  action; previously cached content remains usable.
 
 ## Data collection (fingerprints)
 
-Indoor positioning depends on Wi-Fi radiomap data collected with the legacy
-Logger app. See the repo-level documentation under `docs/` for the full
-data-collection process (Anyplace standard workflow).
+Indoor positioning depends on Wi-Fi radiomap data. Radiomaps are fetched from the
+backend and pushed to the native positioning engine; see the repo-level
+documentation under `docs/` for the data-collection workflow.
 
 ## Project structure
 
 ```
 lib/
-  config/     API endpoints, constants, theme
-  models/     Campus, Space, Floor, Poi, Route, Position
-  services/   API, cache, tiles, positioning, outdoor routing
-  providers/  Riverpod providers (bulk load, map view, route, search, position)
-  screens/    Campus selection, Home, Map, Search, detail screens
-  utils/      DescriptionParser, CategoryDeriver, DistanceCalculator, map focus
-  widgets/    FilterChips, local tile provider, search result card
+  config/     API endpoints, constants, theme, map configuration
+  data/
+    models/          domain models (space, floor, poi, route, position, ...)
+    repositories/    space/poi/floorplan/radiomap/navigation repositories
+    datasources/     HTTP API client, disk caches, GPS/Wi-Fi/heading services
+  services/    SearchService and other app services
+  providers/   Riverpod providers (cache, campus id, search, directions, panel)
+  state/       ChangeNotifier state (space_provider, location_provider, navigation_controller)
+  screens/     main_shell, home_screen, search_screen
+  ui/
+    screens/   map_screen (Google Map + overlays + navigation rendering)
+    widgets/   map chrome, navigation UI, building/POI cards, arrival banner
+    utils/     floorplan overlay cache, navigation display, campus scope
+  utils/       description parsing, category derivation, distance, campus scope
+  widgets/     quick-access / recent-waypoint / search-result widgets
 ```
 
-See `docs/CAMPUSFIND_PLAN.md` for the roadmap and per-phase completion records.
+See `docs/CAMPUSFIND_PLAN.md` for the implementation plan and per-phase status.

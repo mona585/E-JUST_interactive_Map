@@ -52,6 +52,21 @@ class ApiConfig {
   /// Default RadioMap filename used by Anyplace.
   static const String defaultRadiomapMeanFilename = 'indoor-radiomap-mean.txt';
 
+  /// Outdoor-routing (OSRM) base URL.
+  ///
+  /// Overridable via `--dart-define=OSRM_URL=...`. Defaults to the public OSRM
+  /// instance over **HTTPS** (the previous plaintext `http://` default is
+  /// blocked by Android/iOS cleartext + ATS policies and must not be used).
+  static const String _defaultOsrmBaseUrl = 'https://router.project-osrm.org';
+
+  static const String osrmBaseUrl = String.fromEnvironment(
+    'OSRM_URL',
+    defaultValue: _defaultOsrmBaseUrl,
+  );
+
+  /// OSRM foot-routing endpoint prefix: `<osrmBaseUrl>/route/v1/foot`.
+  static String get osrmFootUrl => '$osrmBaseUrl/route/v1/foot';
+
   /// Timeout duration for HTTP requests.
   static const Duration requestTimeout = Duration(seconds: 30);
 

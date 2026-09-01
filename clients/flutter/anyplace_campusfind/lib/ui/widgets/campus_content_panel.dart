@@ -13,6 +13,7 @@ import '../../state/navigation_controller.dart';
 import '../../state/space_provider.dart';
 import '../../utils/category_deriver.dart';
 import '../../utils/poi_classification.dart';
+import 'gate_detail_card.dart';
 import 'poi_detail_card.dart';
 
 /// The single always-present bottom dynamic content area of the map-first
@@ -21,13 +22,15 @@ import 'poi_detail_card.dart';
 /// Context ladder (Phase 4):
 ///   Campus (Buildings | Services)
 ///     → Building (floors chips)
-///       → Floor (POI list)
+///       → Floor (POI cards)
 ///         → Destination (PoiDetailCard; Directions via EXISTING flows)
+///   Gate (map marker) → Gate detail card (same bottom-panel pattern)
 ///
 /// Campus/Building contexts use explicit panel state ([panelContextProvider]);
-/// Floor and Destination derive directly from `SpaceProvider` selection state
-/// so loading pipelines remain the single source of truth. Back affordances
-/// walk the ladder one step at a time; clearing selection returns to Campus.
+/// Floor, Gate and Destination derive directly from `SpaceProvider` selection
+/// state so loading pipelines remain the single source of truth. Back
+/// affordances walk the ladder one step at a time; clearing selection returns
+/// to Campus.
 class CampusContentPanel extends ConsumerStatefulWidget {
   const CampusContentPanel({super.key});
 
@@ -35,7 +38,7 @@ class CampusContentPanel extends ConsumerStatefulWidget {
   ConsumerState<CampusContentPanel> createState() => _CampusContentPanelState();
 }
 
-enum _PanelView { campus, building, floor, destination, service }
+enum _PanelView { campus, building, floor, destination, gate, service }
 
 class _CampusContentPanelState extends ConsumerState<CampusContentPanel>
     with SingleTickerProviderStateMixin {
@@ -199,6 +202,11 @@ class _CampusContentPanelState extends ConsumerState<CampusContentPanel>
   // ─────────────────────────────── build ───────────────────────────────
 
   _PanelView _resolveView(SpaceProvider spaceProvider) {
+    // A selected campus gate is its own destination-level panel that takes
+    // priority over the indoor pipeline (a gate is campus-scoped and can be
+    // selected alongside a building/floor); clearing it returns to the
+    // underlying context.
+    if (spaceProvider.selectedGate != null) return _PanelView.gate;
     if (spaceProvider.selectedPoi != null &&
         spaceProvider.selectedFloor != null) {
       return _PanelView.destination;
@@ -282,6 +290,8 @@ class _CampusContentPanelState extends ConsumerState<CampusContentPanel>
         return _buildDestination(spaceProvider);
       case _PanelView.floor:
         return _buildFloorContext(spaceProvider);
+      case _PanelView.gate:
+        return _buildGateContext(spaceProvider);
       case _PanelView.building:
         return _buildBuildingContext(spaceProvider.selectedSpace!);
       case _PanelView.service:
@@ -306,6 +316,8 @@ class _CampusContentPanelState extends ConsumerState<CampusContentPanel>
           if (nav.isPreview) nav.terminateNavigation();
           spaceProvider.clearSelectedPoi();
         };
+      case _PanelView.gate:
+        return () => spaceProvider.clearSelectedGate();
       case _PanelView.floor:
         return () => spaceProvider.clearFloorSelection();
       case _PanelView.service:
@@ -337,6 +349,11 @@ class _CampusContentPanelState extends ConsumerState<CampusContentPanel>
         title = poi.name;
         subtitle = poi.poisType;
         icon = Icons.place;
+      case _PanelView.gate:
+        final gate = spaceProvider.selectedGate!;
+        title = gate.name;
+        subtitle = 'Campus Gate';
+        icon = Icons.meeting_room_outlined;
       case _PanelView.service:
         final service = ref.watch(activeServiceProvider)!;
         title = service.label;
@@ -1105,14 +1122,37 @@ class _CampusContentPanelState extends ConsumerState<CampusContentPanel>
         ),
       ];
     } else {
+      // POIs render as the SAME compact card grid used for Buildings, so the
+      // selection experience is unified (Building → card, POI → card).
+      // Filters and selection semantics are unchanged — only the presentation
+      // is card-based instead of a plain list.
       content = [
-        for (final poi in pois)
-          _PoiTile(
-            name: poi.name,
-            subtitle: poi.poisType,
-            isSelected: spaceProvider.selectedPoi?.puid == poi.puid,
-            onTap: () => spaceProvider.selectPoi(poi),
-          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final columns = w >= 620 ? 5 : 3;
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.74,
+              ),
+              itemCount: pois.length,
+              itemBuilder: (context, i) {
+                final poi = pois[i];
+                return _PoiCard(
+                  poi: poi,
+                  isSelected: spaceProvider.selectedPoi?.puid == poi.puid,
+                  onTap: () => spaceProvider.selectPoi(poi),
+                );
+              },
+            );
+          },
+        ),
       ];
     }
 
@@ -1179,6 +1219,42 @@ class _CampusContentPanelState extends ConsumerState<CampusContentPanel>
             addedAt: DateTime.now().millisecondsSinceEpoch,
             category: CategoryDeriver.fromPoiType(poi.poisType).name,
           ),
+        ),
+      ],
+    );
+  }
+
+  /// GATE VIEW — rendered in the SAME bottom selection/detail panel as
+  /// Buildings and POIs (not as a top overlay), so the Search/Directions bar
+  /// stays unobstructed. Selecting a gate behaves like selecting a
+  /// Building/POI from a UX perspective. Navigation reuses
+  /// [SpaceProvider.requestRouteToGate].
+  Widget _buildGateContext(SpaceProvider spaceProvider) {
+    final gate = spaceProvider.selectedGate!;
+    final navController = provider.Provider.of<NavigationController>(context);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+      physics: const BouncingScrollPhysics(),
+      children: [
+        GateDetailCard(
+          gate: gate,
+          onClose: () => spaceProvider.clearSelectedGate(),
+          onNavigate: () async {
+            await spaceProvider.requestRouteToGate(gate);
+            if (spaceProvider.hasActiveNavigationRoute) {
+              _fitRouteBoundsIfAvailable(spaceProvider);
+            }
+          },
+          isLoadingRoute: spaceProvider.isLoadingNavigationRoute,
+          routeMessage: spaceProvider.hasActiveNavigationRoute
+              ? 'Route ready to ${gate.name}'
+              : spaceProvider.navigationRouteErrorMessage,
+          isNavigating: navController.isActive,
+          onEndNavigation: () {
+            navController.terminateNavigation();
+            spaceProvider.clearNavigationRoute();
+          },
         ),
       ],
     );
@@ -1652,84 +1728,74 @@ class _FloorChip extends StatelessWidget {
   }
 }
 
-class _PoiTile extends StatelessWidget {
-  const _PoiTile({
-    required this.name,
-    required this.subtitle,
+class _PoiCard extends StatelessWidget {
+  const _PoiCard({
+    required this.poi,
     required this.isSelected,
     required this.onTap,
   });
 
-  final String name;
-  final String subtitle;
+  final PoiModel poi;
   final bool isSelected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      decoration: BoxDecoration(
-        color: isSelected
-            ? AppTheme.primary.withValues(alpha: 0.06)
-            : AppTheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isSelected ? AppTheme.primary : AppTheme.cardBorder,
-          width: isSelected ? 1.4 : 1,
+    final category = CategoryDeriver.fromPoiType(poi.poisType);
+    return Opacity(
+      opacity: isSelected ? 1.0 : 0.92,
+      child: Container(
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppTheme.primary.withValues(alpha: 0.08)
+              : AppTheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppTheme.primary : AppTheme.cardBorder,
+            width: isSelected ? 1.4 : 1,
+          ),
         ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? AppTheme.primary.withValues(alpha: 0.12)
-                      : AppTheme.background,
-                  borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: category.color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(category.icon,
+                      size: 14, color: category.color),
                 ),
-                child: Icon(
-                  isSelected ? Icons.navigation : Icons.place,
-                  size: 18,
-                  color:
-                      isSelected ? AppTheme.primary : AppTheme.textSecondary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w600,
-                            fontSize: 14,
-                            color: AppTheme.textPrimary)),
-                    if (subtitle.isNotEmpty)
-                      Text(subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textTertiary)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.chevron_right,
-                  size: 18, color: AppTheme.textTertiary),
-            ],
+                const Spacer(),
+                Text(poi.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontWeight:
+                            isSelected ? FontWeight.w800 : FontWeight.w700,
+                        fontSize: 11.5,
+                        height: 1.12,
+                        color: AppTheme.textPrimary)),
+                const SizedBox(height: 3),
+                Text(poi.poisType,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                        color: isSelected
+                            ? AppTheme.primary
+                            : AppTheme.textTertiary)),
+              ],
+            ),
           ),
         ),
       ),

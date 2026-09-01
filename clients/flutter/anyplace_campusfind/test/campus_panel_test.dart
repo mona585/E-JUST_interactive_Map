@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:anyplace_campusfind/data/models/floor_model.dart';
 import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/data/models/campus_gate.dart';
 import 'package:anyplace_campusfind/data/models/poi_model.dart';
 import 'package:anyplace_campusfind/data/models/space_model.dart';
 import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
@@ -19,6 +20,7 @@ import 'package:anyplace_campusfind/state/location_provider.dart';
 import 'package:anyplace_campusfind/state/navigation_controller.dart';
 import 'package:anyplace_campusfind/state/space_provider.dart';
 import 'package:anyplace_campusfind/ui/widgets/campus_content_panel.dart';
+import 'package:anyplace_campusfind/ui/widgets/gate_detail_card.dart';
 import 'package:anyplace_campusfind/ui/widgets/poi_detail_card.dart';
 
 SpaceModel _space(String buid, String name, String code) => SpaceModel(
@@ -469,5 +471,68 @@ void main() {
     expect(find.text('Cafeteria B'), findsOneWidget);
     expect(find.text('Directions'), findsOneWidget);
     expect(spaceProvider.selectedPoi?.puid, 'svc_cafe_b');
+  });
+
+  testWidgets('Selecting a Gate shows its card in the bottom panel', (
+      tester) async {
+    await tester.pumpWidget(wrap());
+    await expandPanel(tester);
+
+    // Gate selection (what the map marker tap triggers) must surface a gate
+    // detail card in the SHARED bottom panel — NOT a top overlay.
+    spaceProvider.selectGate(const CampusGate(
+      id: 'G2',
+      name: 'G2',
+      latitude: 30.8617536,
+      longitude: 29.5669269,
+      enabled: true,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GateDetailCard), findsOneWidget);
+    expect(find.text('G2'), findsWidgets);
+    expect(find.text('Campus Gate'), findsWidgets);
+    expect(find.text('Navigate to Gate'), findsOneWidget);
+
+    // Back dismisses the gate and the panel returns to the campus list,
+    // like any other destination.
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    expect(find.byType(GateDetailCard), findsNothing);
+    expect(spaceProvider.selectedGate, isNull);
+    expect(find.text('Library Building'), findsOneWidget);
+  });
+
+  testWidgets('Selecting a Gate takes priority over an open floor context',
+      (tester) async {
+    await tester.pumpWidget(wrap());
+    await expandPanel(tester);
+
+    // Open a building → floor context.
+    spaceProvider.selectSpace(spaceProvider.spaces.first);
+    await spaceProvider.loadFloorsForSelectedSpace();
+    spaceProvider.selectFloor(spaceProvider.floors.first);
+    await tester.pumpAndSettle();
+    expect(find.text('Points of Interest'), findsOneWidget);
+
+    // Selecting a gate supersedes the floor context in the panel.
+    spaceProvider.selectGate(const CampusGate(
+      id: 'G1',
+      name: 'G1',
+      latitude: 30.8626633,
+      longitude: 29.5613399,
+      enabled: false,
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byType(GateDetailCard), findsOneWidget);
+
+    // Dismissing the gate returns to the underlying floor context, so the
+    // building/floor selection is preserved (gate is a transient overlay of
+    // the same selection system).
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    expect(find.byType(GateDetailCard), findsNothing);
+    expect(find.text('Points of Interest'), findsOneWidget);
+    expect(spaceProvider.selectedSpace?.buid, 'buid_a');
   });
 }

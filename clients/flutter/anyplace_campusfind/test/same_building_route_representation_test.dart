@@ -32,6 +32,12 @@ import 'package:anyplace_campusfind/ui/utils/navigation_display.dart';
 // even though CrossBuildingRouter.composeRoute is deliberately skipped for
 // the same-building scenario.
 //
+// The floor carries REAL server-style FloorModel bounds so the canonical
+// BuildingContainment service (which classifies UNKNOWN geometry as OUTSIDE,
+// never fabricating "inside") recognizes the indoor fix as being inside this
+// building. A bounds-less floor would be classified unknown/outside by
+// design (routing-safety), so the fixture must be geometrically honest.
+//
 // Geometry is never fabricated: the wrapped segments carry the server route's
 // exact coordinates and per-point floors.
 // ---------------------------------------------------------------------------
@@ -52,7 +58,16 @@ SpaceModel _building() => SpaceModel(
       longitude: _lng,
     );
 
-FloorModel _floor0() => FloorModel(buid: 'b1', floorNumber: '0');
+// Ground floor with real bounds that contain both the building center
+// (30.86, _lng) and _indoorFix() (30.8605, _lng).
+FloorModel _floor0() => FloorModel(
+      buid: 'b1',
+      floorNumber: '0',
+      bottomLeftLat: 30.8580,
+      bottomLeftLng: 29.5810,
+      topRightLat: 30.8620,
+      topRightLng: 29.5845,
+    );
 
 PoiModel _room() => PoiModel(
       puid: 'room-104',

@@ -6,6 +6,7 @@ import 'package:anyplace_campusfind/data/models/floor_model.dart';
 import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
 import 'package:anyplace_campusfind/data/models/position_estimate.dart';
 import 'package:anyplace_campusfind/data/models/space_model.dart';
+import 'package:anyplace_campusfind/data/models/poi_model.dart';
 import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
 import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
 import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
@@ -57,7 +58,7 @@ class _FakeSpaceRepository implements SpaceRepository {
 
 class _FakePoiRepository implements PoiRepository {
   @override
-  Future<List<dynamic>> getPoisByFloor(String buid, String floor,
+  Future<List<PoiModel>> getPoisByFloor(String buid, String floor,
           {bool forceReload = false}) async =>
       const [];
 

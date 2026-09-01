@@ -6,8 +6,10 @@ import 'package:geolocator/geolocator.dart';
 
 import '../config/constants.dart';
 import '../data/datasources/anyplace_api_client.dart';
+import '../data/datasources/gate_policy_config.dart';
 import '../data/datasources/native_positioning_service.dart';
 import '../data/models/floor_model.dart';
+import '../data/models/campus_gate.dart';
 import '../data/models/floorplan_model.dart';
 import '../data/models/navigation_route_model.dart';
 import '../data/models/poi_model.dart';
@@ -19,10 +21,12 @@ import '../data/repositories/poi_repository.dart';
 import '../data/repositories/radiomap_repository.dart';
 import '../data/repositories/space_repository.dart';
 import '../data/repositories/cross_building_router.dart';
+import '../data/repositories/campus_gate_repository.dart';
 import '../data/repositories/custom_route_repository.dart';
 import '../data/models/user_location.dart';
 import '../services/search_service.dart';
 import '../services/cache_service.dart';
+import '../services/building_containment.dart';
 import '../utils/campus_scope.dart';
 import '../utils/category_deriver.dart';
 import 'location_provider.dart';
@@ -86,6 +90,8 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   final NativePositioningService _nativePositioningService;
   late final CrossBuildingRouter _crossBuildingRouter;
   final CustomRouteRepository _customRouteRepository = CustomRouteRepository();
+  final CampusGateRepository _campusGateRepository = CampusGateRepository();
+  final GatePolicyConfigLoader _gatePolicyConfigLoader = GatePolicyConfigLoader();
   CacheService? _cacheService;
 
   List<SpaceModel> _spaces = const [];
@@ -98,6 +104,15 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   FloorModel? _selectedFloor;
   bool _isLoadingFloors = false;
   String? _floorsErrorMessage;
+
+  // Building → floors index for building-containment (route classification).
+  // Additional data used ONLY by BuildingContainment; it is deliberately
+  // independent of (and never overwrites) the selected-floor state above.
+  // Populated for the selected building on floor load and for every building
+  // during loadAllFloorsAndPois. Server-real FloorModel bounds are the sole
+  // accepted geometry — the FloorplanModel "epsilon" fallback is never stored
+  // here, so it can never reach building classification.
+  final Map<String, List<FloorModel>> _floorsByBuid = {};
 
   // RadioMap State
   RadioMapStatus _radioMapStatus = RadioMapStatus.idle;
@@ -119,6 +134,14 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   PoiModel? _selectedPoi;
   String? _poiErrorMessage;
   int _poiRequestId = 0;
+
+  // Campus Gate state
+  //
+  // Gates are CAMPUS-SCOPED entities (from university gates.kmz), deliberately
+  // independent of the floor-scoped POI pipeline. Only the id of the currently
+  // shown gate is stored on the provider; the authoritative list and
+  // coordinates stay on the private CampusGateRepository.
+  CampusGate? _selectedGate;
 
   // Navigation Route State
   NavigationRouteStatus _navigationRouteStatus = NavigationRouteStatus.idle;
@@ -158,9 +181,12 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
            nativePositioningService ?? MethodChannelNativePositioningService(),
        _cacheService = cacheService {
     _crossBuildingRouter = CrossBuildingRouter(
-      isPositionInBuilding: (position, buildingBuid) {
-        return _isPositionInBuilding(position, buildingBuid);
-      },
+      // Memory-backed building→floors index, populated by
+      // loadFloorsForSelectedSpace and loadAllFloorsAndPois. Buildings whose
+      // floors are not yet indexed resolve as empty → BuildingContainment
+      // reports unknown → never classified as inside (safe outdoor default).
+      loadFloorsForBuilding: (buid) async =>
+          _floorsByBuid[buid] ?? const <FloorModel>[],
       loadPois: (buid, floorNumber) async {
         try {
           final client = AnyplaceApiClient();
@@ -181,6 +207,7 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
         }
       },
       customRouteRepository: _customRouteRepository,
+      campusGateRepository: _campusGateRepository,
     );
   }
 
@@ -239,15 +266,40 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     }
   }
 
-  /// Loads custom KMZ routes from bundled assets.
+  /// Loads custom KMZ routes AND campus gates from bundled assets.
   ///
   /// Should be called once during app startup, after spaces are loaded.
   /// Safe to call multiple times (no-op if already loaded).
   Future<void> loadCustomRoutes() async {
     debugPrint('[SpaceProvider] loadCustomRoutes: starting (isLoaded=${_customRouteRepository.isLoaded})');
-    if (_customRouteRepository.isLoaded) return;
-    await _customRouteRepository.loadRoutes();
-    debugPrint('[SpaceProvider] loadCustomRoutes: loaded=${_customRouteRepository.isLoaded}, routes=${_customRouteRepository.routes.length}');
+    if (!_customRouteRepository.isLoaded) {
+      await _customRouteRepository.loadRoutes();
+      debugPrint('[SpaceProvider] loadCustomRoutes: routes loaded=${_customRouteRepository.isLoaded}, routes=${_customRouteRepository.routes.length}');
+    }
+    // Load the campus gate data (from university gates.kmz) alongside the
+    // road network so the routing policy can select a preferred gate.
+    if (!_campusGateRepository.isLoaded) {
+      await _campusGateRepository.load();
+      debugPrint('[SpaceProvider] loadCustomRoutes: gates loaded=${_campusGateRepository.isLoaded}, gates=${_campusGateRepository.gates.length}');
+    }
+    // Load the gate routing policy (preferred + disabled gate ids) from
+    // gate_policy.json and apply it to the repository. The policy contains
+    // gate IDs only — never coordinates (those come exclusively from the KMZ).
+    try {
+      final policy = await _gatePolicyConfigLoader.load();
+      _campusGateRepository.setPreferredGatePolicy(
+        preferredGateId: policy.preferredGateId,
+        disabledGateIds: policy.disabledGateIds,
+      );
+      debugPrint(
+        '[SpaceProvider] loadCustomRoutes: gate policy applied '
+        'preferred=${policy.preferredGateId}, disabled=${policy.disabledGateIds}',
+      );
+    } catch (e) {
+      debugPrint(
+          '[SpaceProvider] loadCustomRoutes: gate policy load failed '
+          '(non-fatal): $e');
+    }
     notifyListeners();
   }
 
@@ -327,6 +379,18 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
   bool get isLoadingPois => _poiStatus == PoiStatus.loading;
   String? get poiErrorMessage => _poiErrorMessage;
   bool get hasSelectedPoi => _selectedPoi != null;
+
+  // Campus Gate Getters
+  //
+  // Exposes the authoritative gate list (coordinates + ids from
+  // university gates.kmz) without exposing the mutable repository. The list is
+  // unmodifiable, so callers can never mutate internal gate state. Disabled /
+  // non-preferred gates are still returned here — "visible" is independent of
+  // the routing policy that decides which gate is the automatic preferred
+  // entry point.
+  List<CampusGate> get campusGates => _campusGateRepository.gates;
+  CampusGate? get selectedGate => _selectedGate;
+  bool get hasSelectedGate => _selectedGate != null;
 
   // Navigation Getters
   NavigationRouteStatus get navigationRouteStatus => _navigationRouteStatus;
@@ -502,6 +566,7 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       _floors = const [];
       _floorsErrorMessage = null;
       _selectedPoi = null;
+      _selectedGate = null;
       _resetRadioMapState();
       _resetFloorplanState();
       _resetPoiState();
@@ -530,6 +595,7 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       _floors = const [];
       _floorsErrorMessage = null;
       _selectedPoi = null;
+      _selectedGate = null;
       _radioMapRequestId++;
       _floorplanRequestId++;
       _poiRequestId++;
@@ -625,6 +691,7 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       _resetNavigationRouteState();
     }
     _selectedPoi = poi;
+    _selectedGate = null;
     notifyListeners();
   }
 
@@ -635,6 +702,32 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       if (!_sessionLive) {
         _resetNavigationRouteState();
       }
+      notifyListeners();
+    }
+  }
+
+  /// Selects a campus gate for viewing its details.
+  ///
+  /// Gates are independent of the indoor POI pipeline, so selecting one clears
+  /// the indoor POI selection (only one destination detail shows at a time);
+  /// building/floor state is left untouched. Navigating to a gate never
+  /// changes the routing policy (preferred G2 stays the automatic entry gate).
+  void selectGate(CampusGate? gate) {
+    if (_selectedGate?.id == gate?.id && _selectedPoi == null) return;
+    if (_selectedPoi != null) {
+      _selectedPoi = null;
+      if (!_sessionLive) {
+        _resetNavigationRouteState();
+      }
+    }
+    _selectedGate = gate;
+    notifyListeners();
+  }
+
+  /// Clears the currently selected gate.
+  void clearSelectedGate() {
+    if (_selectedGate != null) {
+      _selectedGate = null;
       notifyListeners();
     }
   }
@@ -957,78 +1050,92 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
 
     debugPrint('[SpaceProvider] Strategy 3 (hybrid): outdoor route to POI...');
 
-    // Try custom KMZ routes first
+    // T5.6 / L8: if the user is ALREADY inside the destination building, do
+    // NOT synthesize a spurious outdoor OSRM/custom leg. Strategy 1/2 having
+    // failed means coordinate/POI routing was unavailable, so we keep the route
+    // purely indoor (entrance→target geometry) instead of a false "walk
+    // outside" from an indoor position.
+    final bool insideDestination =
+        _isPositionInBuilding(currentLocation.latLng, poi.buid);
+
+    // ── Strategy 3 outdoor leg (skipped when already indoors) ──
     List<LatLng>? outdoorPath;
-    if (_customRouteRepository.isLoaded) {
-      // Step 1: Try pure custom graph routing
-      final customPath = _customRouteRepository.findRoute(
-        currentLocation.latLng,
-        destLatLng,
-      );
-      if (customPath.length >= 2) {
-        outdoorPath = customPath;
-        debugPrint('[SpaceProvider] Strategy 3: using custom KMZ route (${outdoorPath.length} points)');
-      } else {
-      // Step 2: Try hybrid routing (edge-based snap)
-        final hybridPath = _customRouteRepository.findHybridRoute(
+    if (!insideDestination) {
+      // Try custom KMZ routes first
+      if (_customRouteRepository.isLoaded) {
+        // Step 1: Try pure custom graph routing
+        final customPath = _customRouteRepository.findRoute(
           currentLocation.latLng,
           destLatLng,
-          snapThreshold: 150.0,
         );
-        if (hybridPath != null && hybridPath.length >= 2) {
-          outdoorPath = hybridPath;
-          debugPrint('[SpaceProvider] Strategy 3: using hybrid custom route (${outdoorPath.length} points)');
+        if (customPath.length >= 2) {
+          outdoorPath = customPath;
+          debugPrint('[SpaceProvider] Strategy 3: using custom KMZ route (${outdoorPath.length} points)');
+        } else {
+          // Step 2: Try hybrid routing (edge-based snap)
+          final hybridPath = _customRouteRepository.findHybridRoute(
+            currentLocation.latLng,
+            destLatLng,
+            snapThreshold: 250.0,
+          );
+          if (hybridPath != null && hybridPath.length >= 2) {
+            outdoorPath = hybridPath;
+            debugPrint('[SpaceProvider] Strategy 3: using hybrid custom route (${outdoorPath.length} points)');
+          }
         }
       }
-    }
 
-    // Step 3: Try OSRM to nearest custom vertex + custom to destination
-    if (outdoorPath == null && _customRouteRepository.isLoaded) {
-      final osrmToCustomPath = await _buildOsrmToCustomRoute(
-        currentLocation.latLng,
-        destLatLng,
-      );
-      if (osrmToCustomPath != null && osrmToCustomPath.length >= 2) {
-        outdoorPath = osrmToCustomPath;
-        debugPrint('[SpaceProvider] Strategy 3: using OSRM->Custom route (${outdoorPath.length} points)');
-      }
-    }
-
-    // Step 4: Fallback to OSRM if custom routes didn't produce a path
-    if (outdoorPath == null) {
-      final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
-        fromLat: currentLocation.latitude,
-        fromLon: currentLocation.longitude,
-        toLat: destLatLng.latitude,
-        toLon: destLatLng.longitude,
-      );
-
-      if (osrmPath.length >= 2 && _customRouteRepository.isLoaded) {
-        // Try OSRM + Custom tail splice
-        final splicedPath = _customRouteRepository.spliceCustomTail(
-          osrmPath,
+      // Step 3: Try OSRM to nearest custom vertex + custom to destination
+      if (outdoorPath == null && _customRouteRepository.isLoaded) {
+        final gate = _campusGateRepository.preferredGate();
+        final osrmToCustomPath = await _buildOsrmToCustomRoute(
+          currentLocation.latLng,
           destLatLng,
-          connectionThreshold: 150.0,
+          gateEntry: gate,
         );
-        if (splicedPath != null) {
-          outdoorPath = splicedPath;
-          debugPrint('[SpaceProvider] Strategy 3: using OSRM+Custom splice (${outdoorPath.length} points)');
+        if (osrmToCustomPath != null && osrmToCustomPath.length >= 2) {
+          outdoorPath = osrmToCustomPath;
+          debugPrint('[SpaceProvider] Strategy 3: using OSRM->Custom route (${outdoorPath.length} points)');
+        }
+      }
+
+      // Step 4: Fallback to OSRM if custom routes didn't produce a path
+      if (outdoorPath == null) {
+        final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
+          fromLat: currentLocation.latitude,
+          fromLon: currentLocation.longitude,
+          toLat: destLatLng.latitude,
+          toLon: destLatLng.longitude,
+        );
+
+        if (osrmPath.length >= 2 && _customRouteRepository.isLoaded) {
+          // Try OSRM + Custom tail splice
+          final splicedPath = _customRouteRepository.spliceCustomTail(
+            osrmPath,
+            destLatLng,
+            connectionThreshold: 150.0,
+          );
+          if (splicedPath != null) {
+            outdoorPath = splicedPath;
+            debugPrint('[SpaceProvider] Strategy 3: using OSRM+Custom splice (${outdoorPath.length} points)');
+          } else {
+            outdoorPath = osrmPath;
+          }
         } else {
           outdoorPath = osrmPath;
         }
-      } else {
-        outdoorPath = osrmPath;
       }
     }
 
     final outdoorPoints = <NavigationRoutePoint>[];
-    if (outdoorPath.length >= 2) {
+    if (outdoorPath != null && outdoorPath.length >= 2) {
       for (final pt in outdoorPath) {
         outdoorPoints.add(NavigationRoutePoint.outdoor(latitude: pt.latitude,
           longitude: pt.longitude));
       }
-    } else {
-      // Fallback: straight line if OSRM fails
+    } else if (!insideDestination) {
+      // Fallback: straight line if OSRM fails (only when an outdoor leg was
+      // actually warranted).
       outdoorPoints.addAll([
         NavigationRoutePoint.outdoor(latitude: currentLocation.latitude,
           longitude: currentLocation.longitude),
@@ -1042,6 +1149,8 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
         ),
       ]);
     }
+    // When insideDestination, outdoorPoints stays empty → the hybrid route
+    // below is purely indoor.
 
     // Try to get indoor route from entrance to target POI via connectors
     NavigationRouteModel? indoorRoute;
@@ -1271,10 +1380,15 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
 
   /// Builds a combined route: OSRM from user to nearest custom vertex,
   /// then custom route from there to the destination.
+  ///
+  /// When a preferred [CampusGate] is configured, the OSRM leg is routed to
+  /// that gate and the campus road graph is entered at the gate's nearest
+  /// vertex — `outside → preferred gate → campus roads → destination`.
   Future<List<LatLng>?> _buildOsrmToCustomRoute(
     LatLng userLocation,
-    LatLng destination,
-  ) async {
+    LatLng destination, {
+    CampusGate? gateEntry,
+  }) async {
     final customRepo = _customRouteRepository;
     if (!customRepo.isLoaded) return null;
 
@@ -1290,57 +1404,84 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
 
     debugPrint(
       '[SpaceProvider] osrm→custom: dest vertex=$destVertexIdx, '
-      '${destVertex.$2.toStringAsFixed(0)}m from destination',
+      '${destVertex.$2.toStringAsFixed(0)}m from destination, '
+      'gate=${gateEntry?.id ?? "none"}',
     );
 
-    // Step 1: Get route endpoints (campus road entrances on public roads)
+    // Step 1: When a configured gate is provided, enter the campus road graph
+    // at the graph vertex nearest the gate and drive OSRM to that exact gate.
+    int? bestEntryIdx;
+    if (gateEntry != null) {
+      final gateVertex = customRepo.graph.nearestVertex(
+        LatLng(gateEntry.latitude, gateEntry.longitude),
+        maxDistance: 750.0,
+      );
+      if (gateVertex == null) {
+        debugPrint(
+          '[SpaceProvider] osrm→custom: gate ${gateEntry.id} is not near the '
+          'campus road graph; falling back to endpoint logic',
+        );
+      } else {
+        bestEntryIdx = gateVertex.$1;
+        debugPrint(
+          '[SpaceProvider] osrm→custom: gate ${gateEntry.id} snapped to graph '
+          'vertex $bestEntryIdx (${gateVertex.$2.toStringAsFixed(0)}m from gate)',
+        );
+      }
+    }
+
+    // Step 1b: Route endpoints (campus road entrances on public roads)
     final endpoints = customRepo.graph.getRouteEndpoints();
     debugPrint('[SpaceProvider] osrm→custom: ${endpoints.length} route endpoints');
 
-    if (endpoints.isEmpty) {
+    if (endpoints.isEmpty && bestEntryIdx == null) {
       debugPrint('[SpaceProvider] osrm→custom: no route endpoints');
       return null;
     }
 
-    // Step 2: Among endpoints connected to destVertex, find closest to user
-    int? bestEntryIdx;
-    double bestEntryDist = double.infinity;
+    // Step 2: OSRM target = gate location when resolved, otherwise pick a
+    // route endpoint (prefer one near the user that connects to the dest;
+    // fall back to the endpoint nearest the destination).
+    LatLng entryPos;
+    if (bestEntryIdx != null) {
+      entryPos = LatLng(gateEntry!.latitude, gateEntry.longitude);
+    } else {
+      int? nearestToDestIdx;
+      double nearestToDestDist = double.infinity;
 
-    for (final (epIdx, epPos) in endpoints) {
-      final path = customRepo.graph.shortestPath(epIdx, destVertexIdx);
-      if (path.isEmpty) continue;
+      for (final (epIdx, epPos) in endpoints) {
+        final distToDest = Geolocator.distanceBetween(
+          destination.latitude,
+          destination.longitude,
+          epPos.latitude,
+          epPos.longitude,
+        );
+        if (distToDest < nearestToDestDist) {
+          nearestToDestDist = distToDest;
+          nearestToDestIdx = epIdx;
+        }
+      }
 
-      final dist = Geolocator.distanceBetween(
+      bestEntryIdx = nearestToDestIdx;
+      if (bestEntryIdx == null) {
+        debugPrint('[SpaceProvider] osrm→custom: no endpoints at all');
+        return null;
+      }
+      entryPos = customRepo.graph.getVertexPosition(bestEntryIdx);
+
+      final entryUserDist = Geolocator.distanceBetween(
         userLocation.latitude,
         userLocation.longitude,
-        epPos.latitude,
-        epPos.longitude,
+        entryPos.latitude,
+        entryPos.longitude,
       );
-
       debugPrint(
-        '[SpaceProvider] osrm→custom: endpoint $epIdx, '
-        '${dist.toStringAsFixed(0)}m from user, '
-        'path to dest: ${path.length} vertices',
+        '[SpaceProvider] osrm→custom: best entry=$bestEntryIdx '
+        '(${entryUserDist.toStringAsFixed(0)}m from user)',
       );
-
-      if (dist < bestEntryDist) {
-        bestEntryDist = dist;
-        bestEntryIdx = epIdx;
-      }
     }
 
-    if (bestEntryIdx == null) {
-      debugPrint('[SpaceProvider] osrm→custom: no endpoint connected to dest');
-      return null;
-    }
-
-    final entryPos = customRepo.graph.getVertexPosition(bestEntryIdx);
-    debugPrint(
-      '[SpaceProvider] osrm→custom: best entry=$bestEntryIdx, '
-      '${bestEntryDist.toStringAsFixed(0)}m from user',
-    );
-
-    // Step 3: OSRM from user to the campus entrance endpoint
+    // Step 3: OSRM from user to the campus entrance (gate or endpoint)
     final osrmResult = await AnyplaceApiClient.fetchOutdoorWalkingRouteWithMetadata(
       fromLat: userLocation.latitude,
       fromLon: userLocation.longitude,
@@ -1355,11 +1496,12 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
 
     final osrmPath = osrmResult.points;
 
-    // Step 4: Route through custom graph from endpoint to destination
+    // Step 4: Route through custom graph from entry vertex to destination
     final customPath = customRepo.graph.shortestPath(bestEntryIdx, destVertexIdx);
 
     if (customPath.isEmpty) {
-      debugPrint('[SpaceProvider] osrm→custom: no graph path $bestEntryIdx → $destVertexIdx');
+      debugPrint('[SpaceProvider] osrm→custom: no graph path $bestEntryIdx → $destVertexIdx; '
+          'adding straight-line walk from entry to destination');
       return [...osrmPath, destination];
     }
 
@@ -1812,7 +1954,7 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
         final hybridPath = _customRouteRepository.findHybridRoute(
           currentLocation.latLng,
           destLatLng,
-          snapThreshold: 150.0,
+          snapThreshold: 250.0,
         );
         if (hybridPath != null && hybridPath.length >= 2) {
           outdoorPath = hybridPath;
@@ -1823,9 +1965,11 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
 
     // Step 3: Try OSRM to nearest custom vertex + custom to destination
     if (outdoorPath == null && _customRouteRepository.isLoaded) {
+      final gate = _campusGateRepository.preferredGate();
       final osrmToCustomPath = await _buildOsrmToCustomRoute(
         currentLocation.latLng,
         destLatLng,
+        gateEntry: gate,
       );
       if (osrmToCustomPath != null && osrmToCustomPath.length >= 2) {
         outdoorPath = osrmToCustomPath;
@@ -1899,6 +2043,136 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
     notifyListeners();
   }
 
+  /// Routes the user to a campus gate, using the gate's EXACT coordinates
+  /// (from `university gates.kmz`) as the destination.
+  ///
+  /// A gate is an outdoor, campus-scoped destination — no building/floor/POI
+  /// layer is involved. This reuses the existing outdoor routing cascade
+  /// (custom road graph → hybrid → OSRM-to-custom → OSRM) so the route follows
+  /// the campus road network wherever the gate is graph-connected.
+  ///
+  /// IMPORTANT (gate policy separation): the selected [gate] IS the
+  /// destination and is deliberately NOT passed as a `gateEntry` to
+  /// [_buildOsrmToCustomRoute] — so the preferred automatic entry gate (G2)
+  /// is never forced as an intermediate point. Routing to a gate never changes
+  /// the routing policy.
+  Future<bool> requestRouteToGate(CampusGate gate) async {
+    final locationProvider = _locationProvider;
+    final currentLocation = locationProvider?.currentLocation;
+
+    if (locationProvider == null || currentLocation == null) {
+      _navigationRouteStatus = NavigationRouteStatus.error;
+      _navigationRouteErrorMessage =
+          'Current location is unavailable. Center on your location first.';
+      notifyListeners();
+      return false;
+    }
+
+    final destLatLng = LatLng(gate.latitude, gate.longitude);
+    final fromLatLng = currentLocation.latLng;
+
+    debugPrint(
+      '[SpaceProvider] requestRouteToGate: ${gate.id} '
+      '(destination: ${gate.latitude},${gate.longitude}, '
+      'user GPS: ${currentLocation.latitude},${currentLocation.longitude})',
+    );
+
+    final int requestId = ++_navigationRouteRequestId;
+    _navigationRouteStatus = NavigationRouteStatus.loading;
+    _navigationRouteErrorMessage = null;
+    _navigationDestinationPuid = null;
+    notifyListeners();
+
+    List<LatLng>? outdoorPath;
+
+    // Strategy 1: pure custom road-graph routing (both endpoints graph-near).
+    if (_customRouteRepository.isLoaded) {
+      final customPath =
+          _customRouteRepository.findRoute(fromLatLng, destLatLng);
+      if (customPath.length >= 2) {
+        outdoorPath = customPath;
+      } else {
+        // Strategy 2: edge-based hybrid routing.
+        final hybridPath = _customRouteRepository.findHybridRoute(
+          fromLatLng,
+          destLatLng,
+          snapThreshold: 250.0,
+        );
+        if (hybridPath != null && hybridPath.length >= 2) {
+          outdoorPath = hybridPath;
+        }
+      }
+    }
+
+    // Strategy 3: OSRM to a campus entry + custom graph to the gate.
+    // No gateEntry is supplied — the gate IS the destination.
+    if (outdoorPath == null && _customRouteRepository.isLoaded) {
+      final osrmToCustomPath = await _buildOsrmToCustomRoute(
+        fromLatLng,
+        destLatLng,
+        gateEntry: null,
+      );
+      if (osrmToCustomPath != null && osrmToCustomPath.length >= 2) {
+        outdoorPath = osrmToCustomPath;
+      }
+    }
+
+    // Strategy 4: OSRM fallback (with custom-tail splice when routes loaded).
+    if (outdoorPath == null) {
+      final osrmPath = await AnyplaceApiClient.fetchOutdoorWalkingRoute(
+        fromLat: fromLatLng.latitude,
+        fromLon: fromLatLng.longitude,
+        toLat: destLatLng.latitude,
+        toLon: destLatLng.longitude,
+      );
+      if (requestId != _navigationRouteRequestId) return false;
+      if (osrmPath.length >= 2 && _customRouteRepository.isLoaded) {
+        final splicedPath = _customRouteRepository.spliceCustomTail(
+          osrmPath,
+          destLatLng,
+          connectionThreshold: 150.0,
+        );
+        outdoorPath = splicedPath ?? osrmPath;
+      } else {
+        outdoorPath = osrmPath;
+      }
+    }
+
+    if (requestId != _navigationRouteRequestId) return false;
+
+    if (outdoorPath.length < 2) {
+      _navigationRouteStatus = NavigationRouteStatus.error;
+      _activeNavigationRoute = null;
+      _navigationRouteErrorMessage =
+          'Could not build a route to gate ${gate.id}.';
+      debugPrint('[SpaceProvider] requestRouteToGate: no outdoor path found');
+      notifyListeners();
+      return false;
+    }
+    final outdoorPoints = <NavigationRoutePoint>[
+      for (final pt in outdoorPath)
+        NavigationRoutePoint.outdoor(
+          latitude: pt.latitude,
+          longitude: pt.longitude,
+        ),
+    ];
+
+    final route = NavigationRouteModel.hybrid(
+      outdoorPoints: outdoorPoints,
+      indoorRoute: null,
+    );
+
+    _navigationRouteStatus = NavigationRouteStatus.ready;
+    _activeNavigationRoute = route;
+    _navigationRouteErrorMessage = null;
+    notifyListeners();
+
+    debugPrint(
+      '[SpaceProvider] requestRouteToGate: ${route.points.length} outdoor points',
+    );
+    return route.hasRenderablePath;
+  }
+
   /// Fetches floors for the currently selected space.
   Future<void> loadFloorsForSelectedSpace({bool forceReload = false}) async {
     final targetBuid = _selectedSpace?.buid;
@@ -1929,6 +2203,7 @@ class SpaceProvider extends ChangeNotifier implements NavigationRouteScope {
       // Verify that the building did not change while request was awaiting
       if (_selectedSpace?.buid == targetBuid) {
         _floors = fetchedFloors;
+        _floorsByBuid[targetBuid] = List<FloorModel>.unmodifiable(fetchedFloors);
         _floorsErrorMessage = null;
         debugPrint(
           '[SpaceProvider] loadFloorsForSelectedSpace: successfully set ${fetchedFloors.length} floors for $targetBuid',
@@ -2395,6 +2670,8 @@ if (floorplan != null) {
 
         if (result.error == null && result.floors.isNotEmpty) {
           searchService.addFloors(result.buid, result.floors);
+          _floorsByBuid[result.buid] =
+              List<FloorModel>.unmodifiable(result.floors);
 
           // Fetch POIs for each floor sequentially (not all at once)
           for (final floor in result.floors) {
@@ -2424,47 +2701,50 @@ if (floorplan != null) {
     searchService.markSyncComplete();
   }
 
-  /// Checks if a [position] is inside a building's bounding box.
-  /// Uses a simple radius check from the building centroid.
+  /// Checks if a [position] is inside [buildingBuid] using the canonical
+  /// [BuildingContainment] service over that building's server-real floor
+  /// bounds. Returns false for [BuildingContainmentStatus.unknown] (a building
+  /// with no reliable geometry is never reported as inside).
   bool _isPositionInBuilding(LatLng position, String buildingBuid) {
-    final building = _spaces.firstWhere(
-      (s) => s.buid == buildingBuid,
-      orElse: () => const SpaceModel(
-        buid: '', name: '', latitude: 0, longitude: 0,
-      ),
-    );
-    if (building.buid.isEmpty) return false;
-
-    // Simple distance check: if within 100m of building centroid, consider inside
-    final distance = Geolocator.distanceBetween(
-      position.latitude,
-      position.longitude,
-      building.latitude,
-      building.longitude,
-    );
-    return distance < 100; // 100m radius threshold
+    final floors = _floorsByBuid[buildingBuid] ?? const <FloorModel>[];
+    return BuildingContainment.isInside(position, floors);
   }
 
-  /// Detects which building the user is inside by checking distance to all buildings.
-  /// Returns the closest building if within 100m, or null if outdoors.
+  /// Detects which building the user is inside using the canonical
+  /// [BuildingContainment] service over each building's server-real floor
+  /// bounds. Returns null if the user is outside every building (or every
+  /// building's geometry is unknown).
+  ///
+  /// Resolution among overlapping building rectangles is deterministic:
+  /// the containing building whose matched floor bounds are the STRICTEST
+  /// (smallest) wins, with a stable buid tie-break. No centroid/distance
+  /// heuristic is applied.
   SpaceModel? _detectBuildingFromPolygon(UserLocation userLocation) {
-    SpaceModel? closestBuilding;
-    double closestDistance = double.infinity;
+    final point = userLocation.latLng;
+    SpaceModel? result;
+    double? bestSpan;
+    String? bestBuid;
 
     for (final building in _spaces) {
-      final distance = Geolocator.distanceBetween(
-        userLocation.latitude,
-        userLocation.longitude,
-        building.latitude,
-        building.longitude,
+      final floors = _floorsByBuid[building.buid] ?? const <FloorModel>[];
+      final containment = BuildingContainment.classify(point, floors);
+      if (!containment.isInside || containment.containingFloor == null) {
+        continue;
+      }
+      final span = BuildingContainment.approxSpanMeters(
+        containment.containingFloor!,
       );
-      if (distance < 100 && distance < closestDistance) {
-        closestDistance = distance;
-        closestBuilding = building;
+      final better = result == null ||
+          span < bestSpan! ||
+          (span == bestSpan && building.buid.compareTo(bestBuid!) < 0);
+      if (better) {
+        result = building;
+        bestSpan = span;
+        bestBuid = building.buid;
       }
     }
 
-    return closestBuilding;
+    return result;
   }
 }
 

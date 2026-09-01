@@ -7,6 +7,7 @@ import 'package:provider/provider.dart' as provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
+import 'package:anyplace_campusfind/providers/connectivity_provider.dart';
 import 'package:anyplace_campusfind/providers/providers.dart';
 import 'package:anyplace_campusfind/screens/main_shell.dart';
 import 'package:anyplace_campusfind/screens/profile_screen.dart';
@@ -82,11 +83,10 @@ void main() {
     expect(find.byType(CampusContentPanel), findsOneWidget);
   });
 
-  testWidgets('shows offline banner when data came from snapshot',
+  testWidgets('shows offline banner when connectivity is lost',
       (tester) async {
     container = ProviderContainer(overrides: [
-      bulkLoadProvider.overrideWith(
-          (ref) async => const BulkLoadResult(fromOffline: true)),
+      isOnlineProvider.overrideWithValue(false),
       cacheServiceProvider.overrideWithValue(cache),
     ]);
     addTearDown(container.dispose);

@@ -75,6 +75,19 @@ class NavigationStatusBar extends StatelessWidget {
                           ),
                         ),
                       ),
+                    if (nav.isPartialRoute)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          nav.activeRoute?.partialRouteWarning ??
+                              'Route incomplete — follow the available path and '
+                                  'navigate manually where needed',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFFB45309),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),

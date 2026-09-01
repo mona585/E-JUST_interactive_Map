@@ -14,8 +14,8 @@ import '../data/models/route_progress.dart';
 import '../data/models/route_segment.dart';
 import '../data/models/space_model.dart';
 import '../data/models/user_location.dart';
-import '../data/repositories/navigation_repository.dart';
-import 'location_provider.dart';
+  import '../data/repositories/navigation_repository.dart';
+  import 'location_provider.dart';
 import 'navigation_state_model.dart';
 
 /// Legacy top-level navigation phase.
@@ -1522,6 +1522,13 @@ class NavigationController extends ChangeNotifier {
     }
   }
 
+  /// Whether [gpsLocation] is physically outside the building currently being
+  /// navigated. EXIT detection deliberately tolerates missing/imperfect
+  /// geometry: it checks the active floorplan's real bounds first, then falls
+  /// back to the distance-from-building-center threshold. This is existing
+  /// navigation behavior and must be preserved (it is distinct from the
+  /// start-of-journey building-IN classification, which uses the canonical
+  /// [BuildingContainment] service).
   bool _isOutsideBuilding(UserLocation gpsLocation) {
     final floorplan = _spaceScope.activeFloorplan;
     if (floorplan != null && floorplan.hasValidBounds) {
@@ -1532,7 +1539,8 @@ class NavigationController extends ChangeNotifier {
     // Fallback: distance from building center
     final building = _spaceScope.selectedSpace;
     if (building != null) {
-      final dist = Geolocator.distanceBetween(gpsLocation.latitude, gpsLocation.longitude, building.latitude, building.longitude);
+      final dist = Geolocator.distanceBetween(gpsLocation.latitude,
+          gpsLocation.longitude, building.latitude, building.longitude);
       return dist > NavigationConfig.exitDistanceThreshold;
     }
 

@@ -269,6 +269,129 @@ void main() {
     });
   });
 
+  group('CustomRouteGraph vertex-to-edge junction merge', () {
+    late CustomRouteGraph graph;
+
+    /// Counts connected components over the built graph (via edge topology).
+    int componentCount(CustomRouteGraph g) {
+      final adj = List.generate(g.vertexCount, (_) => <int>[]);
+      for (var e = 0; e < g.edgeCount; e++) {
+        adj[g.edgeFromVertex(e)].add(g.edgeToVertex(e));
+        adj[g.edgeToVertex(e)].add(g.edgeFromVertex(e));
+      }
+      final visited = List<bool>.filled(g.vertexCount, false);
+      var comps = 0;
+      for (var v = 0; v < g.vertexCount; v++) {
+        if (visited[v]) continue;
+        comps++;
+        final stack = <int>[v];
+        visited[v] = true;
+        while (stack.isNotEmpty) {
+          final u = stack.removeLast();
+          for (final w in adj[u]) {
+            if (!visited[w]) {
+              visited[w] = true;
+              stack.add(w);
+            }
+          }
+        }
+      }
+      return comps;
+    }
+
+    test('dangling endpoint terminating on another line interior is connected', () {
+      graph = CustomRouteGraph();
+      // Road A runs horizontally through (30.8590,29.5630) -> (30.8610,29.5630).
+      final roadA = CustomRoute(
+        name: 'A',
+        vertices: const [
+          LatLng(30.8590, 29.5630),
+          LatLng(30.8610, 29.5630),
+        ],
+      );
+      // Road B ends ON the interior of road A near its midpoint, but its tip
+      // is up to ~10m short — a real junction drawn loosely, so the tip does
+      // NOT coincide with a vertex of A.
+      final roadB = CustomRoute(
+        name: 'B',
+        vertices: const [
+          LatLng(30.8600, 29.5640),
+          LatLng(30.8600, 29.5631), // near road A's interior, not a vertex
+        ],
+      );
+
+      // Before the merge the two roads are in separate components and cannot
+      // route to each other.
+      graph.build([roadA]);
+      final before = componentCount(graph);
+      expect(before, 1);
+
+      graph = CustomRouteGraph();
+      graph.build([roadA, roadB]);
+      expect(componentCount(graph), 1, reason: 'roads must be fully connected');
+
+      // Routing across the two roads now works.
+      final path = graph.routeBetween(
+        const LatLng(30.8590, 29.5630), // road A start
+        const LatLng(30.8600, 29.5640), // road B start
+      );
+      expect(path.length, greaterThanOrEqualTo(2));
+    });
+
+    test('vertex-to-edge merge is independent of route document order', () {
+      final roadA = CustomRoute(
+        name: 'A',
+        vertices: const [
+          LatLng(30.8590, 29.5630),
+          LatLng(30.8610, 29.5630),
+        ],
+      );
+      final roadB = CustomRoute(
+        name: 'B',
+        vertices: const [
+          LatLng(30.8600, 29.5640),
+          LatLng(30.8600, 29.5631),
+        ],
+      );
+
+      final gAb = CustomRouteGraph()..build([roadA, roadB]);
+      final gBa = CustomRouteGraph()..build([roadB, roadA]);
+      expect(componentCount(gAb), 1, reason: 'order A,B must connect');
+      expect(componentCount(gBa), 1, reason: 'order B,A must also connect');
+
+      // Routes must route to each other regardless of build order.
+      final pathBA = gBa.routeBetween(
+        const LatLng(30.8600, 29.5640),
+        const LatLng(30.8590, 29.5630),
+      );
+      expect(pathBA.length, greaterThanOrEqualTo(2));
+    });
+
+    test('same-threshold preserves vertex-to-vertex merging', () {
+      graph = CustomRouteGraph();
+      // Classic shared-point junction (vertex-to-vertex): both roads meet at
+      // exactly (30.8600, 29.5630).
+      final r1 = CustomRoute(
+        name: 'r1',
+        vertices: const [
+          LatLng(30.8590, 29.5630),
+          LatLng(30.8600, 29.5630),
+        ],
+      );
+      final r2 = CustomRoute(
+        name: 'r2',
+        vertices: const [
+          LatLng(30.8600, 29.5630),
+          LatLng(30.8600, 29.5640),
+        ],
+      );
+      graph.build([r1, r2], junctionThresholdMeters: 15.0);
+      // Shared point is reused (not duplicated): 3 unique vertices.
+      expect(graph.vertexCount, 3);
+      expect(componentCount(graph), 1);
+    });
+  });
+
   group('CustomRouteModel', () {
     test('copyWith preserves original values', () {
       final route = CustomRoute(

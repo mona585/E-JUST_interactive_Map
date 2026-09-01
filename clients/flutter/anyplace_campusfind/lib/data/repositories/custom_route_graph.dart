@@ -106,6 +106,15 @@ class CustomRouteGraph {
   ///
   /// Junctions are detected by proximity: vertices from different routes
   /// that are within [junctionThresholdMeters] are merged into a single vertex.
+  ///
+  /// Beyond vertex-to-vertex merging, this also performs a convergence pass
+  /// that connects a route whose endpoint terminates *on the interior* of
+  /// another route's segment (a vertex-to-edge junction) back into that
+  /// segment by splitting it. Campus road KMZs are typically drawn with road
+  /// endpoints that touch the body of another road rather than meeting at a
+  /// shared point; without this pass such roads stay in separate connected
+  /// components and become unroutable. No vertex coordinate is ever moved,
+  /// only graph topology is added.
   void build(
     List<CustomRoute> routes, {
     double junctionThresholdMeters = 15.0,
@@ -118,8 +127,10 @@ class CustomRouteGraph {
 
     if (routes.isEmpty) return;
 
-    // Step 1: Collect all unique vertices with junction merging
+    // Step 1: Collect all unique vertices with vertex-to-vertex merging and
+    // record the raw per-route edges (as endpoint vertex indices).
     final vertexMap = <_VertexKey, int>{}; // key → vertex index
+    final rawEdges = <({int from, int to, int route})>[];
 
     for (var r = 0; r < routes.length; r++) {
       final route = routes[r];
@@ -128,7 +139,6 @@ class CustomRouteGraph {
       for (final vert in route.vertices) {
         final key = _VertexKey(vert);
 
-        // Check if any existing vertex is within junction threshold
         int? existingIdx;
         for (final entry in vertexMap.entries) {
           final existing = _vertices[entry.value];
@@ -157,30 +167,40 @@ class CustomRouteGraph {
         ));
       }
 
-      // Step 2: Create edges between consecutive vertices
+      // Step 2: Record edges between consecutive vertices
       for (var i = 0; i < graphIndices.length - 1; i++) {
-        final from = graphIndices[i];
-        final to = graphIndices[i + 1];
-        final dist = _haversine(
-          _vertices[from].position,
-          _vertices[to].position,
-        );
-
-        final edgeIdx = _edges.length;
-        _edges.add(_Edge(
-          fromVertex: from,
-          toVertex: to,
-          routeIndex: r,
-          lengthMeters: dist,
+        rawEdges.add((
+          from: graphIndices[i],
+          to: graphIndices[i + 1],
+          route: r,
         ));
-        _edgeRouteIndex.add(r);
-
-        _vertices[from].adjacentEdges.add(edgeIdx);
-        _vertices[to].adjacentEdges.add(edgeIdx);
       }
     }
 
-    // Step 3: Detect junctions (vertices with 3+ adjacent edges)
+    // Step 2b: Convergence pass — reconnect dangling endpoints onto the
+    // interior of a nearby segment within the junction threshold.
+    _snapDanglingEndpointsOntoEdges(rawEdges, junctionThresholdMeters);
+
+    // Step 3: Materialize concrete edges + adjacency + junctions.
+    for (final e in rawEdges) {
+      final from = e.from;
+      final to = e.to;
+      final edgeIdx = _edges.length;
+      final dist = _haversine(_vertices[from].position, _vertices[to].position);
+
+      _edges.add(_Edge(
+        fromVertex: from,
+        toVertex: to,
+        routeIndex: e.route,
+        lengthMeters: dist,
+      ));
+      _edgeRouteIndex.add(e.route);
+
+      _vertices[from].adjacentEdges.add(edgeIdx);
+      _vertices[to].adjacentEdges.add(edgeIdx);
+    }
+
+    // Step 3b: Detect junctions (vertices with 3+ adjacent edges).
     for (var i = 0; i < _vertices.length; i++) {
       if (_vertices[i].adjacentEdges.length >= 3) {
         _junctionIndices.add(i);
@@ -192,6 +212,70 @@ class CustomRouteGraph {
       '${_edges.length} edges, ${_junctionIndices.length} junctions, '
       '${_routes.length} routes',
     );
+  }
+
+  /// Reconnects dangling endpoints into the graph.
+  ///
+  /// A vertex that currently has degree 0 or 1 (an unconnected route endpoint)
+  /// whose perpendicular projection onto an existing segment falls within
+  /// [thresholdMeters] is spliced onto that segment: the segment is split at
+  /// the projection and the endpoint vertex becomes its connection point.
+  /// This iterates to a fixpoint so the result is independent of the document
+  /// order in which routes were added.
+  ///
+  /// Neither [rawEdges] endpoints nor vertex positions are modified — only
+  /// the edge topology is extended (a dangling endpoint is linked onto the
+  /// nearest genuine road segment).
+  void _snapDanglingEndpointsOntoEdges(
+    List<({int from, int to, int route})> rawEdges,
+    double thresholdMeters,
+  ) {
+    var merged = true;
+    while (merged) {
+      merged = false;
+
+      for (var v = 0; v < _vertices.length; v++) {
+        final degree = rawEdges
+            .where((e) => e.from == v || e.to == v)
+            .length;
+        // Only dangling endpoints are candidates; interior points are assumed
+        // to already be routed correctly and are not moved.
+        if (degree > 1) continue;
+
+        // Find the nearest segment (not containing v) whose interior is within
+        // the threshold of v.
+        int bestEdge = -1;
+        double bestDist = double.infinity;
+        for (var e = 0; e < rawEdges.length; e++) {
+          final edge = rawEdges[e];
+          if (edge.from == v || edge.to == v) continue;
+
+          final a = _vertices[edge.from].position;
+          final b = _vertices[edge.to].position;
+          final proj = _projectOntoEdgeWithProgress(_vertices[v].position, a, b);
+
+          // Only split the interior; near-endpoint cases are already handled
+          // by vertex-to-vertex merging.
+          if (proj.t <= 0.05 || proj.t >= 0.95) continue;
+
+          final dist = _haversine(_vertices[v].position, proj.point);
+          if (dist < thresholdMeters && dist < bestDist) {
+            bestDist = dist;
+            bestEdge = e;
+          }
+        }
+
+        if (bestEdge < 0) continue;
+
+        // Split edge (from, to) into (from, v) and (v, to), routing the
+        // dangling endpoint v through the segment it terminates on.
+        final edge = rawEdges[bestEdge];
+        rawEdges.removeAt(bestEdge);
+        rawEdges.add((from: edge.from, to: v, route: edge.route));
+        rawEdges.add((from: v, to: edge.to, route: edge.route));
+        merged = true;
+      }
+    }
   }
 
   /// Finds the nearest edge to [position] and returns a [SnapResult].

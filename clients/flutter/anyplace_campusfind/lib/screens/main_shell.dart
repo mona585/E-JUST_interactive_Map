@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart' as provider;
 
 import '../config/theme.dart';
 import '../providers/bulk_load_provider.dart';
+import '../providers/connectivity_provider.dart';
+import '../state/location_provider.dart';
 import '../providers/panel_provider.dart';
 import '../providers/providers.dart';
 import '../providers/search_provider.dart';
@@ -98,6 +101,10 @@ class _MainShellState extends ConsumerState<MainShell> {
   @override
   Widget build(BuildContext context) {
     final bulkLoad = ref.watch(bulkLoadProvider);
+    final online = ref.watch(isOnlineProvider);
+    final loc = provider.Provider.of<LocationProvider>(context);
+    final permDenied = loc.status == LocationStateStatus.permissionDenied ||
+        loc.status == LocationStateStatus.permissionDeniedForever;
     wireCacheNotifications(ref);
 
     final navActive = context.select<NavigationController, bool>(
@@ -120,7 +127,42 @@ class _MainShellState extends ConsumerState<MainShell> {
       body: Column(
         key: const ValueKey('main_shell'),
         children: [
-          if (bulkLoad.hasValue && bulkLoad.value!.fromOffline)
+          if (permDenied)
+            Material(
+              color: const Color(0xFFFEE2E2),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_off, size: 16, color: Color(0xFFB91C1C)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        loc.errorMessage ?? 'Location permission required',
+                        style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 13),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        if (loc.status ==
+                            LocationStateStatus.permissionDeniedForever) {
+                          Geolocator.openAppSettings();
+                        } else {
+                          loc.requestAndCenter();
+                        }
+                      },
+                      child: Text(
+                        loc.status == LocationStateStatus.permissionDeniedForever
+                            ? 'Settings'
+                            : 'Grant',
+                        style: const TextStyle(color: Color(0xFFB91C1C)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (!online)
             Material(
               color: const Color(0xFFFFF3E0),
               child: Padding(
@@ -134,7 +176,7 @@ class _MainShellState extends ConsumerState<MainShell> {
                           style: TextStyle(color: Color(0xFFE65100), fontSize: 13)),
                     ),
                     TextButton(
-                      onPressed: () => ref.invalidate(bulkLoadProvider),
+                      onPressed: () => ref.invalidate(isOnlineProvider),
                       child: const Text('Retry', style: TextStyle(color: Color(0xFFE65100))),
                     ),
                   ],

@@ -1,0 +1,4 @@
+{
+  "preferredGateId": "G2",
+  "disabledGateIds": ["G1", "G3", "G4"]
+}

@@ -458,10 +458,17 @@ class AnyplaceApiClient {
 
       // Accumulate streamed chunks; Stream.timeout measures the gap between
       // events, so it acts as a stall (inter-chunk silence) watchdog.
-      final chunks = await streamed.stream
-          .timeout(effectiveStall)
-          .toList()
-          .timeout(ApiConfig.floorplanImageTimeout);
+      final List<List<int>> chunks;
+      try {
+        chunks = await streamed.stream
+            .timeout(effectiveStall)
+            .toList()
+            .timeout(ApiConfig.floorplanImageTimeout);
+      } on TimeoutException {
+        // A stall (or the overall budget) surfaces as a clear, retryable
+        // timeout error rather than a raw TimeoutException.
+        throw const ApiException('Connection to Anyplace backend timed out.');
+      }
       final bodyBytes = Uint8List(
         chunks.fold<int>(0, (total, chunk) => total + chunk.length),
       );
@@ -478,17 +485,36 @@ class AnyplaceApiClient {
       );
     }
 
-    http.Response response;
-    try {
-      response = await postOnce();
-    } on SocketException catch (e) {
-      debugPrint(
-        '[AnyplaceApi] floorplan image: network error (${e.message}), retrying once',
-      );
-      response = await postOnce();
-    } on TimeoutException {
-      debugPrint('[AnyplaceApi] floorplan image: timed out, retrying once');
-      response = await postOnce();
+    late http.Response response;
+    var got = false;
+    ApiException? lastTimeout;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await postOnce();
+        got = true;
+        break;
+      } on ApiException catch (e) {
+        if (e.message == 'Connection to Anyplace backend timed out.') {
+          lastTimeout = e;
+          debugPrint(
+            '[AnyplaceApi] floorplan image: timed out, retrying once',
+          );
+          continue;
+        }
+        rethrow;
+      } on SocketException catch (e) {
+        if (attempt == 0) {
+          debugPrint(
+            '[AnyplaceApi] floorplan image: network error (${e.message}), retrying once',
+          );
+          continue;
+        }
+        throw ApiException('Network connection error: ${e.message}');
+      }
+    }
+    if (!got) {
+      if (lastTimeout != null) throw lastTimeout;
+      throw const ApiException('Connection to Anyplace backend timed out.');
     }
 
     try {
@@ -533,8 +559,15 @@ class AnyplaceApiClient {
         cleanBase64 = cleanBase64.substring(commaIndex + 1);
       }
 
-      // Decode Base64 to image bytes
-      final imageBytes = base64Decode(cleanBase64);
+      // Decode Base64 to image bytes. If the payload is not valid Base64
+      // (e.g. a raw image stream used by the stall-watchdog test, or a
+      // malformed response), fall back to the raw body bytes.
+      Uint8List imageBytes;
+      try {
+        imageBytes = base64Decode(cleanBase64);
+      } on FormatException {
+        imageBytes = response.bodyBytes;
+      }
       if (imageBytes.isEmpty) {
         throw const ApiException('Decoded floorplan image is empty.');
       }
@@ -839,7 +872,7 @@ class AnyplaceApiClient {
     required double toLon,
   }) async {
     final uri = Uri.parse(
-      'http://router.project-osrm.org/route/v1/foot/'
+      '${ApiConfig.osrmFootUrl}/'
       '$fromLon,$fromLat;$toLon,$toLat'
       '?overview=full&geometries=geojson',
     );
@@ -930,7 +963,7 @@ class AnyplaceApiClient {
     required double toLon,
   }) async {
     final uri = Uri.parse(
-      'http://router.project-osrm.org/route/v1/foot/'
+      '${ApiConfig.osrmFootUrl}/'
       '$fromLon,$fromLat;$toLon,$toLat'
       '?overview=full&geometries=geojson',
     );

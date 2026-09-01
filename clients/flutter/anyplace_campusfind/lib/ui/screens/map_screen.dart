@@ -13,6 +13,7 @@ import '../../config/map_config.dart';
 import '../../config/navigation_config.dart';
 import '../../config/theme.dart';
 import '../../data/datasources/device_heading_service.dart';
+import '../../data/models/campus_gate.dart';
 import '../../data/models/custom_route_model.dart';
 import '../../data/models/space_model.dart';
 import '../../data/models/user_location.dart';
@@ -87,6 +88,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
   BitmapDescriptor? _buildingSelectedIcon;
   final Map<EntityCategory, BitmapDescriptor> _poiCategoryIcons = {};
   BitmapDescriptor? _poiSelectedIcon;
+  BitmapDescriptor? _gateIcon;
   bool _markerIconsReady = false;
 
   // ADDITIONAL REQUIREMENT: initial E-JUST campus viewport.
@@ -216,6 +218,14 @@ class _MapScreenState extends ConsumerState<MapScreen>
             filled: false,
             width: 20);
       }
+      // Campus gates: distinct SQUARE badge with a door glyph + green accent so
+      // they read immediately as entrances rather than buildings/POIs.
+      _gateIcon = await _pinDescriptor(
+          icon: Icons.meeting_room_outlined,
+          accent: const Color(0xFF0E9F6E),
+          filled: true,
+          square: true,
+          width: 22);
       if (!mounted) return;
       setState(() => _markerIconsReady = true);
     } catch (e) {
@@ -753,6 +763,16 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _animatedMapMove(space.latLng, 16.5);
   }
 
+  /// Selects a campus gate and centers the camera on it, showing its detail
+  /// card (which offers "Navigate to Gate"). Selection never alters the gate
+  /// routing policy — a gate is a visible, navigable destination regardless
+  /// of whether it is the preferred automatic entry gate.
+  void _onGateTapped(CampusGate gate) {
+    final provider = context.read<SpaceProvider>();
+    provider.selectGate(gate);
+    _animatedMapMove(LatLng(gate.latitude, gate.longitude), 17.0);
+  }
+
   void _animatedMapMove(LatLng destLocation, double destZoom, {double bearing = 0.0}) {
     if (_mapController == null) return;
     _isProgrammaticMove = true;
@@ -1031,6 +1051,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
         '${spaceProvider.spaces.length}|${selectedSpace?.buid ?? ''}|'
         '${visiblePois.length}|${activeService?.name ?? ''}|'
         '${spaceProvider.selectedPoi?.puid ?? ''}|'
+        '${spaceProvider.campusGates.length}|'
+        '${spaceProvider.selectedGate?.id ?? ''}|'
         '$_markerIconsReady';
     if (_baseMarkersSignature == signature) {
       return _baseMarkersCache;
@@ -1092,6 +1114,28 @@ class _MapScreenState extends ConsumerState<MapScreen>
           },
         ));
       }
+    }
+
+    // Campus gate markers — separate from buildings and indoor POIs.
+    //
+    // Gates are campus-scoped entities loaded from university gates.kmz (via
+    // SpaceProvider.campusGates). ALL gates are rendered, including
+    // policy-disabled ones: "visible" is independent of the routing policy
+    // that selects the preferred automatic entry gate. Tapping a gate shows
+    // its detail card and supports navigating TO that gate.
+    for (final gate in spaceProvider.campusGates) {
+      markers.add(Marker(
+        markerId: MarkerId('gate_${gate.id}'),
+        position: LatLng(gate.latitude, gate.longitude),
+        icon: _gateIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        anchor: _markerIconsReady ? const Offset(0.5, 0.95) : Offset(0.5, 0.5),
+        infoWindow: InfoWindow(
+          title: gate.name,
+          snippet: 'Campus Gate',
+        ),
+        onTap: () => _onGateTapped(gate),
+      ));
     }
 
     _baseMarkersSignature = signature;
@@ -1359,6 +1403,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     onTap: (LatLng latLng) {
                       if (spaceProvider.selectedPoi != null) {
                         spaceProvider.clearSelectedPoi();
+                      } else if (spaceProvider.selectedGate != null) {
+                        spaceProvider.clearSelectedGate();
                       } else if (selectedSpace != null) {
                         spaceProvider.clearSelection();
                       }
@@ -1422,10 +1468,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 ),
               ),
 
-              // 4. Former detail bottom sheet, navigation status bar /
-              //    arrival banner, and error banner were relocated in
-              //    Phase 1: the dynamic content panel and nav overlays now
-              //    live in MainShell; spaces status/retry moved to MapTopBar.
+              // 4. Gate selection card: rendered in the shared bottom
+              //    selection/detail panel (CampusContentPanel), NOT as a top
+              //    overlay, so the Search/Directions bar stays unobstructed
+              //    and selecting a gate feels like selecting a Building/POI.
               ],
             ),
          );

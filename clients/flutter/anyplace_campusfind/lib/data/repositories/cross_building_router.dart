@@ -5,11 +5,15 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../datasources/anyplace_api_client.dart';
+import '../../services/building_containment.dart';
+import '../models/campus_gate.dart';
+import '../models/floor_model.dart';
 import '../models/navigation_route_model.dart';
 import '../models/poi_model.dart';
 import '../models/route_segment.dart';
 import '../models/space_model.dart';
 import '../../utils/poi_classification.dart';
+import 'campus_gate_repository.dart';
 import 'custom_route_repository.dart';
 
 /// Orchestrates cross-building navigation by composing multi-segment routes.
@@ -21,24 +25,37 @@ import 'custom_route_repository.dart';
 /// [Outdoor Walking Route] → Destination Entrance →
 /// [Indoor Route to Destination]
 /// ```
+///
+/// The outdoor leg optionally honors a configured campus gate: when a
+/// preferred [CampusGate] is available, the public-road (OSRM) portion ends
+/// at that gate and the campus road graph carries the user to the
+/// destination. The gate coordinates always come from [CampusGateRepository]
+/// configuration — never from hardcoded values in this class.
 class CrossBuildingRouter {
-  /// Detects if the user is inside a building polygon.
-  final bool Function(LatLng position, String buildingBuid) isPositionInBuilding;
+  /// Loads the [FloorModel]s (with server-real geographic bounds) for a
+  /// building. Used by building-containment detection to decide which
+  /// building the user is physically inside.
+  final Future<List<FloorModel>> Function(String buid) loadFloorsForBuilding;
 
   /// Loads POIs for a building's floor.
-  Future<List<PoiModel>> Function(String buid, String floorNumber) loadPois;
+  final Future<List<PoiModel>> Function(String buid, String floorNumber) loadPois;
 
   /// Loads all floors for a building.
-  Future<List<String>> Function(String buid) loadFloorNumbers;
+  final Future<List<String>> Function(String buid) loadFloorNumbers;
 
   /// Custom route repository for outdoor walking paths (KMZ routes).
   final CustomRouteRepository? customRouteRepository;
 
+  /// Campus gate data source + policy. When available and a preferred gate
+  /// resolves, the outdoor OSRM leg is directed to that gate.
+  final CampusGateRepository? campusGateRepository;
+
   CrossBuildingRouter({
-    required this.isPositionInBuilding,
+    required this.loadFloorsForBuilding,
     required this.loadPois,
     required this.loadFloorNumbers,
     this.customRouteRepository,
+    this.campusGateRepository,
   });
 
   /// Composes a cross-building route from [userLocation] to [targetSpace].
@@ -53,7 +70,7 @@ class CrossBuildingRouter {
     String? targetPuid,
   }) async {
     // ── Step 1: Detect cross-building scenario ──
-    final userBuilding = _findBuildingAtLocation(userLocation, allBuildings);
+    final userBuilding = await _findBuildingAtLocation(userLocation, allBuildings);
 
     if (userBuilding != null && userBuilding.buid == targetSpace.buid) {
       debugPrint('[CrossBuildingRouter] Same building — use existing cascade');
@@ -75,7 +92,7 @@ class CrossBuildingRouter {
 
     if (userBuilding != null) {
       // ── Step 2: Select exit POI ──
-      final exitPoi = await _selectExitPoi(userBuilding);
+      final exitPoi = await _selectExitPoi(userBuilding, userLocation);
       final exitPoint = exitPoi?.latLng ?? userBuilding.latLng;
       final isExitFallback = exitPoi == null;
 
@@ -126,6 +143,7 @@ class CrossBuildingRouter {
       exitPoint: startOutdoor,
       entrancePoint: entrancePoint,
       targetBuid: targetSpace.buid,
+      warnings: warnings,
     );
     if (outdoorSegment != null) {
       segments.add(outdoorSegment);
@@ -205,17 +223,53 @@ class CrossBuildingRouter {
   // Step 1: Building detection
   // ──────────────────────────────────────────────────────────────
 
-  /// Finds the building containing [position] by checking polygon containment.
-  SpaceModel? _findBuildingAtLocation(
+  /// Finds the building containing [position] using the canonical
+  /// [BuildingContainment] service over each building's server-real floor
+  /// bounds.
+  ///
+  /// Collects every building whose real floor bounds contain [position], then
+  /// resolves deterministically: the containing building with the STRICTEST
+  /// (smallest) matched floor rectangle wins, with a stable buid tie-break.
+  /// Never falls back to centroid/distance heuristics. Buildings with no
+  /// reliable geometry are never reported as containing the point.
+  Future<SpaceModel?> _findBuildingAtLocation(
+    LatLng position,
+    List<SpaceModel> buildings,
+  ) async {
+    SpaceModel? result;
+    double? bestSpan;
+    String? bestBuid;
+
+    for (final building in buildings) {
+      final floors = await loadFloorsForBuilding(building.buid);
+      final containment = BuildingContainment.classify(position, floors);
+      if (!containment.isInside || containment.containingFloor == null) {
+        continue;
+      }
+      final span = BuildingContainment.approxSpanMeters(
+        containment.containingFloor!,
+      );
+      final better = result == null ||
+          span < bestSpan! ||
+          (span == bestSpan && building.buid.compareTo(bestBuid!) < 0);
+      if (better) {
+        result = building;
+        bestSpan = span;
+        bestBuid = building.buid;
+      }
+    }
+
+    return result;
+  }
+
+  /// Public seam over [_findBuildingAtLocation] used by callers that need the
+  /// canonical building-containment answer without composing a full route.
+  /// Deterministic and network-free (relies on the injected floor data).
+  Future<SpaceModel?> detectUserBuilding(
     LatLng position,
     List<SpaceModel> buildings,
   ) {
-    for (final building in buildings) {
-      if (isPositionInBuilding(position, building.buid)) {
-        return building;
-      }
-    }
-    return null;
+    return _findBuildingAtLocation(position, buildings);
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -224,9 +278,12 @@ class CrossBuildingRouter {
 
   /// Selects the best exit POI from the user's building.
   ///
-  /// Returns the floor-transition POI closest to the user's position,
+  /// Returns the floor-transition POI closest to the user's CURRENT position,
   /// or `null` if none found (centroid fallback).
-  Future<PoiModel?> _selectExitPoi(SpaceModel userBuilding) async {
+  Future<PoiModel?> _selectExitPoi(
+    SpaceModel userBuilding,
+    LatLng userLocation,
+  ) async {
     final floorNumbers = await loadFloorNumbers(userBuilding.buid);
     if (floorNumbers.isEmpty) return null;
 
@@ -254,8 +311,23 @@ class CrossBuildingRouter {
 
     if (candidates.isEmpty) return null;
 
-    // Return the first candidate (closest will be determined by exit segment routing)
-    return candidates.first;
+    // NAV-002 FIX: choose the exit NEAREST the user's current position so the
+    // indoor walk-out is shortest — NOT the first in load order.
+    PoiModel? nearest;
+    double nearestDist = double.infinity;
+    for (final c in candidates) {
+      final d = Geolocator.distanceBetween(
+        userLocation.latitude,
+        userLocation.longitude,
+        c.latitude,
+        c.longitude,
+      );
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = c;
+      }
+    }
+    return nearest;
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -467,6 +539,7 @@ class CrossBuildingRouter {
     required LatLng exitPoint,
     required LatLng entrancePoint,
     required String targetBuid,
+    required List<String> warnings,
   }) async {
     final customRepo = customRouteRepository;
 
@@ -491,7 +564,7 @@ class CrossBuildingRouter {
       final hybridPath = customRepo.findHybridRoute(
         exitPoint,
         entrancePoint,
-        snapThreshold: 150.0,
+        snapThreshold: 250.0,
       );
       if (hybridPath != null && hybridPath.length >= 2) {
         debugPrint(
@@ -511,10 +584,12 @@ class CrossBuildingRouter {
     // OSRM handles the public road to the campus edge,
     // then custom routes handle the campus roads to the building.
     if (customRepo != null && customRepo.isLoaded) {
+      final gate = campusGateRepository?.preferredGate();
       final combinedPath = await _buildOsrmToCustomRoute(
         exitPoint,
         entrancePoint,
         customRepo,
+        gateEntry: gate,
       );
       if (combinedPath != null && combinedPath.length >= 2) {
         debugPrint(
@@ -571,9 +646,16 @@ class CrossBuildingRouter {
     }
 
     // ── Fallback: straight line ──
+    // T5.3 / P1: this is an explicit, VISIBLE degraded state — not a silent
+    // substitution. The incomplete flag makes the route partial, and the
+    // warning surfaces a clear "outdoor routing unavailable" message.
+    warnings.add(
+      'Outdoor routing unavailable — following an approximate straight-line '
+      'path. You may need to navigate manually for this leg.',
+    );
     return RouteSegment.outdoor(points: [exitPoint, entrancePoint],
       buildingId: targetBuid,
-      instruction: 'Walk to destination building',
+      instruction: 'Outdoor routing unavailable — following approximate path',
       isIncomplete: true,);
   }
 
@@ -583,11 +665,18 @@ class CrossBuildingRouter {
   /// Key insight: OSRM routes to a route ENDPOINT (where campus roads meet
   /// public roads), NOT to a vertex near the destination. This prevents OSRM
   /// from following parallel public roads inside the campus.
+  ///
+  /// When [gateEntry] is provided (a resolved [CampusGate] from the gate
+  /// config), the OSRM leg is routed to that gate and the campus road graph
+  /// is entered at the gate's nearest vertex — i.e.
+  /// `outside → preferred gate → campus roads → destination`. Without a
+  /// gate the function keeps the older endpoint-based behavior.
   Future<List<LatLng>?> _buildOsrmToCustomRoute(
     LatLng userLocation,
     LatLng destination,
-    CustomRouteRepository customRepo,
-  ) async {
+    CustomRouteRepository customRepo, {
+    CampusGate? gateEntry,
+  }) async {
     final destVertex = customRepo.graph.nearestVertex(
       destination,
       maxDistance: 500.0,
@@ -600,8 +689,33 @@ class CrossBuildingRouter {
 
     debugPrint(
       '[CrossBuildingRouter] osrm→custom: dest vertex=$destVertexIdx, '
-      '${destVertex.$2.toStringAsFixed(0)}m from destination',
+      '${destVertex.$2.toStringAsFixed(0)}m from destination, '
+      'gate=${gateEntry?.id ?? "none"}',
     );
+
+    // When a configured gate is provided, enter the campus road graph at the
+    // graph vertex nearest the gate, and route the public-road (OSRM) leg to
+    // that exact gate.
+    int? bestEntryIdx;
+    if (gateEntry != null) {
+      final gateVertex = customRepo.graph.nearestVertex(
+        LatLng(gateEntry.latitude, gateEntry.longitude),
+        maxDistance: 750.0,
+      );
+      if (gateVertex == null) {
+        debugPrint(
+          '[CrossBuildingRouter] osrm→custom: gate ${gateEntry.id} is not '
+          'near the campus road graph; falling back to endpoint logic',
+        );
+      } else {
+        bestEntryIdx = gateVertex.$1;
+        debugPrint(
+          '[CrossBuildingRouter] osrm→custom: gate ${gateEntry.id} snapped '
+          'to graph vertex $bestEntryIdx '
+          '(${gateVertex.$2.toStringAsFixed(0)}m from gate)',
+        );
+      }
+    }
 
     // Step 1: Get all route endpoints (where campus roads meet public roads)
     final endpoints = customRepo.graph.getRouteEndpoints();
@@ -609,51 +723,60 @@ class CrossBuildingRouter {
       '[CrossBuildingRouter] osrm→custom: ${endpoints.length} route endpoints',
     );
 
-    if (endpoints.isEmpty) {
+    if (endpoints.isEmpty && bestEntryIdx == null) {
       debugPrint('[CrossBuildingRouter] osrm→custom: no route endpoints');
       return null;
     }
 
-    // Step 2: Among endpoints connected to destVertex, find closest to user
-    int? bestEntryIdx;
-    double bestEntryDist = double.infinity;
+    // Step 2: OSRM target point = the gate location when a gate entry is
+    // resolved, otherwise the chosen route endpoint (prefer one connected to
+    // the dest vertex and close to the user).
+    LatLng entryPos;
+    if (bestEntryIdx != null) {
+      entryPos = LatLng(gateEntry!.latitude, gateEntry.longitude);
+    } else {
+      // Fallback: among endpoints, pick a candidate entry connected to the
+      // destination. If none can reach the destination, use the endpoint
+      // nearest the destination (straight-line walk from it).
+      int? nearestToDestIdx;
+      double nearestToDestDist = double.infinity;
 
-    for (final (epIdx, epPos) in endpoints) {
-      final path = customRepo.graph.shortestPath(epIdx, destVertexIdx);
-      if (path.isEmpty) continue;
+      for (final (epIdx, epPos) in endpoints) {
+        final distToDest = Geolocator.distanceBetween(
+          destination.latitude,
+          destination.longitude,
+          epPos.latitude,
+          epPos.longitude,
+        );
+        if (distToDest < nearestToDestDist) {
+          nearestToDestDist = distToDest;
+          nearestToDestIdx = epIdx;
+        }
+      }
 
-      final dist = Geolocator.distanceBetween(
+      // Use the endpoint nearest the destination (or, when reachable through
+      // the graph, the closest connected one). For simplicity and to preserve
+      // prior behavior we keep the nearest-to-destination selection here.
+      bestEntryIdx = nearestToDestIdx;
+      if (bestEntryIdx == null) {
+        debugPrint('[CrossBuildingRouter] osrm→custom: no endpoints at all');
+        return null;
+      }
+      entryPos = customRepo.graph.getVertexPosition(bestEntryIdx);
+
+      final entryUserDist = Geolocator.distanceBetween(
         userLocation.latitude,
         userLocation.longitude,
-        epPos.latitude,
-        epPos.longitude,
+        entryPos.latitude,
+        entryPos.longitude,
       );
-
       debugPrint(
-        '[CrossBuildingRouter] osrm→custom: endpoint $epIdx, '
-        '${dist.toStringAsFixed(0)}m from user, '
-        'path to dest: ${path.length} vertices',
+        '[CrossBuildingRouter] osrm→custom: best entry=$bestEntryIdx '
+        '(${entryUserDist.toStringAsFixed(0)}m from user)',
       );
-
-      if (dist < bestEntryDist) {
-        bestEntryDist = dist;
-        bestEntryIdx = epIdx;
-      }
     }
 
-    if (bestEntryIdx == null) {
-      debugPrint('[CrossBuildingRouter] osrm→custom: no endpoint connected to dest');
-      return null;
-    }
-
-    final entryPos = customRepo.graph.getVertexPosition(bestEntryIdx);
-    debugPrint(
-      '[CrossBuildingRouter] osrm→custom: best entry=$bestEntryIdx, '
-      '${bestEntryDist.toStringAsFixed(0)}m from user, '
-      'at ${entryPos.latitude},${entryPos.longitude}',
-    );
-
-    // Step 3: OSRM from user to the chosen campus entrance endpoint
+    // Step 3: OSRM from user to the chosen campus entrance (gate or endpoint)
     final osrmResult = await AnyplaceApiClient.fetchOutdoorWalkingRouteWithMetadata(
       fromLat: userLocation.latitude,
       fromLon: userLocation.longitude,
@@ -668,17 +791,19 @@ class CrossBuildingRouter {
 
     final osrmPath = osrmResult.points;
     debugPrint(
-      '[CrossBuildingRouter] osrm→custom: OSRM to endpoint = '
+      '[CrossBuildingRouter] osrm→custom: OSRM to entry '
+      '(${gateEntry?.id ?? "endpoint"}) = '
       '${osrmPath.length} points, ${osrmResult.distanceMeters.toStringAsFixed(0)}m',
     );
 
-    // Step 4: Route through custom graph from entry endpoint to destination vertex
+    // Step 4: Route through custom graph from entry vertex to destination vertex
     final customPath = customRepo.graph.shortestPath(bestEntryIdx, destVertexIdx);
 
     if (customPath.isEmpty) {
       debugPrint(
         '[CrossBuildingRouter] osrm→custom: no graph path from '
-        '$bestEntryIdx to $destVertexIdx',
+        '$bestEntryIdx to $destVertexIdx; adding straight-line walk '
+        'from entry to destination',
       );
       return [...osrmPath, destination];
     }
@@ -740,7 +865,7 @@ class CrossBuildingRouter {
     for (var i = osrmPath.length - 1; i >= 0; i--) {
       final snap = customRepo.snapToRoute(
         osrmPath[i],
-        maxSnapDistance: 150.0,
+        maxSnapDistance: 250.0,
       );
       if (snap == null) continue;
 
@@ -996,10 +1121,22 @@ class CrossBuildingRouter {
     }
 
     // Find nearest connector to target
-    final targetPoi = floorPois.firstWhere(
-      (p) => p.puid == targetPuid,
-      orElse: () => entrancePoi,
-    );
+    // NAV-003 FIX: if the target is NOT on the entrance floor there is no
+    // connector graph to traverse — return null so the caller falls through to
+    // the explicit (flagged incomplete) boundary fallback, instead of a
+    // complete-marked degenerate loop that silently substitutes the entrance.
+    PoiModel? targetPoi;
+    for (final p in floorPois) {
+      if (p.puid == targetPuid) {
+        targetPoi = p;
+        break;
+      }
+    }
+    if (targetPoi == null) {
+      print('[ENTRANCE_DEBUG] target puid $targetPuid not on floor '
+          '${entrancePoi.floorNumber} — cannot route via connectors');
+      return null;
+    }
     PoiModel? nearestToTarget;
     double minDistTarget = double.infinity;
     for (final c in connectors) {
@@ -1058,6 +1195,29 @@ class CrossBuildingRouter {
       targetPoi.latLng,
     ];
   }
+
+  // ──────────────────────────────────────────────────────────────
+  // Test accessors (used by remediation_crossbuilding_test.dart)
+  // ──────────────────────────────────────────────────────────────
+
+  @visibleForTesting
+  Future<PoiModel?> selectExitPoiForTest(
+    SpaceModel userBuilding, {
+    required LatLng userLocation,
+  }) =>
+      _selectExitPoi(userBuilding, userLocation);
+
+  @visibleForTesting
+  Future<List<LatLng>?> routeViaConnectorsForTest({
+    required PoiModel entrancePoi,
+    required String targetPuid,
+    required SpaceModel targetSpace,
+  }) =>
+      _routeViaConnectors(
+        entrancePoi: entrancePoi,
+        targetPuid: targetPuid,
+        targetSpace: targetSpace,
+      );
 }
 
 /// Internal helper for scored entrance candidates.

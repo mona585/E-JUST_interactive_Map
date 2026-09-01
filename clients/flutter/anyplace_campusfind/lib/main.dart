@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as provider;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/constants.dart';
 import 'config/theme.dart';
@@ -14,8 +13,6 @@ import 'state/space_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove('server_url');
 
   final locationProvider = LocationProvider();
   final cacheService = CacheService();
