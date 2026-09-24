@@ -37,13 +37,16 @@ import javax.inject.Inject
 
 import play.api.http.HttpFilters
 import play.filters.cors.CORSFilter
+import play.filters.gzip.GzipFilter
 import play.filters.headers.SecurityHeadersFilter
 
 /**
-  * Created by costantinos on 1/6/2017.
-  */
+ * Created by costantinos on 1/6/2017.
+ * Campus-optimized: CORS + SecurityHeaders + Gzip all enforced in production filter chain.
+ */
 
 class Filters @Inject() (corsFilter: CORSFilter,
-                         securityHeadersFilter: SecurityHeadersFilter) extends HttpFilters {
-  def filters = Seq(corsFilter, securityHeadersFilter)
+                         securityHeadersFilter: SecurityHeadersFilter,
+                         gzipFilter: GzipFilter) extends HttpFilters {
+  def filters = Seq(corsFilter, securityHeadersFilter, gzipFilter)
 }

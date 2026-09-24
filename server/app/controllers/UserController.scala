@@ -240,7 +240,7 @@ class UserController @Inject()(cc: ControllerComponents,
     val mdb: MongoDatabase = mongoDB.getMDB
     val collection = mdb.getCollection(SCHEMA.cUsers)
     val users = collection.find()
-    val awaited = Await.result(users.toFuture(), Duration.Inf)
+    val awaited = Await.result(users.toFuture(), Duration(10, "seconds"))
     val res = awaited.toList
 
     res.isEmpty
@@ -254,7 +254,7 @@ class UserController @Inject()(cc: ControllerComponents,
         val collection = mdb.getCollection(SCHEMA.cUsers)
         val ownerId = (json \ SCHEMA.fOwnerId).as[String]
         val userLookUp = collection.find(equal(SCHEMA.fOwnerId, ownerId))
-        val awaited = Await.result(userLookUp.toFuture(), Duration.Inf)
+        val awaited = Await.result(userLookUp.toFuture(), Duration(10, "seconds"))
         val res = awaited.toList
         if (res.size == 1) {
           user = mongoDB.convertJson(res.head)

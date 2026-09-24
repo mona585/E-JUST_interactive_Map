@@ -54,18 +54,26 @@ class ProxyDataSource @Inject() (conf: Configuration) extends IDatasource {
   initMongodb()
   setActiveDatabase(this.mongoDB)
 
-  private var sInstance: ProxyDataSource = _
+  // Campus optimization: ProxyDataSource is already a Guice @Singleton.
+  // Avoid double instantiation via getInstance() which leaked MongoClient connections.
+  // Return the injected instance directly and delegate to activeDB.
+  def getInstance(): ProxyDataSource = this
 
-  def getInstance(): ProxyDataSource = {
-    if (sInstance == null) {
-      sInstance = new ProxyDataSource(conf)
-    }
-    sInstance
+  def db: IDatasource = {
+    checkHasActiveDB()
+    activeDB
   }
 
-  def db: IDatasource = getInstance()
-
   private def initMongodb(): Unit = {
+    // Guard against double initialization if already initialized by Anyplace startup
+    try {
+      if (MongodbDatasource.instance != null) {
+        this.mongoDB = MongodbDatasource.instance
+        return
+      }
+    } catch {
+      case _: RuntimeException => // not yet initialized, continue
+    }
     MongodbDatasource.initialize(conf)
     this.mongoDB = MongodbDatasource.instance
   }

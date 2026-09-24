@@ -1,8 +1,13 @@
 <configuration>
   <conversionRule conversionWord="coloredLevel" converterClass="play.api.Logger$ColoredLevel" />
-  <!-- WRITE LOG TO FILE -->
-  <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+  <!-- WRITE LOG TO FILE — campus burst: rolling file keeps history without filling disk -->
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
      <file>${application.home}/logs/application.log</file>
+     <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+       <fileNamePattern>${application.home}/logs/application.%d{yyyy-MM-dd}.log</fileNamePattern>
+       <maxHistory>30</maxHistory>
+       <totalSizeCap>1GB</totalSizeCap>
+     </rollingPolicy>
      <encoder>
          <pattern>%20.-20logger{20}  | %d{"dd/MM/YY HH:mm:ss"} | %5level | %message%n%xException{5}</pattern>
      </encoder>
@@ -20,14 +25,9 @@
   <logger name="play" level="ERROR" />
   <logger name="utils.LOG" level="DEBUG" />
 
-    <!-- PLAY ROOT LEVEL -->
+    <!-- PLAY ROOT LEVEL — public campus deployment: both console (systemd) and rolling file -->
     <root level="ERROR">
-        <!-- INFO: Logging everything to output (not files), as stdout it can be redirected to a file anyway.
-                   We periodically trim that file to curb its size.
-                   One could write ERROR to files as well, but uncommenting the below, but will have to manage
-                   that file size too.
-        -->
-        <!--    <appender-ref ref="FILE" />-->
+        <appender-ref ref="FILE" />
         <appender-ref ref="STDOUT" />
     </root>
 
