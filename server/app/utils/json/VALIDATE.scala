@@ -82,9 +82,10 @@ object VALIDATE {
   def StringNumber(json: JsValue, key: String): JsValue = {
     if (String(json, key) == null) return null
     var temp = (json \ key).as[String]
+    if (temp.isEmpty) return null
     if (temp.charAt(0) == '-') // ignore - if the number is negative
       temp = temp.substring(1)
-    if (isAllDigits(temp) && temp.size > 0)
+    if (temp.nonEmpty && isAllDigits(temp))
       return json
     null
   }
@@ -178,6 +179,20 @@ object VALIDATE {
         val r = userFields(json, k, value)
         if (r != null) errors.add(r)
       } else if (k == fPoisA || k == fPoisB || k == "pois_from" || k == "pois_to" || k == fCampusCuid) {
+        val r = stringField(json, k)
+        if (r != null) errors.add(r)
+      } else if (k == "range") {
+        if (StringNumber(json, k) == null) errors.add(k + " field must be String, containing a number.")
+      } else if (k == fFloors) {
+        val r = stringField(json, k)
+        if (r != null) errors.add(r)
+      } else if (k == "z") {
+        val r = xyz(json, k)
+        if (r != null) errors.add(r)
+      } else if (k == "APs" || k == "algorithm_choice") {
+        val r = stringField(json, k)
+        if (r != null) errors.add(r)
+      } else if (k == "letters" || k == "greeklish") {
         val r = stringField(json, k)
         if (r != null) errors.add(r)
       } else if (k == fUserId || k == fOwnerId ) {

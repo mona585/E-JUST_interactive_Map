@@ -225,7 +225,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         val body = anyReq.getMultipartFormData()
         if (body == null) return RESPONSE.BAD("Invalid request type - Not Multipart.")
-        val floorplan = body.file("floorplan").get
+        val floorplan = body.file("floorplan").orNull
         if (floorplan == null) return RESPONSE.BAD("Cannot find the floorplan file in your request.")
         val urlenc = body.asFormUrlEncoded
         val json_str = urlenc("").head
@@ -306,7 +306,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         val body = anyReq.getMultipartFormData()
         if (body == null) return RESPONSE.BAD("Invalid request type - Not Multipart.")
-        val floorplan = body.file("floorplan").get
+        val floorplan = body.file("floorplan").orNull
         if (floorplan == null) return RESPONSE.BAD("Cannot find the floorplan file in your request.")
         val urlenc = body.asFormUrlEncoded
         val json_str = urlenc("json").head

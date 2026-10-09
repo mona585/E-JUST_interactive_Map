@@ -26,14 +26,20 @@ function backupPrepare() {
 }
 
 function createBackup() {
- backupFolder=$1
- backupName=$(basename $backupFolder)
+  backupFolder=$1
+  backupName=$(basename $backupFolder)
 
- echo -e "Backup (mongodump) to: $backupFolder"
- mongodump --host $host --port $port \
-   --db $database --authenticationDatabase admin \
-   --username $user --password $pass --out $backupFolder >/dev/null 2>&1
- # mkdir $backupFolder # fake testing backup
+  # Requires single-node replica set (rs.initiate()) so --oplog is available;
+  # standalone mongod has no oplog and this backup fails loudly by design.
+  echo -e "Backup (mongodump --oplog --gzip) to: $backupFolder"
+  if ! mongodump --host $host --port $port \
+    --db $database --authenticationDatabase admin \
+    --username $user --password $pass \
+    --oplog --gzip --out $backupFolder; then
+    echo -e "BACKUP FAILED for: $backupFolder" >&2
+    exit 1
+  fi
+  # mkdir $backupFolder # fake testing backup
 
  echo -e "Compressing to:        $backupTar"
  tar -C $backupDir -czf $backupTar $backupName > /dev/null
@@ -116,10 +122,14 @@ backupTmp=$2
 
 # Restore
 # INFO: --drop: drops all previous data..
-echo -e "Restoring (mongorestore) from: $backupData"
-mongorestore --host=$host --port=$port \
+# --oplogReplay matches --oplog backups; harmless if the dump has no oplog.
+echo -e "Restoring (mongorestore --oplogReplay) from: $backupData"
+if ! mongorestore --host=$host --port=$port \
    --authenticationDatabase admin \
-   --username $user --password $pass $backupData >/dev/null 2>&1
+   --username $user --password $pass --oplogReplay $backupData; then
+  echo -e "RESTORE FAILED from: $backupData" >&2
+  exit 1
+fi
 
 # restoreCleanup
 if [ -d $backupData ]; then

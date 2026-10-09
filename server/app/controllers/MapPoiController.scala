@@ -82,6 +82,9 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         try {
           var storedPoi = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid)
           if (storedPoi == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          // Bind-then-check: the POI must actually live in the authorized building.
+          if ((storedPoi \ SCHEMA.fBuid).asOpt[String].getOrElse("") != buid)
+            return RESPONSE.UNAUTHORIZED_USER
           if (json.\(SCHEMA.fIsPublished).getOrElse(null) != null) {
             val is_published = (json \ SCHEMA.fIsPublished).as[String]
             if (is_published == "true" || is_published == "false")
@@ -147,6 +150,11 @@ class MapPoiController @Inject()(cc: ControllerComponents,
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
         try {
+          val storedPoi = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid)
+          if (storedPoi == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          // Bind-then-check: refuse deleting POIs outside the authorized building.
+          if ((storedPoi \ SCHEMA.fBuid).asOpt[String].getOrElse("") != buid)
+            return RESPONSE.UNAUTHORIZED_USER
           val all_items_failed = pds.db.deleteAllByPoi(puid)
           if (all_items_failed.size > 0) {
             val res = Json.obj("ids" -> all_items_failed.asScala)
@@ -236,14 +244,17 @@ class MapPoiController @Inject()(cc: ControllerComponents,
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
         LOG.D3("json = " + json)
-        var cuid = request.getQueryString(SCHEMA.fConCuid).orNull
-        if (cuid == null) cuid = (json \ SCHEMA.fConCuid).as[String]
-        var letters = request.getQueryString("letters").orNull
-        if (letters == null) letters = (json \ "letters").as[String]
-        var buid = request.getQueryString(SCHEMA.fBuid).orNull
-        if (buid == null) buid = (json \ SCHEMA.fBuid).as[String]
-        var greeklish = request.getQueryString(SCHEMA.fGreeklish).orNull
-        if (greeklish == null) greeklish = (json \ SCHEMA.fGreeklish).as[String]
+        // Query-string wins; JSON body is the fallback; absent means "".
+        // `letters` is the only required input — everything else degrades.
+        val cuid = request.getQueryString(SCHEMA.fConCuid)
+          .orElse((json \ SCHEMA.fConCuid).asOpt[String]).getOrElse("")
+        val letters = request.getQueryString("letters")
+          .orElse((json \ "letters").asOpt[String]).orNull
+        if (letters == null) return RESPONSE.MISSING_FIELDS(java.util.Collections.singletonList("letters"))
+        val buid = request.getQueryString(SCHEMA.fBuid)
+          .orElse((json \ SCHEMA.fBuid).asOpt[String]).getOrElse("")
+        val greeklish = request.getQueryString(SCHEMA.fGreeklish)
+          .orElse((json \ SCHEMA.fGreeklish).asOpt[String]).getOrElse("")
         try {
           var result: List[JsValue] = null
           if (cuid.compareTo("") == 0)

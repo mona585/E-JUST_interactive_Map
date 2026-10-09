@@ -101,7 +101,8 @@ class AccessPointController @Inject()(cc: ControllerComponents,
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
-        val accessPointsOfReq = (json \ "ids").as[List[String]]
+        val accessPointsOfReq = (json \ "ids").asOpt[List[String]].getOrElse(null)
+        if (accessPointsOfReq == null) return RESPONSE.MISSING_FIELDS(java.util.Collections.singletonList("ids"))
         try {
           val reqFile = "public/anyplace_architect/ids.json"
           val file = env.classLoader.getResourceAsStream(reqFile)
@@ -133,7 +134,7 @@ class AccessPointController @Inject()(cc: ControllerComponents,
                   var i = 0
                   inner_loop.breakable {
                     for (i <- 0 until bitsA.length) {
-                      if (bitsA(i).equalsIgnoreCase(bitsR(i))) {
+                      if (i < bitsR.length && bitsA(i).equalsIgnoreCase(bitsR(i))) {
                         sameBits += 1
                       } else {
                         inner_loop.break()

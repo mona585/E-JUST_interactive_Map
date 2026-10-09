@@ -74,7 +74,7 @@ class PositioningController @Inject()(cc: ControllerComponents,
           alg1 = new Algo1(json)
         } catch {
           case ex: Exception => {
-            return RESPONSE.BAD(ex.getClass.toString() + ": " + ex.getMessage + ": " + ex.getCause.toString())
+            return RESPONSE.BAD(ex.getClass.toString() + ": " + ex.getMessage + ": " + String.valueOf(ex.getCause))
           }
         }
         try {
@@ -116,10 +116,17 @@ class PositioningController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val buid = (json \ SCHEMA.fBuid).as[String]
         val floor = (json \ SCHEMA.fFloor).as[String]
-        val accessOpt = Json.parse((json \ "APs").as[String])
+        val accessOpt = try {
+          Json.parse((json \ "APs").as[String])
+        } catch {
+          case _: Exception => return RESPONSE.BAD("APs must be a JSON-encoded array string.")
+        }
         val tempAP = Json.obj("accessPoint" -> accessOpt)
-        val accessPoints = (tempAP \ "accessPoint").as[List[JsValue]]
-        val algorithm_choice: Int = (json \ "algorithm_choice").as[String].toInt
+        val accessPoints = (tempAP \ "accessPoint").asOpt[List[JsValue]].getOrElse(null)
+        if (accessPoints == null) return RESPONSE.BAD("APs must be a JSON-encoded array string.")
+        val algorithm_choice: Int = (json \ "algorithm_choice").asOpt[String]
+          .flatMap(s => try { Some(s.toInt) } catch { case _: NumberFormatException => None })
+          .getOrElse(return RESPONSE.BAD("algorithm_choice must be a String containing an integer."))
         val radioMapsFrozenDir = conf.get[String]("radioMapFrozenDir")
         val rmapFile = new File(radioMapsFrozenDir + api.sep + buid + api.sep +
           floor + api.sep + "indoor-radiomap-mean.txt")
@@ -129,8 +136,10 @@ class PositioningController @Inject()(cc: ControllerComponents,
         val latestScanList: util.ArrayList[location.LogRecord] = new util.ArrayList[location.LogRecord]()
         var i = 0
         for (i <- 0 until accessPoints.size) {
-          val bssid = (accessPoints(i) \ "bssid").as[String]
-          val rss = (accessPoints(i) \ SCHEMA.fRSS).as[Int]
+          val bssid = (accessPoints(i) \ "bssid").asOpt[String].orNull
+          val rss = (accessPoints(i) \ SCHEMA.fRSS).asOpt[Int].getOrElse(Int.MinValue)
+          if (bssid == null || rss == Int.MinValue)
+            return RESPONSE.BAD("Each AP entry needs a String bssid and an integer rss.")
           latestScanList.add(new location.LogRecord(bssid, rss))
         }
 

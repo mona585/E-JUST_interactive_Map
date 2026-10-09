@@ -304,7 +304,10 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         if (StringNumber(json, "range") == null) {
           return RESPONSE.BAD("range field must be String, containing a number!")
         }
-        var range = (json \ "range").as[String].toInt
+        val rangeOpt = try { Some((json \ "range").as[String].toInt) }
+          catch { case _: Exception => None }
+        if (rangeOpt.isEmpty) return RESPONSE.BAD("range is out of integer bounds.")
+        var range = rangeOpt.get
         if (range > mapHelper.BBOX_MAX) range = mapHelper.BBOX_MAX
         return mapHelper.findRadioBbox(json, range)
       }

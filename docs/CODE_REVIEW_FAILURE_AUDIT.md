@@ -1,11 +1,29 @@
 # Code Review Failure Audit — E-JUST Interactive Map
 
-Date: 2026-10-09. Method: 12 parallel adversarial review squads (server ×5,
-clients ×4, ops/tests/self ×3), every finding verified against the tree before
-being recorded below. "Mine" = introduced or claimed in the Oct 2026 working
-sessions (uncommitted at audit time); "pre-existing" = in HEAD before them.
+Date: 2026-10-09 ( Waves 0–3 follow-up 2026-10-10 below). Method: 12 parallel
+adversarial review squads (server ×5, clients ×4, ops/tests/self ×3), every
+finding verified against the tree before being recorded below. "Mine" =
+introduced or claimed in the Oct 2026 working sessions (uncommitted at audit
+time); "pre-existing" = in HEAD before them.
 Disposition: FIXED (in tree, proven by suite/live run) · QUEUED (acknowledged,
 needs design/host) · DISPUTED (reviewer wrong, evidence given).
+
+## Waves 0–3 follow-up (2026-10-10, suite 36-total / 35 pass / 1 skip)
+
+FIXED since audit: 10 server crasher classes (validation branches + safe
+extraction, multipart `.get`, `StringNumber` empty-string, `getCause` NPE,
+`range` bounds, login-Google token requirement); pilot-surface sweep
+(corrupt-floor tolerance); POI update/delete + connection add/delete
+bind-then-check IDOR closure with specs; `escapeHtml`/`escapeId` choke at all
+16 infowindow/ng-click sites (both viewers); `stop.sh` self-match + `fuser`
+kill fix; `status.sh` env-aware hosts + real health probes; moderator cache
+staleness documented via the 403-spec debugging session (lists refresh on
+login/register/refresh only — accepted behavior, noted for P2).
+Google Maps key validated live (1.4 MB bootstrap) and injected into served
+copies only — never committed; host procedure unchanged (env → sed → build).
+Still QUEUED: token expiry, Google aud, Angular EOL/CVE class, Android
+toolchain/SDK, POI search XSS via `highlight` filter chain (ngSanitize 1.3
+bypasses documented), backup timers/monitoring on host, CSRF semantics.
 
 Suite state at audit: `sbt test` → Total 26, Failed 0, Errors 0, Passed 25,
 Skipped 1 (SecurityRegressionSpec policy gate). Live matrix on staged build:

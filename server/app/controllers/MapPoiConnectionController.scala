@@ -51,6 +51,12 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
+        // Anchor rule: the edge's parent building must be one of its endpoint
+        // buildings (both already access-checked). Prevents planting edges
+        // into a third, unauthorized building. Cross-building outdoor edges
+        // remain legal: buid simply equals buidA or buidB.
+        if (buid != buid1 && buid != buid2)
+          return RESPONSE.BAD("Connection must belong to one of its endpoint buildings.")
         val edge_type = (json \ SCHEMA.fEdgeType).as[String]
         if (edge_type != Connection.EDGE_TYPE_ELEVATOR && edge_type != Connection.EDGE_TYPE_HALLWAY &&
           edge_type != Connection.EDGE_TYPE_ROOM && edge_type != Connection.EDGE_TYPE_OUTDOOR &&
@@ -179,11 +185,16 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         val pois_b = (json \ SCHEMA.fPoisB).as[String]
         try {
           val cuid = Connection.getId(pois_a, pois_b)
-          val all_items_failed = pds.db.deleteAllByConnection(cuid)
-          if (all_items_failed == null) {
-            LOG.E("connectionDelete: " + cuid + " not found.")
-            return RESPONSE.BAD("POI Connection not found")
+          // Bind-then-check: the stored connection's endpoint buildings must
+          // both be accessible — the cuid alone proves nothing.
+          val storedConn = pds.db.getFromKeyAsJson(SCHEMA.cEdges, SCHEMA.fConCuid, cuid)
+          if (storedConn == null) return RESPONSE.BAD("POI Connection not found")
+          for (bk <- Seq(SCHEMA.fBuidA, SCHEMA.fBuidB)) {
+            val eb = (storedConn \ bk).asOpt[String].getOrElse("")
+            val esp = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, eb)
+            if (esp == null || !user.canAccessSpace(esp, owner_id)) return RESPONSE.UNAUTHORIZED_USER
           }
+          val all_items_failed = pds.db.deleteAllByConnection(cuid)
           if (all_items_failed.size > 0) {
             val obj: JsValue = Json.obj("ids" -> all_items_failed.asScala)
             return RESPONSE.BAD(obj, "Some items related to the deleted connection could not be deleted: " +
@@ -215,7 +226,7 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
           val storedFloors = pds.db.floorsByBuildingAsJson(buid)
           var floorExists = false
           for (floor <- storedFloors.asScala)
-            if ((floor \ SCHEMA.fFloorNumber).as[String] == floorNum)
+            if ((floor \ SCHEMA.fFloorNumber).asOpt[String].contains(floorNum))
               floorExists = true
           if (!floorExists) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOOR
 

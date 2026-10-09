@@ -137,6 +137,8 @@ class UserController @Inject()(cc: ControllerComponents,
         val external = json \ SCHEMA.fExternal
 
         if (external.toOption.isDefined && external.as[String] == "google") {
+          if ((json \ SCHEMA.fAccessToken).asOpt[String].orNull == null)
+            return RESPONSE.BAD("Google access_token is required.")
           val result = authorizeGoogleAccount(auth)
           updateCachedModerators()
 

@@ -81,7 +81,7 @@
                  and (-webkit-device-pixel-ratio: 1)"
           rel="apple-touch-startup-image">
 
-    <meta name="apple-mobile-web-app-title" content="Anyplace">
+    <meta name="apple-mobile-web-app-title" content="E-JUST Interactive Map">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
 
@@ -114,7 +114,7 @@
     <!-- Must come after jquery/ui imports -->
     <script type="text/javascript" src="bower_components/jqueryui-touch-punch/jquery.ui.touch-punch.min.js"></script>
 
-    <title>Anyplace Viewer</title>
+    <title>E-JUST Interactive Map</title>
 
     <script type="text/javascript" src="bower_components/angular-bootstrap/ui-bootstrap.min.js"></script>
     <script type="text/javascript" src="bower_components/angular-bootstrap/ui-bootstrap-tpls.min.js"></script>
@@ -144,10 +144,16 @@
 
 <div ng-click="close()" id="control-bar" class="box-shadow-1 ng-cloak" ng-controller="ControlBarController as ctrlBarCtrl" ng-cloak>
 
+    <div id="ejust-loading-veil" ng-show="anyService.BuildingsLoaded" class="ng-cloak" ng-cloak role="status" aria-live="polite">
+        <div class="ejust-spinner" aria-hidden="true"></div>
+        <p>Loading E-JUST campus…</p>
+    </div>
+
     <div class="container-fluid" id="gray-bg">
         <!-- LOGO: hidden at sm, xs -->
         <div class="col-md-2 col-sm-1 d-none d-sm-block hidden-xs hidden-md" id="div-logo">
-            <span><img class="logo-header-img" src='build/images/logo-white-full.png'/></span>
+            <span><img class="logo-header-img" src='build/images/logo-white-full.png' alt="E-JUST Interactive Map"/></span>
+            <span class="ejust-wordmark">E-JUST Campus</span>
             <span id="anyplace-version" class="logo-header-version"></span>
         </div>
 
@@ -167,6 +173,10 @@
                 </ui-select-choices>
             </ui-select>
 
+            <div id="ejust-empty-campus" ng-show="!anyService.BuildingsLoaded && myBuildings.length === 0" class="ng-cloak" ng-cloak role="status">
+                No campus buildings published yet. Map them in <a href="/architect" target="_self">Architect</a>.
+            </div>
+
         </div>
 
         <!-- FLOORS -->
@@ -184,7 +194,7 @@
              ng-show="anyService.selectedBuilding !== undefined && anyService.selectedBuilding !== null && anyService.selectedFloor !== undefined && anyService.selectedFloor !== null">
             <div class="bold-f one-line-wrap-div">
                 <button ng-click="unselectBuilding()" id="change-building-btn" class="btn btn-primary"
-                        style="padding: 3px 6px; margin-bottom: 3px; outline-style: none">
+                        style="padding: 3px 6px; margin-bottom: 3px; outline-style: none" aria-label="Change building">
                     <span class="glyphicon glyphicon-remove" id="change-building-box"></span>
                 </button>
                 <span id="clear-routes-box" ng-click="clearNavPolylines()"
@@ -216,7 +226,7 @@
 
                 <!-- Single button -->
                 <div class="btn-group" dropdown is-open="status.isopen">
-                    <button type="button" class="btn btn-primary dropdown-toggle" dropdown-toggle>
+                    <button type="button" class="btn btn-primary dropdown-toggle" dropdown-toggle aria-label="Menu" aria-haspopup="true">
                         <span class="glyphicon glyphicon-menu-hamburger"> </span>
                     </button>
 
@@ -228,17 +238,15 @@
                         <!--</li>-->
                         <!--<li class="divider"></li>-->
                         <li style="text-align: center;">
-                            <a href="https://anyplace.cs.ucy.ac.cy" target="_blank">
+                            <a href="https://ejust.edu.eg" target="_blank" rel="noopener">
                                 <div class="div-logo-menu">
-                                    <img style="width: 120px; height: auto" src="build/images/logo-blue-full.svg"/>
+                                    <img style="width: 120px; height: auto" src="build/images/logo-blue-full.svg" alt="E-JUST"/>
                                 </div>
                             </a>
                         </li>
                         <li><a href="/architect"  target="_self">Architect</a></li>
                         <li><a href="/developers" target="_self">API</a></li>
-                        <li><a href="https://anyplace.cs.ucy.ac.cy/tos" target="_blank">Terms</a></li>
-                        <li><a href="https://anyplace.cs.ucy.ac.cy#contact" target="_blank">Contact</a></li>
-                        <li><a href="https://anyplace.cs.ucy.ac.cy" target="_blank">About</a></li>
+                        <li><a href="https://ejust.edu.eg" target="_blank" rel="noopener">E-JUST</a></li>
                     </ul>
 
                 </div>
@@ -264,11 +272,12 @@
 
         <div id="android_top_DIV_4">
             <div id="android_top_DIV_5">
-                <strong id="android_top_STRONG_7">For superb location accuracy download Anyplace for Android</strong><br
+                <strong id="android_top_STRONG_7">Get the E-JUST Navigator for Android for outdoor wayfinding</strong><br
                     id="android_top_BR_8"/>
             </div>
             <div id="android_top_DIV_17">
-                <a href="https://play.google.com/store/apps/details?id=com.dmsl.anyplace" target="_blank"
+                <!-- TODO(E-JUST): point at the hosted APK / Play listing once published -->
+                <a href="https://ejust.edu.eg" target="_blank" rel="noopener"
                    id="android_top_A_18">Install</a>
             </div>
         </div>
@@ -278,6 +287,11 @@
 
 
 <div id="map-canvas"></div>
+
+<div id="ejust-maps-unavailable" ng-show="mapsUnavailable" class="ng-cloak" ng-cloak role="alert">
+    <p><strong>Map unavailable.</strong> The map library could not load (offline or missing API key).
+    Search and campus data below still work. <a href="" ng-click="mapsUnavailable = false">Dismiss</a></p>
+</div>
 
 <div id="floor-controls">
 
@@ -358,7 +372,7 @@
                 <div style="margin: 5px" >
                     <input  type="text" id="myBuildingSelected" class="form-control" placeholder="Search for Space..">
                 </div>
-                <a href="https://anyplace.cs.ucy.ac.cy/viewer" target="_blank" style="margin-right: 5px; text-align:right;  font-size: 60%; color: #9E9E9E;">See Global Spaces</a>
+                <a href="https://ejust.edu.eg" target="_blank" rel="noopener" style="margin-right: 5px; text-align:right;  font-size: 60%; color: #9E9E9E;">E-JUST University</a>
             </md-toolbar>
             <button ng-click="close();anyService.selectedBuilding = b;"  style="width: 285px;" type="button" class="list-group-item" ng-repeat="b in ctrl.SearchBuilding()">
                 <div>{{b.name}}</div>

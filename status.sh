@@ -4,20 +4,29 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Anyplace Service Status ==="
 
-# Check MongoDB
-if nc -z 127.0.0.1 27017 &> /dev/null; then
-    echo " [✓] MongoDB (Port 27017): ONLINE"
+# Check MongoDB (honor environment overrides; default loopback baseline)
+MDB_HOST="${MONGODB_HOST:-127.0.0.1}"
+MDB_PORT="${MONGODB_PORT:-27017}"
+if nc -z "$MDB_HOST" "$MDB_PORT" &> /dev/null; then
+    echo " [✓] MongoDB ($MDB_HOST:$MDB_PORT): ONLINE"
 else
-    echo " [✗] MongoDB (Port 27017): OFFLINE"
+    echo " [✗] MongoDB ($MDB_HOST:$MDB_PORT): OFFLINE"
 fi
 
-# Check Anyplace Server
-PID=$(pgrep -f "play.core.server.ProdServerStart" || pgrep -f "target/universal/stage/bin/anyplace" || true)
+# Check Anyplace Server (PID + real HTTP probe; never trust PID alone)
+PID=$(pgrep -f "[p]lay.core.server.ProdServerStart" || pgrep -f "[s]tage/bin/anyplace" || true)
 if [ -n "$PID" ]; then
-    echo " [✓] Anyplace Backend (PID $PID): ONLINE (Port 9000)"
+    echo " [✓] Anyplace Backend (PID $PID): process present"
 else
-    echo " [✗] Anyplace Backend: OFFLINE"
+    echo " [✗] Anyplace Backend: no process"
 fi
+for port in 9000 9001; do
+    if curl -fs -m 5 "http://127.0.0.1:$port/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
+        echo " [✓] Anyplace API (Port $port): HEALTHY"
+    else
+        echo " [·] Anyplace API (Port $port): no health response"
+    fi
+done
 
 echo -e "\n=== Recent Server Logs (last 15 lines) ==="
 if [ -f "$ROOT_DIR/anyplace.log" ]; then

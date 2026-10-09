@@ -81,12 +81,18 @@ app.controller('BuildingController',
             // _setBuildingMarkesVisibility(false);
 
             // Show last building's marker
-            if (oldVal && oldVal.buid) {
+            if (oldVal && oldVal.buid && $scope.myBuildingsHashT[oldVal.buid] &&
+                $scope.myBuildingsHashT[oldVal.buid].marker) {
                 $scope.myBuildingsHashT[oldVal.buid].marker.setVisible(true);
             }
 
             // hide current buildings marker
-            $scope.myBuildingsHashT[newVal.buid].marker.setVisible(false);
+            if ($scope.myBuildingsHashT[newVal.buid] && $scope.myBuildingsHashT[newVal.buid].marker) {
+                $scope.myBuildingsHashT[newVal.buid].marker.setVisible(false);
+            } else {
+                _err($scope, "Selected building is not on the map yet. Please reload and try again.");
+                return;
+            }
 
             // Pan map to selected building
             $scope.gmapService.gmap.panTo(_latLngFromBuilding(newVal));
@@ -131,9 +137,9 @@ app.controller('BuildingController',
 
                 var htmlContent = '<div class="infowindow-scroll-fix">'
                     + '<h5>Building:</h5>'
-                    + '<span>' + b.name + '</span>'
+                    + '<span>' + escapeHtml(b.name) + '</span>'
                     + '<h5>Description:</h5>'
-                    + '<textarea class="infowindow-text-area"  rows="3" readonly>' + b.description + '</textarea>'
+                    + '<textarea class="infowindow-text-area"  rows="3" readonly>' + escapeHtml(b.description) + '</textarea>'
                     + '</div>';
 
                 marker.infoContent = htmlContent;
@@ -233,9 +239,9 @@ app.controller('BuildingController',
 
                     var htmlContent = '<div class="infowindow-scroll-fix">'
                         + '<h5 style="margin: 0">Building:</h5>'
-                        + '<span>' + b.name + '</span>'
+                        + '<span>' + escapeHtml(b.name) + '</span>'
                         + '<h5 style="margin: 8px 0 0 0">Description:</h5>'
-                        + '<span>' + b.description + '</span>'
+                        + '<span>' + escapeHtml(b.description) + '</span>'
                         + '</div>';
 
                     marker.infoContent = htmlContent;

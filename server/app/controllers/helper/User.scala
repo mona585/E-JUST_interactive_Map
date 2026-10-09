@@ -139,11 +139,14 @@ class User @Inject()(pds: ProxyDataSource,
 
   /** PBKDF2-HMAC-SHA256 with per-user salt. Stored as
    *  `pbkdf2$<iterations>$<base64 salt>$<base64 hash>`.
+   *  Iteration count follows OWASP Password Storage minimums for
+   *  PBKDF2-HMAC-SHA256 (600,000); the count is embedded per-hash so future
+   *  increases only affect new passwords — verification reads the stored count.
    *  Legacy rows (64-char hex of SHA-256(global salt+password+pepper)) still
    *  verify via [[verifyPassword]] so existing accounts keep working; all new
    *  hashes use this path. Never log password material.
    */
-  val PBKDF2_ITERATIONS = 210000
+  val PBKDF2_ITERATIONS = 600000
   val PBKDF2_KEY_BITS = 256
   val PBKDF2_SALT_BYTES = 16
 
@@ -160,6 +163,8 @@ class User @Inject()(pds: ProxyDataSource,
         val parts = stored.split("\\$", -1)
         if (parts.length != 4) return false
         val iterations = parts(1).toInt
+        // Cap: a planted row must not turn a login attempt into CPU DoS.
+        if (iterations <= 0 || iterations > 2000000) return false
         val salt = Base64.getDecoder.decode(parts(2))
         val expected = Base64.getDecoder.decode(parts(3))
         val spec = new PBEKeySpec(password.toCharArray, salt, iterations, expected.length * 8)

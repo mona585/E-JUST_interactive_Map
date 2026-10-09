@@ -8,18 +8,28 @@ if command -v systemctl &>/dev/null && systemctl is-active --quiet anyplace 2>/d
     systemctl stop anyplace 2>/dev/null || true
 fi
 
-PID=$(pgrep -f "play.core.server.ProdServerStart" || pgrep -f "target/universal/stage/bin/anyplace" || true)
+# NOTE: bracket patterns ([p]lay...) never match this script's own command line.
+PID=$(pgrep -f "[p]lay.core.server.ProdServerStart" || pgrep -f "[s]tage/bin/anyplace" || true)
 
 if [ -n "$PID" ]; then
     echo "[*] Stopping Anyplace server process ($PID)..."
-    kill -15 $PID 2>/dev/null || kill -9 $PID 2>/dev/null
+    # shellcheck disable=SC2086
+    for p in $PID; do
+        case "$p" in
+            ''|*[!0-9]*) echo "[!] Skipping non-PID entry: $p" >&2;;
+            *) kill -15 "$p" 2>/dev/null || kill -9 "$p" 2>/dev/null;;
+        esac
+    done
     sleep 1
 fi
 
-# Ensure port 9000 is freed
-if command -v fuser &>/dev/null; then
-    fuser -k 9000/tcp 2>/dev/null || true
-fi
+# Never fuser -k the port: it would kill whatever unrelated process holds it.
+# Report instead; the operator decides.
+for port in 9000 9001; do
+    if command -v nc &>/dev/null && nc -z 127.0.0.1 "$port" &>/dev/null; then
+        echo "[!] Port $port still occupied after stop (left for the operator)."
+    fi
+done
 
 # Clean up lock files
 rm -f server/target/universal/stage/RUNNING_PID RUNNING_PID 2>/dev/null

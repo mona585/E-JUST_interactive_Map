@@ -95,7 +95,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                 }
             },1000);
         $scope.mylastquery = query;
-        return
+        return $scope.myallPois;
     }
 
     $scope.fetchAllPoi = function (letters , buid) {
@@ -827,13 +827,13 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
             htmlContent = '<div class="iw infowindow-scroll-fix">'
                 + '<div class="wordwrap" style="text-align: center">'
                 + '<span ng-show="navRoutesShown()" id="info-window-zoomin" ng-click="zoomInPoi()"><img src="build/images/html5_location_icon.png"></span>'
-                + '<span class="iw-poi-name">' + p.name + '</span></div>'
-                + '<div class="wordwrap iw-poi-description" ng-show="showPoiDescription">' + p.description + '</div>'
+                + '<span class="iw-poi-name">' + escapeHtml(p.name) + '</span></div>'
+                + '<div class="wordwrap iw-poi-description" ng-show="showPoiDescription">' + escapeHtml(p.description) + '</div>'
                 + '<div style="text-align: center">'
                 + '<div class="poi-action-btn"><button class="btn btn-info" ng-click="togglePoiDescription()"><i class="fa fa-info-circle"></i></i></button></div>'
                 + '<div class="poi-action-btn"><button class="btn btn-primary" ng-click="startNavFromPoi()"><i style="font-size: 12px;" class="fa fa-flag"></i></button></div>'
-                + '<div class="poi-action-btn"><button class="btn btn-success" ng-click="navigateFromUserToPoi(\'' + p.puid + '\')"><i class="fa fa-location-arrow"></i></button></div>'
-                + '<div class="poi-action-btn"><button class="btn btn-warning" ng-click="getPoiShareUrl(\'' + p.puid + '\')"><i class="fa fa-share-alt"></i></button></div>'
+                + '<div class="poi-action-btn"><button class="btn btn-success" ng-click="navigateFromUserToPoi(\'' + escapeId(p.puid) + '\')"><i class="fa fa-location-arrow"></i></button></div>'
+                + '<div class="poi-action-btn"><button class="btn btn-warning" ng-click="getPoiShareUrl(\'' + escapeId(p.puid) + '\')"><i class="fa fa-share-alt"></i></button></div>'
                 //+ '<span id="info-window-nav-from-poi" ng-click="startNavFromPoi()"><img src="build/images/start-poi-nav.png"></span>'
                 //+ '<div ng-show="navRoutesShown()" class="poi-action-btn"><button class="btn btn-primary" ng-click="zoomInPoi()"><i class="fa fa-crosshairs"></i></button></div>'
                 + '</div>'

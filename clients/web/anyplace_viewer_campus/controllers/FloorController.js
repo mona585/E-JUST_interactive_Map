@@ -175,6 +175,10 @@ app.controller('FloorController', ['$scope', '$compile', 'AnyplaceService', 'GMa
     };
 
     $scope.fetchFloorPlanOverlay = function () {
+        if (!$scope.anyService.selectedFloor || !$scope.anyService.selectedFloor.floor_number ||
+            !$scope.anyService.selectedBuilding || !$scope.anyService.selectedBuilding.buid) {
+            return;
+        }
         var floor_number = $scope.anyService.selectedFloor.floor_number;
         var buid = $scope.anyService.selectedBuilding.buid;
 

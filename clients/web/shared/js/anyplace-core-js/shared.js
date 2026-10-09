@@ -75,6 +75,24 @@ var _suc  = function (scope, msg) { __addAlert(scope, 'success', msg); }
 var _info = function (scope, msg) { __addAlert(scope, "info",    msg); }
 var _warn = function (scope, msg) { __addAlert(scope, 'warning', msg); }
 
+/* XSS choke point: server-controlled building/POI fields are concatenated
+ * into infowindow HTML and $compile()d templates (Google setContent does NOT
+ * sanitize). Every such site must pass through here. ES5-safe. */
+function escapeHtml(s) {
+    if (s === undefined || s === null) return "";
+    return String(s).replace(/[&<>"']/g, function (c) {
+        return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+    });
+}
+
+/* Identifier choke point: puids are interpolated inside single-quoted JS
+ * strings in ng-click attributes, where HTML-escaping does NOT protect
+ * (entities decode before Angular parses). Allowlist to id-safe chars. */
+function escapeId(s) {
+    if (s === undefined || s === null) return "";
+    return String(s).replace(/[^A-Za-z0-9_\-]/g, "");
+}
+
 var _warn_autohide = function (scope, msg) { _warn_autohide_timeout(scope, msg, DEFAULT_AUTOHIDE); }
 var _info_autohide = function (scope, msg) { _info_autohide_timeout(scope, msg, DEFAULT_AUTOHIDE); }
 var _suc_autohide = function (scope, msg) { _suc_autohide_timeout(scope, msg, DEFAULT_AUTOHIDE); }

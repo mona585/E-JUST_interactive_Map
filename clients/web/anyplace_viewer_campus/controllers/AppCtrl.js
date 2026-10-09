@@ -35,6 +35,11 @@
  */
 app.controller('AppCtrl', function ($scope, $timeout, $mdSidenav, $log)  {
 
+    // Offline / invalid-key honesty: the Google Maps library failed to load,
+    // so no map can render. The banner in index.html explains; the app shell
+    // (search, lists) keeps working against our own API.
+    $scope.mapsUnavailable = (typeof google === "undefined" || !google.maps);
+
     $scope.toggleLeft = buildDelayedToggler('left');
     $scope.toggleRight = buildToggler('right');
     $scope.isOpenRight = function(){

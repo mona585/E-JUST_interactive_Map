@@ -34,6 +34,13 @@ app.service('GMapService', function () {
     var self = this;
     var element = document.getElementById("map-canvas");
 
+    // Offline / invalid-key guard: without the Maps library nothing below can
+    // run. Bail with a flag (AppCtrl shows the banner) instead of killing boot.
+    if (typeof google === "undefined" || !google.maps) {
+        self.mapsError = "Google Maps library failed to load (offline or invalid API key).";
+        return;
+    }
+
     /**
      * @constructor
      * @implements {google.maps.MapType}

@@ -100,13 +100,13 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
         $scope.anyService.selectedSearchPoi = query;
         setTimeout(
             function(){
-                if (query==$scope.anyService.selectedSearchPoi ){
-                    window.stop();
+                if (query==$scope.anyService.selectedSearchPoi &&
+                    $scope.anyService.selectedBuilding && $scope.anyService.selectedBuilding.buid){
                     $scope.fetchAllPoi(query, $scope.anyService.selectedBuilding.buid);
                 }
             },200);
         $scope.mylastquery = query;
-        return
+        return $scope.myallPois;
     }
 
     $scope.fetchAllPoi = function (letters , buid) {
@@ -192,9 +192,6 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
     $scope.$watch('anyService.selectedPoi', function (newVal, oldVal) {
 
         if (newVal && newVal.puid && _latLngFromPoi(newVal)) {
-            if (!arePoisLoaded){
-                window.stop();
-            }
             $scope.showSelectedPoi(newVal, oldVal);
         }
     });
@@ -320,20 +317,39 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
         poiRoutePolyline = {};
     };
 
+    // Matches both indoor keys ("floor") and campus keys ("buid:floor").
+    // Campus legs are shown when their building is selected (or when no
+    // building context exists); indoor legs keep the old floor-only behavior.
+    var _routeKeyMatches = function (key, floor_number) {
+        if (key === floor_number) return true;
+        var sep = key.lastIndexOf(":");
+        if (sep < 0) return false;
+        if (key.substring(sep + 1) !== floor_number) return false;
+        var b = key.substring(0, sep);
+        return !$scope.anyService.selectedBuilding || !$scope.anyService.selectedBuilding.buid ||
+            b === $scope.anyService.selectedBuilding.buid;
+    };
+
     var _displayPolylineForFloor = function (newFl, oldFl) {
 
         if (poiRoutePolyline) {
             if (newFl && newFl.floor_number) {
                 var nf = newFl.floor_number;
-                if (poiRoutePolyline[nf] && poiRoutePolyline[nf].polyline) {
-                    poiRoutePolyline[nf].polyline.setMap($scope.gmapService.gmap);
+                for (var key in poiRoutePolyline) {
+                    if (poiRoutePolyline.hasOwnProperty(key) && poiRoutePolyline[key].polyline &&
+                        _routeKeyMatches(key, nf)) {
+                        poiRoutePolyline[key].polyline.setMap($scope.gmapService.gmap);
+                    }
                 }
             }
 
             if (oldFl && oldFl.floor_number) {
                 var of = oldFl.floor_number;
-                if (poiRoutePolyline[of] && poiRoutePolyline[of].polyline) {
-                    poiRoutePolyline[of].polyline.setMap(null);
+                for (var key2 in poiRoutePolyline) {
+                    if (poiRoutePolyline.hasOwnProperty(key2) && poiRoutePolyline[key2].polyline &&
+                        _routeKeyMatches(key2, of)) {
+                        poiRoutePolyline[key2].polyline.setMap(null);
+                    }
                 }
             }
         }
@@ -933,13 +949,13 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
             htmlContent = '<div class="iw infowindow-scroll-fix">'
                 + '<div class="wordwrap" style="text-align: center">'
                 + '<span ng-show="navRoutesShown()" id="info-window-zoomin" ng-click="zoomInPoi()"><img src="build/images/html5_location_icon.png"></span>'
-                + '<span class="iw-poi-name">' + p.name + '</span></div>'
-                + '<div class="wordwrap iw-poi-description" ng-show="showPoiDescription">' + p.description + '</div>'
+                + '<span class="iw-poi-name">' + escapeHtml(p.name) + '</span></div>'
+                + '<div class="wordwrap iw-poi-description" ng-show="showPoiDescription">' + escapeHtml(p.description) + '</div>'
                 + '<div style="text-align: center">'
                 + '<div class="poi-action-btn"><button class="btn btn-info" ng-click="togglePoiDescription()"><i class="fa fa-info-circle"></i></i></button></div>'
                 + '<div class="poi-action-btn"><button class="btn btn-primary" ng-click="startNavFromPoi()"><i style="font-size: 12px;" class="fa fa-flag"></i></button></div>'
-                + '<div class="poi-action-btn"><button class="btn btn-success" ng-click="navigateFromUserToPoi(\'' + p.puid + '\')"><i class="fa fa-location-arrow"></i></button></div>'
-                + '<div class="poi-action-btn"><button class="btn btn-warning" ng-click="getPoiShareUrl(\'' + p.puid + '\')"><i class="fa fa-share-alt"></i></button></div>'
+                + '<div class="poi-action-btn"><button class="btn btn-success" ng-click="navigateFromUserToPoi(\'' + escapeId(p.puid) + '\')"><i class="fa fa-location-arrow"></i></button></div>'
+                + '<div class="poi-action-btn"><button class="btn btn-warning" ng-click="getPoiShareUrl(\'' + escapeId(p.puid) + '\')"><i class="fa fa-share-alt"></i></button></div>'
                 //+ '<span id="info-window-nav-from-poi" ng-click="startNavFromPoi()"><img src="build/images/start-poi-nav.png"></span>'
                 //+ '<div ng-show="navRoutesShown()" class="poi-action-btn"><button class="btn btn-primary" ng-click="zoomInPoi()"><i class="fa fa-crosshairs"></i></button></div>'
                 + '</div>'

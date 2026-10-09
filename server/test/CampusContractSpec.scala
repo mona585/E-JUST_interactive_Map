@@ -270,8 +270,7 @@ class CampusContractSpec extends PlaySpecification {
       }
     }
 
-    "reject traversal identifiers on tile endpoints" in new WithApplication {
-      val evil = route(app, FakeRequest(POST, "/api/floortiles/zip/../..//0")
+    "reject traversal identifiers on tile endpoints" in new WithApplication {      val evil = route(app, FakeRequest(POST, "/api/floortiles/zip/../..//0")
         .withJsonBody(Json.obj())).get
       status(evil) must beOneOf(NOT_FOUND, BAD_REQUEST)
       val evilTiles = route(app, FakeRequest(GET, "/api/floortiles/buid_eng/0/..%2F..%2Fetc%2Fhostname")).get
@@ -343,6 +342,166 @@ class CampusContractSpec extends PlaySpecification {
         db.deleteFromKey("pois", "puid", puidA)
         db.deleteFromKey("pois", "puid", puidB)
         db.deleteFromKey("campuses", "cuid", cuid)
+      }
+    }
+  }
+
+  "Wave-0 crash guards" should {
+
+    "400 empty POI search instead of 500" in new WithApplication {
+      val response = route(app, FakeRequest(POST, "/api/mapping/pois/search")
+        .withJsonBody(Json.obj())).get
+      status(response) must equalTo(BAD_REQUEST)
+    }
+
+    "never 500 malformed access-point ids" in new WithApplication {
+      for (body <- Seq(Json.obj(),
+        Json.obj("ids" -> 123),
+        Json.obj("ids" -> Json.arr("a")),
+        Json.obj("ids" -> Json.arr("aa:bb:cc")))) {
+        val response = route(app, FakeRequest(POST, "/api/wifi/access_points/ids")
+          .withJsonBody(body)).get
+        status(response) must not equalTo(INTERNAL_SERVER_ERROR)
+      }
+    }
+
+    "never 500 malformed position estimates" in new WithApplication {
+      for (body <- Seq(
+        Json.obj("buid" -> "x", "floor" -> "0", "APs" -> Json.arr(), "algorithm_choice" -> "1"),
+        Json.obj("buid" -> "x", "floor" -> "0", "APs" -> "not-json", "algorithm_choice" -> "1"),
+        Json.obj("buid" -> "x", "floor" -> "0", "APs" -> "[]", "algorithm_choice" -> "abc"),
+        Json.obj("buid" -> "x", "floor" -> "0", "APs" -> "[{\"bssid\":123}]", "algorithm_choice" -> "1"))) {
+        val response = route(app, FakeRequest(POST, "/api/position/estimate")
+          .withJsonBody(body)).get
+        status(response) must not equalTo(INTERNAL_SERVER_ERROR)
+      }
+    }
+
+    "never 500 malformed floor prediction" in new WithApplication {
+      for (body <- Seq(Json.obj(),
+        Json.obj("wifi" -> Json.arr("{\"MAC\":\"aa\",\"rss\":\"abc\"}")))) {
+        val response = route(app, FakeRequest(POST, "/api/position/predictFloorAlgo1")
+          .withJsonBody(body)).get
+        status(response) must not equalTo(INTERNAL_SERVER_ERROR)
+      }
+    }
+
+    "never 500 malformed radiomap queries" in new WithApplication {
+      val t1 = route(app, FakeRequest(POST, "/api/radiomap/floors")
+        .withJsonBody(Json.obj("buid" -> "x", "floors" -> 123))).get
+      status(t1) must not equalTo(INTERNAL_SERVER_ERROR)
+      val t2 = route(app, FakeRequest(POST, "/api/radiomap/floor/bbox")
+        .withJsonBody(Json.obj("coordinates_lat" -> "35.0", "coordinates_lon" -> "33.0",
+          "floor_number" -> "0", "range" -> "99999999999999999999"))).get
+      status(t2) must not equalTo(INTERNAL_SERVER_ERROR)
+    }
+
+    "never 500 malformed heatmap tiles" in new WithApplication {
+      val response = route(app, FakeRequest(POST, "/api/heatmap/floor/average/3/tiles")
+        .withJsonBody(Json.obj("buid" -> "x", "floor" -> "0",
+          "x" -> 0, "y" -> 0, "z" -> "high"))).get
+      status(response) must not equalTo(INTERNAL_SERVER_ERROR)
+    }
+    "400 Google login without access_token instead of 500" in new WithApplication {
+      val response = route(app, FakeRequest(POST, "/api/user/login/google")
+        .withJsonBody(Json.obj("external" -> "google"))).get
+      status(response) must equalTo(BAD_REQUEST)
+    }
+
+    "tolerate corrupt floor docs without 500" in new WithApplication {
+      val tag = System.nanoTime().toString.takeRight(8)
+      val buid = s"buid_contract_cf_$tag"
+      db.addJson("spaces", Json.obj("buid" -> buid, "name" -> "CF",
+        "description" -> "t", "owner_id" -> "test", "is_published" -> "true"))
+      db.addJson("floorplans", Json.obj("fuid" -> s"${buid}_0", "buid" -> buid))
+      try {
+        val response = route(app, FakeRequest(POST, "/api/mapping/connection/floor/all")
+          .withJsonBody(Json.obj("buid" -> buid, "floor_number" -> "0"))).get
+        status(response) must not equalTo(INTERNAL_SERVER_ERROR)
+      } finally {
+        db.deleteFromKey("floorplans", "fuid", s"${buid}_0")
+        db.deleteFromKey("spaces", "buid", buid)
+      }
+    }
+  }
+
+  "Ownership binding (IDOR)" should {
+
+    "401 POI update bound to another building" in new WithApplication {
+      val tag = System.nanoTime().toString.takeRight(8)
+      val token = s"apLocal_contract_idor_$tag"
+      val owner = s"contract_idor_${tag}_local"
+      val buidA = s"buid_idor_a_$tag"
+      val buidV = s"buid_idor_v_$tag"
+      val puidV = s"puid_idor_v_$tag"
+      db.addJson("users", Json.obj("name" -> "O", "email" -> s"o_$tag@ejust.edu.eg",
+        "username" -> s"contract_idor_$tag", "password" -> "x",
+        "access_token" -> token, "external" -> "anyplace",
+        "type" -> "user", "owner_id" -> owner))
+      datasources.MongodbDatasource.updateCachedModerators()
+      db.addJson("spaces", Json.obj("buid" -> buidA, "name" -> "A",
+        "description" -> "t", "owner_id" -> owner, "is_published" -> "true"))
+      db.addJson("spaces", Json.obj("buid" -> buidV, "name" -> "V",
+        "description" -> "t", "owner_id" -> "someone_else", "is_published" -> "true"))
+      db.addJson("pois", Json.obj("puid" -> puidV, "buid" -> buidV,
+        "floor_number" -> "0", "name" -> "Victim POI",
+        "coordinates_lat" -> "30.1", "coordinates_lon" -> "29.1",
+        "pois_type" -> "Room"))
+      try {
+        val r = route(app, FakeRequest(POST, "/api/auth/mapping/pois/update",
+          FakeHeaders(Seq("access_token" -> token, "Content-Type" -> "application/json")),
+          AnyContentAsJson(Json.obj("buid" -> buidA, "puid" -> puidV,
+            "name" -> "Pwned")))).get
+        status(r) must equalTo(UNAUTHORIZED)
+        val r2 = route(app, FakeRequest(POST, "/api/auth/mapping/pois/delete",
+          FakeHeaders(Seq("access_token" -> token, "Content-Type" -> "application/json")),
+          AnyContentAsJson(Json.obj("buid" -> buidA, "puid" -> puidV)))).get
+        status(r2) must equalTo(UNAUTHORIZED)
+      } finally {
+        db.deleteFromKey("pois", "puid", puidV)
+        db.deleteFromKey("spaces", "buid", buidA)
+        db.deleteFromKey("spaces", "buid", buidV)
+        db.deleteFromKey("users", "username", s"contract_idor_$tag")
+      }
+    }
+
+    "400 connection anchored in a third building" in new WithApplication {
+      val tag = System.nanoTime().toString.takeRight(8)
+      val token = s"apLocal_contract_idorc_$tag"
+      val owner = s"contract_idorc_${tag}_local"
+      val buidA = s"buid_idorc_a_$tag"
+      val buidB = s"buid_idorc_b_$tag"
+      val buidC = s"buid_idorc_c_$tag"
+      db.addJson("users", Json.obj("name" -> "O", "email" -> s"oc_$tag@ejust.edu.eg",
+        "username" -> s"contract_idorc_$tag", "password" -> "x",
+        "access_token" -> token, "external" -> "anyplace",
+        "type" -> "user", "owner_id" -> owner))
+      datasources.MongodbDatasource.updateCachedModerators()
+      for (b <- Seq(buidA, buidB, buidC)) {
+        db.addJson("spaces", Json.obj("buid" -> b, "name" -> b,
+          "description" -> "t", "owner_id" -> (if (b == buidC) "someone_else" else owner),
+          "is_published" -> "true"))
+      }
+      db.addJson("pois", Json.obj("puid" -> s"puid_idorc_a_$tag", "buid" -> buidA,
+        "floor_number" -> "0", "name" -> "A", "coordinates_lat" -> "30.1",
+        "coordinates_lon" -> "29.1", "pois_type" -> "Room"))
+      db.addJson("pois", Json.obj("puid" -> s"puid_idorc_b_$tag", "buid" -> buidB,
+        "floor_number" -> "0", "name" -> "B", "coordinates_lat" -> "30.2",
+        "coordinates_lon" -> "29.2", "pois_type" -> "Room"))
+      try {
+        val r = route(app, FakeRequest(POST, "/api/auth/mapping/connection/add",
+          FakeHeaders(Seq("access_token" -> token, "Content-Type" -> "application/json")),
+          AnyContentAsJson(Json.obj("buid" -> buidC, "buid_a" -> buidA,
+            "buid_b" -> buidB, "pois_a" -> s"puid_idorc_a_$tag",
+            "pois_b" -> s"puid_idorc_b_$tag", "floor_a" -> "0", "floor_b" -> "0",
+            "edge_type" -> "hallway", "is_published" -> "true")))).get
+        status(r) must equalTo(BAD_REQUEST)
+        extractString(r) must contain("endpoint buildings")
+      } finally {
+        db.deleteFromKey("pois", "puid", s"puid_idorc_a_$tag")
+        db.deleteFromKey("pois", "puid", s"puid_idorc_b_$tag")
+        for (b <- Seq(buidA, buidB, buidC)) db.deleteFromKey("spaces", "buid", b)
+        db.deleteFromKey("users", "username", s"contract_idorc_$tag")
       }
     }
   }

@@ -1,0 +1,203 @@
+/* E-JUST campus theme — layered over map.css via Grunt concat (style/*.css).
+ * Design tokens first, component overrides below. No framework changes;
+ * every rule targets existing ids/classes. ES5-era browsers safe
+ * (CSS variables with static fallbacks on critical color rules). */
+
+#control-bar {
+    --ejust-navy: #123a6d;
+    --ejust-navy-dark: #0c2a52;
+    --ejust-gold: #d9a521;
+    --ejust-ink: #1f2a37;
+    --ejust-paper: #ffffff;
+    --ejust-line: #d7dee8;
+}
+
+#gray-bg {
+    background-color: #123a6d;
+    background-color: var(--ejust-navy);
+    background-image: linear-gradient(180deg, #123a6d 0%, #0c2a52 100%);
+    background-image: linear-gradient(180deg, var(--ejust-navy) 0%, var(--ejust-navy-dark) 100%);
+    border-bottom: 3px solid #d9a521;
+    border-bottom: 3px solid var(--ejust-gold);
+}
+
+/* Primary actions in E-JUST navy with visible gold focus (keyboard users). */
+#control-bar .btn-primary {
+    background-color: #123a6d;
+    background-color: var(--ejust-navy);
+    border-color: #0c2a52;
+    border-color: var(--ejust-navy-dark);
+}
+
+#control-bar .btn-primary:hover,
+#control-bar .btn-primary:focus {
+    background-color: #0c2a52;
+    background-color: var(--ejust-navy-dark);
+    border-color: #0c2a52;
+    border-color: var(--ejust-navy-dark);
+}
+
+#control-bar .btn-primary:focus,
+#control-bar select:focus,
+#control-bar input:focus,
+#control-bar a:focus {
+    outline: 2px solid #d9a521;
+    outline: 2px solid var(--ejust-gold);
+    outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #control-bar * {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/* Campus wordmark next to the logo. */
+#div-logo .ejust-wordmark {
+    display: block;
+    color: #ffffff;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+
+/* Dropdown menu: roomier, readable, on-brand hover. */
+#dropdown-ham-menu {
+    min-width: 190px;
+    padding: 6px 0;
+}
+
+#dropdown-ham-menu > li > a {
+    padding: 8px 16px;
+    color: #1f2a37;
+    color: var(--ejust-ink);
+}
+
+#dropdown-ham-menu > li > a:hover,
+#dropdown-ham-menu > li > a:focus {
+    background-color: #eef3f9;
+    color: #123a6d;
+    color: var(--ejust-navy);
+}
+
+/* Full-screen loading veil while the campus model loads.
+ * Shown via ng-show="anyService.BuildingsLoaded" (true until first fetch). */
+#ejust-loading-veil {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 200;
+    background: rgba(12, 42, 82, 0.72);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+}
+
+#ejust-loading-veil .ejust-spinner {
+    width: 44px;
+    height: 44px;
+    border: 4px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #d9a521;
+    border-top-color: var(--ejust-gold);
+    border-radius: 50%;
+    animation: ejust-spin 0.9s linear infinite;
+}
+
+#ejust-loading-veil p {
+    margin-top: 14px;
+    font-size: 15px;
+    letter-spacing: 0.4px;
+}
+
+@keyframes ejust-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Search readability + no iOS auto-zoom (inputs stay >= 16px). */
+#ctrl-bar-buildings .ui-select-match,
+#ctrl-bar-pois .ui-select-match {
+    font-size: 16px;
+}
+
+#ctrl-bar-buildings .ui-select-choices,
+#ctrl-bar-pois .ui-select-choices {
+    font-size: 14px;
+}
+
+/* Empty campus (no published buildings): friendly hint banner slot. */
+#ejust-empty-campus {
+    margin: 8px 12px 0 12px;
+    padding: 10px 14px;
+    background: #fff8e6;
+    border: 1px solid #d9a521;
+    border: 1px solid var(--ejust-gold);
+    border-radius: 4px;
+    color: #1f2a37;
+    color: var(--ejust-ink);
+    font-size: 14px;
+}
+
+/* Map floating controls: consistent depth, larger touch targets. */
+.spaces-btn-parent,
+.center-view-box-parent,
+.find-me-box-parent,
+.pan-find-me-box-parent,
+#floor-controls #DIV_1 {
+    border-radius: 6px;
+}
+
+#floor-controls #DIV_1 span {
+    padding: 6px 8px;
+    cursor: pointer;
+}
+
+/* Map-unavailable banner (offline or invalid API key). */
+#ejust-maps-unavailable {
+    position: fixed;
+    top: 64px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 210;
+    max-width: 92vw;
+    background: #fff8e6;
+    border: 1px solid #d9a521;
+    border: 1px solid var(--ejust-gold, #d9a521);
+    border-radius: 6px;
+    padding: 10px 16px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    font-size: 14px;
+    color: #1f2a37;
+}
+
+#ejust-maps-unavailable p {
+    margin: 0;
+}
+
+/* Small screens: tighter bar, full-width menu, readable type. */
+@media (max-width: 768px) {
+    #gray-bg {
+        padding: 6px 0 6px 0;
+    }
+
+    #ctrl-bar-buildings,
+    #ctrl-bar-pois {
+        padding: 0 4px 0 4px;
+    }
+
+    #dropdown-ham-menu {
+        min-width: 0;
+        width: 82vw;
+    }
+
+    #ejust-loading-veil p {
+        font-size: 14px;
+        padding: 0 24px;
+        text-align: center;
+    }
+}
