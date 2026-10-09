@@ -2,7 +2,10 @@ var MIN_ZOOM_FOR_HEATMAPS = 19;
 var MAX_ZOOM_FOR_HEATMAPS = 21;
 var _MAX_ZOOM_LEVEL = 22;
 // var DEFAULT_MAP_TILES = "OSM";
-var DEFAULT_MAP_TILES = "CartoLight";
+// Keyless default: OSM needs no API key. CartoLight now watermarks without a
+// CARTO key (retired anonymous access), so it stays registered but is no
+// longer the default or offered in the type picker.
+var DEFAULT_MAP_TILES = "OSM";
 
 // MESSAGES
 //// Error messages

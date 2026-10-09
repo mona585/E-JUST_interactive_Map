@@ -80,7 +80,20 @@ class UserController @Inject()(cc: ControllerComponents,
         if (storedDoc == null) return RESPONSE.BAD("Incorrect username or password.")
         val storedHash = (storedDoc \ SCHEMA.fPassword).asOpt[String].orNull
         if (!userHelper.verifyPassword(password, storedHash)) return RESPONSE.BAD("Incorrect username or password.")
-        val storedUser = List(storedDoc)
+        // Session freshness: rotate expired tokens, stamp expiry on legacy ones.
+        // Persisted via the same replace path updateUser uses.
+        var sessionDoc = storedDoc
+        val expired = !userHelper.tokenValid(storedDoc)
+        val missingExp = (storedDoc \ SCHEMA.fTokenExpires).asOpt[String].isEmpty
+        if (expired || missingExp) {
+          val token = if (expired) MongodbDatasource.generateAccessToken(true)
+          else (storedDoc \ SCHEMA.fAccessToken).as[String]
+          sessionDoc = storedDoc.as[JsObject] +
+            (SCHEMA.fAccessToken -> JsString(token)) +
+            (SCHEMA.fTokenExpires -> JsString(userHelper.freshExpiry()))
+          pds.db.replaceJsonDocument(SCHEMA.cUsers, SCHEMA.fUsername, username, sessionDoc.toString())
+        }
+        val storedUser = List(sessionDoc)
         if (storedUser.size > 1) return RESPONSE.BAD("More than one users were found.")
         val accessToken = (storedUser.head \ SCHEMA.fAccessToken).as[String]
         if (accessToken == null) return RESPONSE.BAD("User doesn't have access token.")
@@ -110,8 +123,14 @@ class UserController @Inject()(cc: ControllerComponents,
         val storedUser = pds.db.getUserFromAccessToken(accessToken)
         if (storedUser == null) return RESPONSE.BAD("User not found.")
         if (storedUser.size > 1) return RESPONSE.BAD("More than one users were found.")
+        if (!userHelper.tokenValid(storedUser.head)) return RESPONSE.BAD("Session expired, please log in again.")
 
-        val user = storedUser.head.as[JsObject] - SCHEMA.fPassword
+        // Sliding expiration: refresh extends the session without rotating
+        // the token, so remembered devices stay logged in while active.
+        val extended = storedUser.head.as[JsObject] +
+          (SCHEMA.fTokenExpires -> JsString(userHelper.freshExpiry()))
+        pds.db.replaceJsonDocument(SCHEMA.cUsers, SCHEMA.fAccessToken, accessToken, extended.toString())
+        val user = extended - SCHEMA.fPassword
         val res = Json.obj("user" -> user)
 
         updateCachedModerators()

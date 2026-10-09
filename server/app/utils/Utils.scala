@@ -81,6 +81,19 @@ object Utils {
         path.split("[/\\\\]").forall(isSafePathSegment)
     }
 
+    /** Second gate at open time: the canonical target must stay inside root.
+     *  Catches separator tricks and symlinks that segment checks miss. */
+    def isWithinRoot(root: String, path: String): Boolean = {
+        try {
+            if (root == null || path == null) return false
+            val base = new java.io.File(root).getCanonicalPath
+            val target = new java.io.File(path).getCanonicalPath
+            target == base || target.startsWith(base + java.io.File.separator)
+        } catch {
+            case _: Exception => false
+        }
+    }
+
     def genErrorUniqueID(): String = {
         java.net.InetAddress.getLocalHost.getHostName.toUpperCase +
         "x" + UUID.randomUUID().toString.split("-").last.toUpperCase

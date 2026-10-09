@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Anyplace MongoDB backup daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

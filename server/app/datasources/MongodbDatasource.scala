@@ -74,9 +74,27 @@ object MongodbDatasource {
 
   private var admins: List[String] = List[String]()
   private var moderators: List[String] = List[String]()
+  private var rolesRefreshedAt: Long = 0L
+  // Role lists were boot-cached statics: newly promoted moderators stayed
+  // powerless until an unrelated login refreshed them. 60s TTL keeps checks
+  // cheap (2 queries per minute worst case) and never breaks requests: a
+  // failed refresh keeps serving the last known lists.
+  private val ROLES_TTL_MS: Long = 60000L
 
-  def getAdmins: List[String] = admins
-  def getModerators: List[String] = moderators
+  def getAdmins: List[String] = { refreshRolesIfStale(); admins }
+  def getModerators: List[String] = { refreshRolesIfStale(); moderators }
+
+  private def refreshRolesIfStale(): Unit = {
+    if (sInstance == null) return
+    val now = System.currentTimeMillis()
+    if (now - rolesRefreshedAt < ROLES_TTL_MS) return
+    try {
+      updateCachedModerators()
+      rolesRefreshedAt = now
+    } catch {
+      case _: Exception => LOG.W("roles refresh failed, serving cached lists")
+    }
+  }
 
   def instance: MongodbDatasource = {
     if (sInstance == null) throw new RuntimeException("Mongodb not initialized")

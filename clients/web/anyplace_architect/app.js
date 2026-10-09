@@ -31,6 +31,31 @@
 var app = angular.module('anyArchitect',
     ['ngCookies', 'angularjs-dropdown-multiselect', 'ui.bootstrap', 'ui.select', 'ngSanitize']);
 
+/* Secure highlight: overrides angular-ui-select's raw-HTML highlighter.
+ * Server-controlled names/descriptions are escaped BEFORE match-wrapping,
+ * closing the stored-XSS sink in every ng-bind-html="...| highlight" site.
+ * Registered after ui-select loads, so this definition wins. */
+app.filter('highlight', ['$sce', function ($sce) {
+    function esc(s) {
+        return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+        });
+    }
+    function escRe(s) {
+        return String(s).replace(/([.?*+^$[\]\\(){}|-])/g, '\\$1');
+    }
+    return function (matchItem, query) {
+        var safe = esc(matchItem);
+        if (!query) return safe;
+        try {
+            return $sce.trustAsHtml(safe.replace(new RegExp(escRe(query), 'gi'),
+                '<span class="ui-select-highlight">$&</span>'));
+        } catch (e) {
+            return safe;
+        }
+    };
+}]);
+
 app.service('GMapService', function () {
     this.gmap = {};
     var self = this;

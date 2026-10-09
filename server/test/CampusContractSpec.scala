@@ -34,6 +34,26 @@ class CampusContractSpec extends PlaySpecification {
   def db(implicit app: play.api.Application): datasources.ProxyDataSource =
     app.injector.instanceOf[datasources.ProxyDataSource]
 
+  /** Idempotent fixture write: pre-cleanup makes each test independent of
+   *  orphan rows left by killed runs (finally never runs on SIGKILL). */
+  def seed(col: String, doc: JsValue)
+      (implicit app: play.api.Application): Boolean = {
+    val key = col match {
+      case "campuses" | "edges" => "cuid"
+      case "pois" => "puid"
+      case "users" => "username"
+      case "spaces" => "buid"
+      case "floorplans" => "fuid"
+      case _ => return db.addJson(col, doc)
+    }
+    (doc \ key).asOpt[String] match {
+      case Some(value) =>
+        db.deleteFromKey(col, key, value)
+        db.addJson(col, doc)
+      case None => db.addJson(col, doc)
+    }
+  }
+
   "Campus pilot liveness" should {
 
     "answer /api/health without authentication" in new WithApplication {
@@ -85,25 +105,25 @@ class CampusContractSpec extends PlaySpecification {
   "Campus outdoor routing" should {
 
     "plot a path between two buildings over outdoor edges" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val cuid = s"cuid_contract_$tag"
       val buidA = s"buid_contract_a_$tag"
       val buidB = s"buid_contract_b_$tag"
       val puidA = s"puid_contract_a_$tag"
       val puidB = s"puid_contract_b_$tag"
       val db = app.injector.instanceOf[datasources.ProxyDataSource]
-      db.addJson("campuses", Json.obj("cuid" -> cuid, "name" -> "Contract",
+      seed("campuses", Json.obj("cuid" -> cuid, "name" -> "Contract",
         "description" -> "t", "greeklish" -> "false",
         "buids" -> Json.arr(buidA, buidB), "owner_id" -> "test"))
-      db.addJson("pois", Json.obj("puid" -> puidA, "buid" -> buidA,
+      seed("pois", Json.obj("puid" -> puidA, "buid" -> buidA,
         "floor_number" -> "0", "name" -> "Gate A",
         "coordinates_lat" -> "30.9501", "coordinates_lon" -> "29.7501",
         "pois_type" -> "Entrance"))
-      db.addJson("pois", Json.obj("puid" -> puidB, "buid" -> buidB,
+      seed("pois", Json.obj("puid" -> puidB, "buid" -> buidB,
         "floor_number" -> "0", "name" -> "Gate B",
         "coordinates_lat" -> "30.9510", "coordinates_lon" -> "29.7510",
         "pois_type" -> "Entrance"))
-      db.addJson("edges", Json.obj("cuid" -> s"conn_${puidA}_${puidB}",
+      seed("edges", Json.obj("cuid" -> s"conn_${puidA}_${puidB}",
         "pois_a" -> puidA, "pois_b" -> puidB,
         "buid_a" -> buidA, "buid_b" -> buidB,
         "floor_a" -> "0", "floor_b" -> "0", "buid" -> buidA,
@@ -128,15 +148,15 @@ class CampusContractSpec extends PlaySpecification {
     }
 
     "400 when a POI sits outside the campus" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val cuid = s"cuid_contract_out_$tag"
       val buidA = s"buid_contract_out_a_$tag"
       val puidA = s"puid_contract_out_a_$tag"
       val db = app.injector.instanceOf[datasources.ProxyDataSource]
-      db.addJson("campuses", Json.obj("cuid" -> cuid, "name" -> "Contract",
+      seed("campuses", Json.obj("cuid" -> cuid, "name" -> "Contract",
         "description" -> "t", "greeklish" -> "false",
         "buids" -> Json.arr(buidA), "owner_id" -> "test"))
-      db.addJson("pois", Json.obj("puid" -> puidA, "buid" -> buidA,
+      seed("pois", Json.obj("puid" -> puidA, "buid" -> buidA,
         "floor_number" -> "0", "name" -> "Gate A",
         "coordinates_lat" -> "30.9501", "coordinates_lon" -> "29.7501",
         "pois_type" -> "Entrance"))
@@ -164,7 +184,7 @@ class CampusContractSpec extends PlaySpecification {
   "Auth hardening" should {
 
     "register PBKDF2 hashes and log in, rejecting wrong passwords" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val username = s"contract_auth_$tag"
       val reg = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
         "name" -> s"Contract $tag",
@@ -189,7 +209,7 @@ class CampusContractSpec extends PlaySpecification {
     }
 
     "still verify legacy SHA-256 rows (bug-compatible hex)" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val username = s"contract_legacy_$tag"
       // Replicates helper.User legacy derivation incl. its nibble-drop quirk,
       // because production rows were written by that exact routine.
@@ -202,7 +222,7 @@ class CampusContractSpec extends PlaySpecification {
         }
         sb.toString
       }
-      db.addJson("users", Json.obj("name" -> "Legacy", "email" -> s"legacy_$tag@ejust.edu.eg",
+      seed("users", Json.obj("name" -> "Legacy", "email" -> s"legacy_$tag@ejust.edu.eg",
         "username" -> username, "password" -> legacyHex("LegacyPass1!"),
         "access_token" -> s"apLocal_contract_$tag", "external" -> "anyplace",
         "type" -> "user", "owner_id" -> s"${username}_local"))
@@ -240,16 +260,63 @@ class CampusContractSpec extends PlaySpecification {
       (json \ "uptime_ms").asOpt[Long] must beSome
     }
 
+    "stamp token expiry on login and slide it on refresh" in new WithApplication {
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val username = s"contract_exp_$tag"
+      val reg = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
+        "name" -> s"Exp $tag", "email" -> s"exp_$tag@ejust.edu.eg",
+        "username" -> username, "password" -> "Password123!"))).get
+      println("DBG-SUITE-REGSTATUS=" + status(reg))
+      try {
+        println("DBG-SUITE-FOUND=" + (db.getFromKeyAsJson("users", "username", username) != null))
+        val login = route(app, FakeRequest(POST, "/api/user/login").withJsonBody(Json.obj(
+          "username" -> username, "password" -> "Password123!"))).get
+        status(login) must equalTo(OK)
+        val token = (extractJson(login) \ "user" \ "access_token").as[String]
+        val exp1 = (db.getFromKeyAsJson("users", "username", username) \ "token_expires").as[String].toLong
+        exp1 must be_>(System.currentTimeMillis())
+        Thread.sleep(5)
+        val refresh = route(app, FakeRequest(POST, "/api/user/refresh").withJsonBody(Json.obj(
+          "access_token" -> token))).get
+        status(refresh) must equalTo(OK)
+        val exp2 = (db.getFromKeyAsJson("users", "username", username) \ "token_expires").as[String].toLong
+        exp2 must be_>=(exp1)
+      } finally {
+        db.deleteFromKey("users", "username", username)
+      }
+    }
+
+    "reject expired tokens on protected endpoints and refresh" in new WithApplication {
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val username = s"contract_expired_$tag"
+      val token = s"apLocal_contract_expired_$tag"
+      seed("users", Json.obj("name" -> "Old", "email" -> s"old_$tag@ejust.edu.eg",
+        "username" -> username, "password" -> "x", "access_token" -> token,
+        "external" -> "anyplace", "type" -> "user",
+        "owner_id" -> s"${username}_local", "token_expires" -> "1000"))
+      try {
+        val denied = route(app, FakeRequest(POST, "/api/auth/user/update",
+          FakeHeaders(Seq("access_token" -> token, "Content-Type" -> "application/json")),
+          AnyContentAsJson(Json.obj("user_id" -> s"${username}_local")))).get
+        status(denied) must equalTo(UNAUTHORIZED)
+        val noRefresh = route(app, FakeRequest(POST, "/api/user/refresh").withJsonBody(Json.obj(
+          "access_token" -> token))).get
+        status(noRefresh) must equalTo(BAD_REQUEST)
+      } finally {
+        db.deleteFromKey("users", "username", username)
+      }
+    }
+
     "forbid moderators changing other users' passwords" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val modToken = s"apLocal_contract_mod_$tag"
       val modOwner = s"contract_mod_${tag}_local"
       val victimOwner = s"contract_victim_${tag}_local"
-      db.addJson("users", Json.obj("name" -> "Mod", "email" -> s"mod_$tag@ejust.edu.eg",
+      seed("users", Json.obj("name" -> "Mod", "email" -> s"mod_$tag@ejust.edu.eg",
         "username" -> s"contract_mod_$tag", "password" -> "x",
         "access_token" -> modToken, "external" -> "anyplace",
         "type" -> "moderator", "owner_id" -> modOwner))
-      db.addJson("users", Json.obj("name" -> "Victim", "email" -> s"victim_$tag@ejust.edu.eg",
+      seed("users", Json.obj("name" -> "Victim", "email" -> s"victim_$tag@ejust.edu.eg",
         "username" -> s"contract_victim_$tag", "password" -> "x",
         "access_token" -> s"apLocal_contract_victim_$tag", "external" -> "anyplace",
         "type" -> "user", "owner_id" -> victimOwner))
@@ -293,12 +360,12 @@ class CampusContractSpec extends PlaySpecification {
     }
 
     "404 unknown campus with known POIs" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val buid = s"buid_contract_nc_$tag"
       val puidA = s"puid_contract_nc_a_$tag"
       val puidB = s"puid_contract_nc_b_$tag"
       for (puid <- Seq(puidA, puidB)) {
-        db.addJson("pois", Json.obj("puid" -> puid, "buid" -> buid,
+        seed("pois", Json.obj("puid" -> puid, "buid" -> buid,
           "floor_number" -> "0", "name" -> "Gate",
           "coordinates_lat" -> "30.9501", "coordinates_lon" -> "29.7501",
           "pois_type" -> "Entrance"))
@@ -315,20 +382,20 @@ class CampusContractSpec extends PlaySpecification {
     }
 
     "400 disconnected campus POIs with a clear message" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val cuid = s"cuid_contract_dc_$tag"
       val buidA = s"buid_contract_dc_a_$tag"
       val buidB = s"buid_contract_dc_b_$tag"
       val puidA = s"puid_contract_dc_a_$tag"
       val puidB = s"puid_contract_dc_b_$tag"
-      db.addJson("campuses", Json.obj("cuid" -> cuid, "name" -> "DC",
+      seed("campuses", Json.obj("cuid" -> cuid, "name" -> "DC",
         "description" -> "t", "greeklish" -> "false",
         "buids" -> Json.arr(buidA, buidB), "owner_id" -> "test"))
-      db.addJson("pois", Json.obj("puid" -> puidA, "buid" -> buidA,
+      seed("pois", Json.obj("puid" -> puidA, "buid" -> buidA,
         "floor_number" -> "0", "name" -> "A",
         "coordinates_lat" -> "30.9501", "coordinates_lon" -> "29.7501",
         "pois_type" -> "Entrance"))
-      db.addJson("pois", Json.obj("puid" -> puidB, "buid" -> buidB,
+      seed("pois", Json.obj("puid" -> puidB, "buid" -> buidB,
         "floor_number" -> "0", "name" -> "B",
         "coordinates_lat" -> "30.9510", "coordinates_lon" -> "29.7510",
         "pois_type" -> "Entrance"))
@@ -408,12 +475,11 @@ class CampusContractSpec extends PlaySpecification {
       status(response) must equalTo(BAD_REQUEST)
     }
 
-    "tolerate corrupt floor docs without 500" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+    "tolerate corrupt floor docs without 500" in new WithApplication {      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val buid = s"buid_contract_cf_$tag"
-      db.addJson("spaces", Json.obj("buid" -> buid, "name" -> "CF",
+      seed("spaces", Json.obj("buid" -> buid, "name" -> "CF",
         "description" -> "t", "owner_id" -> "test", "is_published" -> "true"))
-      db.addJson("floorplans", Json.obj("fuid" -> s"${buid}_0", "buid" -> buid))
+      seed("floorplans", Json.obj("fuid" -> s"${buid}_0", "buid" -> buid))
       try {
         val response = route(app, FakeRequest(POST, "/api/mapping/connection/floor/all")
           .withJsonBody(Json.obj("buid" -> buid, "floor_number" -> "0"))).get
@@ -428,22 +494,22 @@ class CampusContractSpec extends PlaySpecification {
   "Ownership binding (IDOR)" should {
 
     "401 POI update bound to another building" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val token = s"apLocal_contract_idor_$tag"
       val owner = s"contract_idor_${tag}_local"
       val buidA = s"buid_idor_a_$tag"
       val buidV = s"buid_idor_v_$tag"
       val puidV = s"puid_idor_v_$tag"
-      db.addJson("users", Json.obj("name" -> "O", "email" -> s"o_$tag@ejust.edu.eg",
+      seed("users", Json.obj("name" -> "O", "email" -> s"o_$tag@ejust.edu.eg",
         "username" -> s"contract_idor_$tag", "password" -> "x",
         "access_token" -> token, "external" -> "anyplace",
         "type" -> "user", "owner_id" -> owner))
       datasources.MongodbDatasource.updateCachedModerators()
-      db.addJson("spaces", Json.obj("buid" -> buidA, "name" -> "A",
+      seed("spaces", Json.obj("buid" -> buidA, "name" -> "A",
         "description" -> "t", "owner_id" -> owner, "is_published" -> "true"))
-      db.addJson("spaces", Json.obj("buid" -> buidV, "name" -> "V",
+      seed("spaces", Json.obj("buid" -> buidV, "name" -> "V",
         "description" -> "t", "owner_id" -> "someone_else", "is_published" -> "true"))
-      db.addJson("pois", Json.obj("puid" -> puidV, "buid" -> buidV,
+      seed("pois", Json.obj("puid" -> puidV, "buid" -> buidV,
         "floor_number" -> "0", "name" -> "Victim POI",
         "coordinates_lat" -> "30.1", "coordinates_lon" -> "29.1",
         "pois_type" -> "Room"))
@@ -466,26 +532,26 @@ class CampusContractSpec extends PlaySpecification {
     }
 
     "400 connection anchored in a third building" in new WithApplication {
-      val tag = System.nanoTime().toString.takeRight(8)
+      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
       val token = s"apLocal_contract_idorc_$tag"
       val owner = s"contract_idorc_${tag}_local"
       val buidA = s"buid_idorc_a_$tag"
       val buidB = s"buid_idorc_b_$tag"
       val buidC = s"buid_idorc_c_$tag"
-      db.addJson("users", Json.obj("name" -> "O", "email" -> s"oc_$tag@ejust.edu.eg",
+      seed("users", Json.obj("name" -> "O", "email" -> s"oc_$tag@ejust.edu.eg",
         "username" -> s"contract_idorc_$tag", "password" -> "x",
         "access_token" -> token, "external" -> "anyplace",
         "type" -> "user", "owner_id" -> owner))
       datasources.MongodbDatasource.updateCachedModerators()
       for (b <- Seq(buidA, buidB, buidC)) {
-        db.addJson("spaces", Json.obj("buid" -> b, "name" -> b,
+        seed("spaces", Json.obj("buid" -> b, "name" -> b,
           "description" -> "t", "owner_id" -> (if (b == buidC) "someone_else" else owner),
           "is_published" -> "true"))
       }
-      db.addJson("pois", Json.obj("puid" -> s"puid_idorc_a_$tag", "buid" -> buidA,
+      seed("pois", Json.obj("puid" -> s"puid_idorc_a_$tag", "buid" -> buidA,
         "floor_number" -> "0", "name" -> "A", "coordinates_lat" -> "30.1",
         "coordinates_lon" -> "29.1", "pois_type" -> "Room"))
-      db.addJson("pois", Json.obj("puid" -> s"puid_idorc_b_$tag", "buid" -> buidB,
+      seed("pois", Json.obj("puid" -> s"puid_idorc_b_$tag", "buid" -> buidB,
         "floor_number" -> "0", "name" -> "B", "coordinates_lat" -> "30.2",
         "coordinates_lon" -> "29.2", "pois_type" -> "Room"))
       try {
@@ -503,6 +569,36 @@ class CampusContractSpec extends PlaySpecification {
         for (b <- Seq(buidA, buidB, buidC)) db.deleteFromKey("spaces", "buid", b)
         db.deleteFromKey("users", "username", s"contract_idorc_$tag")
       }
+    }
+  }
+
+  "Google token claims" should {
+
+    def verifier(implicit app: play.api.Application) =
+      app.injector.instanceOf[controllers.helper.User]
+
+    def tokenInfo(aud: String, exp: String, sub: String) = Json.obj(
+      "aud" -> aud, "expires_in" -> exp, "sub" -> sub, "email" -> "u@ejust.edu.eg")
+
+    "accept a live token for our audience" in new WithApplication {
+      verifier.validateGoogleTokenInfo(
+        tokenInfo("ejust-client", "3600", "gid-1"), Some("ejust-client")) must equalTo("gid-1")
+    }
+
+    "reject foreign-audience tokens" in new WithApplication {
+      verifier.validateGoogleTokenInfo(
+        tokenInfo("evil-client", "3600", "gid-1"), Some("ejust-client")) must beNull
+    }
+
+    "reject expired tokens" in new WithApplication {
+      verifier.validateGoogleTokenInfo(
+        tokenInfo("ejust-client", "0", "gid-1"), Some("ejust-client")) must beNull
+    }
+
+    "reject subject-less tokens" in new WithApplication {
+      verifier.validateGoogleTokenInfo(
+        Json.obj("aud" -> "ejust-client", "expires_in" -> "3600"),
+        Some("ejust-client")) must beNull
     }
   }
 }

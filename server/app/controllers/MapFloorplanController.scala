@@ -41,6 +41,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           return RESPONSE.BAD("Invalid building or floor identifier.")
         val filePath = tilerHelper.getFloorPlanFor(buid, floorNum)
         LOG.D2("requested: " + filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         try {
           val file = new File(filePath)
           if (!file.exists()) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOORPLAN(floorNum)
@@ -67,6 +69,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           return RESPONSE.BAD("Invalid building or floor identifier.")
         val filePath = tilerHelper.getFloorTilesZipFor(buid, floorNum)
         LOG.D3("requested: " + filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         try {
           val file = new File(filePath)
           if (!file.exists()) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOORPLAN(floorNum)
@@ -93,6 +97,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           return RESPONSE.BAD("Invalid building or floor identifier.")
         val filePath = tilerHelper.getFloorTilesZipFor(buid, floorNum)
         LOG.D3("requested: " + filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val file = new File(filePath)
         if (!file.exists()) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOORPLAN(floorNum)
         if (!file.canRead) return RESPONSE.BAD_CANNOT_READ_FLOORPLAN(floorNum)
@@ -117,6 +123,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         path
       try {
         val file = new File(filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), file.getPath))
+          return NotFound(<h1>Page not found</h1>)
         //send ok message to tiler
         if (!file.exists() || !file.canRead) return RESPONSE.OK("File requested not found")
         Ok.sendFile(file)
@@ -139,6 +147,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           return RESPONSE.BAD("Invalid building or floor identifier.")
         val filePath = tilerHelper.getFloorPlanFor(buid, floorNum)
         LOG.D3("Floorplan: getBase64: requested: " + filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val file = new File(filePath)
         try {
           if (!file.exists()) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOORPLAN(floorNum)
@@ -186,6 +196,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         while (z < floors.length) {
           val filePath = tilerHelper.getFloorPlanFor(buid, floors(z))
           LOG.D3("Floorplan: getAllBase64: requested: " + filePath)
+          if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+            return RESPONSE.BAD("Invalid building or floor identifier.")
           val file = new File(filePath)
           try
             if (!file.exists || !file.canRead) { all_floors.add("") }

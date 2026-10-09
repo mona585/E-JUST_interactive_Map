@@ -86,17 +86,16 @@ app.controller('BuildingController',
                 $scope.myBuildingsHashT[oldVal.buid].marker.setVisible(true);
             }
 
-            // hide current buildings marker
-            if ($scope.myBuildingsHashT[newVal.buid] && $scope.myBuildingsHashT[newVal.buid].marker) {
-                $scope.myBuildingsHashT[newVal.buid].marker.setVisible(false);
-            } else {
-                _err($scope, "Selected building is not on the map yet. Please reload and try again.");
-                return;
-            }
+            // Hide current building's marker (if it has one: buildings
+            // without coordinates are listed but never pinned).
+            var entry = $scope.myBuildingsHashT[newVal.buid];
+            if (entry && entry.marker) {
+                entry.marker.setVisible(false);
 
-            // Pan map to selected building
-            $scope.gmapService.gmap.panTo(_latLngFromBuilding(newVal));
-            $scope.gmapService.gmap.setZoom(20);
+                // Pan map to selected building
+                $scope.gmapService.gmap.panTo(_latLngFromBuilding(newVal));
+                $scope.gmapService.gmap.setZoom(20);
+            }
 
             try {
                 if (typeof(Storage) !== "undefined" && localStorage) {
@@ -132,7 +131,9 @@ app.controller('BuildingController',
 
                 $scope.myBuildings.push(b);
 
-                var marker = getMapsIconBuildingViewer($scope, _latLngFromBuilding(b))
+                var bloc = _latLngFromBuilding(b);
+                if (bloc) {
+                var marker = getMapsIconBuildingViewer($scope, bloc);
                 markerCluster.addMarker(marker);
 
                 var htmlContent = '<div class="infowindow-scroll-fix">'
@@ -149,6 +150,7 @@ app.controller('BuildingController',
                     marker: marker,
                     model: b
                 };
+                }
 
                 google.maps.event.addListener(marker, 'click', function () {
                     infowindow.setContent(this.infoContent);
@@ -234,7 +236,9 @@ app.controller('BuildingController',
                     //     draggable: false
                     // });
                     // markerCluster.addMarker(marker);
-                    var marker = getMapsIconBuildingViewer($scope, _latLngFromBuilding(b))
+                    var bloc = _latLngFromBuilding(b);
+                    if (bloc) {
+                    var marker = getMapsIconBuildingViewer($scope, bloc);
                     markerCluster.addMarker(marker);
 
                     var htmlContent = '<div class="infowindow-scroll-fix">'
@@ -265,6 +269,7 @@ app.controller('BuildingController',
                             $scope.anyService.selectedBuilding = self.building;
                         });
                     });
+                    }
                 }
 
                 if (loadBuidFromUrl > -1) {

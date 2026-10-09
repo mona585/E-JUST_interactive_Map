@@ -60,34 +60,54 @@ class User @Inject()(pds: ProxyDataSource,
    */
   def verifyGoogleUser(authToken: String): String = {
     LOG.D3("User: verifyGoogleUser")
+    if (authToken == null || authToken.trim.isEmpty) return null
     // remove the double string quotes due to json processing
     val gURL = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + authToken
     var res = ""
     try {
       res = Network.GET(gURL)
-      LOG.D2("verifyGoogleUser: " + res)
     } catch {
       case e: Exception => LOG.E("verifyId", e)
     }
-    if (res != null) {
+    if (res != null && res.nonEmpty) {
       try {
-        val json = Json.parse(res)
-        val uid = json \ "user_id"
-        val sub = json \ "sub"
-
-
-        if (uid.toOption.isDefined)
-          return uid.as[String]
-        if (sub.toOption.isDefined)
-          return sub.as[String]
+        return validateGoogleTokenInfo(Json.parse(res),
+          conf.getOptional[String]("google.client.id").filter(_.nonEmpty))
       } catch {
-        case iae: IllegalArgumentException => LOG.E("verifyId: " + iae.getMessage + "String: '" + res + "'");
+        case iae: IllegalArgumentException => LOG.E("verifyId: " + iae.getMessage)
         case e: Exception => LOG.E("verifyId", e)
       }
     } else {
       LOG.E("User: VerifyGoogleUser: failed.")
     }
     null
+  }
+
+  /** Pure claims check over a tokeninfo document (spec-covered, no network).
+   *  Google's endpoint already rejects bad signatures; we additionally demand
+   *  a subject, a live token, and — when `google.client.id` is configured —
+   *  an audience equal to our client ID (tokens minted for other apps must
+   *  never log into ours). Unset client ID = aud skipped with a warning;
+   *  the host MUST set it for production (see app.private.example.conf).
+   *  @return the stable Google user id, or null. */
+  def validateGoogleTokenInfo(json: JsValue, clientId: Option[String]): String = {
+    val aud = (json \ "aud").asOpt[String].orElse((json \ "audience").asOpt[String])
+    clientId match {
+      case Some(id) if aud.getOrElse("") != id =>
+        LOG.W("verifyGoogleUser: audience mismatch")
+        return null
+      case None =>
+        LOG.W("verifyGoogleUser: google.client.id unset, audience unchecked (dev only)")
+      case _ =>
+    }
+    val remaining = (json \ "expires_in").asOpt[String]
+      .flatMap(s => try { Some(s.toLong) } catch { case _: NumberFormatException => None })
+    if (remaining.exists(_ <= 0)) {
+      LOG.W("verifyGoogleUser: expired token")
+      return null
+    }
+    val uid = (json \ "user_id").asOpt[String].orElse((json \ "sub").asOpt[String])
+    uid.orNull
   }
 
   /**
@@ -97,11 +117,28 @@ class User @Inject()(pds: ProxyDataSource,
    * @return the owner_id of the user.
    */
   def authorize(apiKey: String): String = {
+    if (apiKey == null) return null
     val user = pds.db.getFromKeyAsJson(SCHEMA.cUsers, SCHEMA.fAccessToken, apiKey)
-    if (user != null)
+    if (user != null && tokenValid(user))
       return (user \ SCHEMA.fOwnerId).as[String]
     null
   }
+
+  /** 30-day sliding sessions. Missing expiry = legacy token, honored. */
+  val TOKEN_TTL_MS: Long = 30L * 24 * 60 * 60 * 1000
+
+  def tokenValid(user: JsValue): Boolean = {
+    (user \ SCHEMA.fTokenExpires).asOpt[String] match {
+      case None => true
+      case Some(exp) => try {
+        System.currentTimeMillis() < exp.toLong
+      } catch {
+        case _: NumberFormatException => false
+      }
+    }
+  }
+
+  def freshExpiry(): String = (System.currentTimeMillis() + TOKEN_TTL_MS).toString
 
   def isAdminOrModerator(userId: String): Boolean = {
     // Admin

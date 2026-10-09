@@ -534,6 +534,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         val filePath = "radiomaps" + api.sep + radio_folder + api.sep + fileName
         LOG.D2("serveRadioMap: requested: " + filePath)
         val file = new File(filePath)
+        if (!Utils.isWithinRoot("radiomaps", file.getPath))
+          return RESPONSE.BAD("Invalid radiomap identifier.")
         try {
           if (!file.exists()) return RESPONSE.BAD("File does not exist: " + fileName)
           if (!file.canRead) return RESPONSE.BAD("File cannot be read: " + fileName)
@@ -556,6 +558,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
       val filePath = radioMapsFrozenDir + S + space + S + floor + S + fileName
       LOG.D2("getFrozen: requested: " + filePath)
       val file = new File(filePath)
+      if (!Utils.isWithinRoot(radioMapsFrozenDir, file.getPath))
+        return RESPONSE.BAD("Invalid radiomap identifier.")
       try {
         if (!file.exists()) return RESPONSE.BAD("Requested file does not exist")
         if (!file.canRead) return RESPONSE.BAD("Requested file cannot be read: " + fileName)

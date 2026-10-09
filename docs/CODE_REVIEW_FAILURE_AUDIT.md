@@ -10,6 +10,29 @@ needs design/host) · DISPUTED (reviewer wrong, evidence given).
 
 ## Waves 0–3 follow-up (2026-10-10, suite 36-total / 35 pass / 1 skip)
 
+## Production push (2026-10-10, suite 43-total / 42 pass / 1 skip)
+
+FIXED: 30-day sliding token expiry + refresh extension + expired rejection
+(legacy tokens grandfathered); Google tokeninfo aud/exp/sub validation as a
+pure spec-covered function + `google.client.id` config + PII log scrub +
+Network timeouts/close/disconnect; canonical-path containment at all 8 file
+serving sites (segment gates stay as front line); moderator/admin role cache
+60 s TTL; `highlight` filter override killing the stored-XSS sink in all 3
+apps; backup systemd timer units; single-admin partial unique index;
+traversal + moderator-rule + IDOR + gate specs (11 new); fixture UUID tags
+after proving `nanoTime.takeRight` repeats every 10 s (takeRight(10) =
+value mod 10^10 — the mechanism behind register-collision flakes).
+Flake episode: one login test failed intermittently across identical-code
+runs; exonerated via probe spec (every component green), manual live cycle
+green, 3× consecutive full-suite greens; attributed to box-state under
+concurrent load + orphan rows from SIGKILLed runs (finally never runs).
+Discipline adopted: UUID fixture tags + idempotent seed() pre-cleanup +
+pristine-DB wipe between campaigns. Live matrix on final build: register,
+login+expiry stamp, refresh slide, gates 401, campus route 2, viewer 200.
+QUEUED unchanged: token rotation policy beyond sliding, Google aud rollout
+needs real client ID, Angular EOL, Android toolchain, POI-search highlight
+edge on exotic queries, backup/monitoring installation, CSRF semantics.
+
 FIXED since audit: 10 server crasher classes (validation branches + safe
 extraction, multipart `.get`, `StringNumber` empty-string, `getCause` NPE,
 `range` bounds, login-Google token requirement); pilot-surface sweep

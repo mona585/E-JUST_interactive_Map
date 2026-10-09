@@ -33,9 +33,11 @@ db.campuses.insertOne({cuid: "cuid_ejust_demo", name: "E-JUST Demo Campus",
 
 db.spaces.insertMany([
   {buid: "buid_eng", name: "Engineering Building", description: "demo",
-    owner_id: "seed", is_published: "true"},
+    owner_id: "seed", is_published: "true",
+    coordinates_lat: "30.9501", coordinates_lon: "29.7501"},
   {buid: "buid_lib", name: "Central Library", description: "demo",
-    owner_id: "seed", is_published: "true"}
+    owner_id: "seed", is_published: "true",
+    coordinates_lat: "30.9510", coordinates_lon: "29.7510"}
 ]);
 
 db.pois.insertMany([
