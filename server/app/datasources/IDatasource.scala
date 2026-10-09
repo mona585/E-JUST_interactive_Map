@@ -99,6 +99,10 @@ trait IDatasource {
   def floorsByBuildingAsJson(buid: String): java.util.List[JsValue]
   def connectionsByBuildingAsJson(buid: String): List[JsValue]
   def connectionsByBuildingAsMap(buid: String): java.util.List[HashMap[String, String]]
+  /** Outdoor connectors whose endpoints both sit inside the given campus
+   *  buildings. Powers building-to-building routing; indoor edges stay out.
+   *  Takes pre-resolved buids so callers read the campus once per request. */
+  def connectionsByCampusAsMap(buids: List[String]): java.util.List[HashMap[String, String]]
   def connectionsByBuildingFloorAsJson(buid: String, floor_number: String): List[JsValue]
   def connectionsByBuildingAllFloorsAsJson(buid: String): List[JsValue]
   def deleteAllByBuilding(buid: String): Boolean

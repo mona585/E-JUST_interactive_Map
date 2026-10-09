@@ -167,6 +167,11 @@ class ProxyDataSource @Inject() (conf: Configuration) extends IDatasource {
     activeDB.connectionsByBuildingAsMap(buid)
   }
 
+  override def connectionsByCampusAsMap(buids: List[String]): java.util.List[HashMap[String, String]] = {
+    checkHasActiveDB()
+    activeDB.connectionsByCampusAsMap(buids)
+  }
+
   override def connectionsByBuildingFloorAsJson(buid: String, floor_number: String): List[JsValue] = {
     checkHasActiveDB()
     activeDB.connectionsByBuildingFloorAsJson(buid, floor_number)

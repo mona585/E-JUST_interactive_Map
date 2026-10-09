@@ -74,8 +74,13 @@ class UserController @Inject()(cc: ControllerComponents,
         LOG.D4("local login request received")
         val username = (json \ SCHEMA.fUsername).as[String]
         val password = (json \ SCHEMA.fPassword).as[String]
-        val storedUser = pds.db.login(SCHEMA.cUsers, username, userHelper.getEncryptedPassword(password))
-        if (storedUser == null) return RESPONSE.BAD("Incorrect username or password.")
+        // Per-user PBKDF2 salts mean the hash cannot be a query key:
+        // fetch by username, then verify in code (supports legacy rows too).
+        val storedDoc = pds.db.getFromKeyAsJson(SCHEMA.cUsers, SCHEMA.fUsername, username)
+        if (storedDoc == null) return RESPONSE.BAD("Incorrect username or password.")
+        val storedHash = (storedDoc \ SCHEMA.fPassword).asOpt[String].orNull
+        if (!userHelper.verifyPassword(password, storedHash)) return RESPONSE.BAD("Incorrect username or password.")
+        val storedUser = List(storedDoc)
         if (storedUser.size > 1) return RESPONSE.BAD("More than one users were found.")
         val accessToken = (storedUser.head \ SCHEMA.fAccessToken).as[String]
         if (accessToken == null) return RESPONSE.BAD("User doesn't have access token.")
@@ -184,6 +189,11 @@ class UserController @Inject()(cc: ControllerComponents,
           newUser = newUser.as[JsObject] + (SCHEMA.fUsername -> JsString(username))
         }
         if ((json \ SCHEMA.fPassword).toOption.isDefined) {
+          // Passwords are self-service or admin-only: moderators editing other
+          // accounts must not escalate to credential takeover.
+          val isAdmin = MongodbDatasource.getAdmins.contains(owner_id)
+          if (owner_id != userOwnerId && !isAdmin)
+            return RESPONSE.FORBIDDEN("Only the user or an admin can change passwords.")
           newUser = newUser.as[JsObject] + (SCHEMA.fPassword ->
             JsString(userHelper.getEncryptedPassword((json \ SCHEMA.fPassword).as[String])))
         }
@@ -325,7 +335,7 @@ class UserController @Inject()(cc: ControllerComponents,
       msg="Created new google user."
     }
 
-    val response = Json.obj("user" -> user)
+    val response = Json.obj("user" -> (user.as[JsObject] - SCHEMA.fPassword))
     RESPONSE.OK(response, msg)
   }
 

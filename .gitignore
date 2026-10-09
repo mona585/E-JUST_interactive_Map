@@ -55,3 +55,8 @@ Thumbs.db
 
 testsprite_tests/tmp/
 testsprite_tests/tmp/config.json
+
+# Build artifacts: APKs are rebuilt from source (clients/android-new),
+# never tracked. Previously committed binaries were untracked via
+# `git rm --cached` and must stay out.
+*.apk

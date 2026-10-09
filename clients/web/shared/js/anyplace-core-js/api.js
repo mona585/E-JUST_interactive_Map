@@ -145,6 +145,10 @@ API.Mapping.REGISTER_LOCAL_URL = API.url + "/user/register";
 API.Navigation.POIS_ROUTE = "/navigation/route";
 API.Navigation.POIS_ROUTE = API.url + API.Navigation.POIS_ROUTE;
 
+// Campus outdoor routing (own graph primary, Google Directions stays the fallback).
+API.Navigation.CAMPUS_ROUTE = "/navigation/route/campus";
+API.Navigation.CAMPUS_ROUTE_URL = API.url + API.Navigation.CAMPUS_ROUTE;
+
 API.Other.GOOGLE_URL_SHORTNER_URL = "https://www.googleapis.com/urlshortener/v1/url?key=__GOOGLE_URL_SHORTENER_API_KEY__";
 
 if (app == undefined) { LOG.F("api.js must be loaded after app.js in GruntFile)") }
@@ -843,6 +847,18 @@ app.factory('AnyplaceAPIService', ['$http', '$q', 'formDataObject', function ($h
         return $http({
             method: "POST",
             url: API.Navigation.POIS_ROUTE,
+            data: json_req
+        }).success(function (data, status) {
+            return data;
+        }).error(function (data, status) {
+            return data;
+        });
+    };
+
+    apiService.retrieveCampusRoute = function (json_req) {
+        return $http({
+            method: "POST",
+            url: API.Navigation.CAMPUS_ROUTE_URL,
             data: json_req
         }).success(function (data, status) {
             return data;

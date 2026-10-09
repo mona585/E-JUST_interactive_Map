@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reconstructed 2026-10-09: res/xml was absent, breaking resource linking.
+     Keys below are exactly the ones referenced via findPreference() in
+     SettingsActivity (all call sites null-guard).
+     NOTE: preferences_logger comes from the core-lib submodule
+     (cy.ac.ucy.cs.anyplace.lib.R), not this file. -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:key="clear_radiomaps"
+        android:title="Clear cached radiomaps"
+        android:summary="Delete cached radiomap files" />
+    <Preference
+        android:key="clear_floorplans"
+        android:title="Clear cached floorplans"
+        android:summary="Delete cached floorplan files" />
+    <Preference
+        android:key="refresh_building"
+        android:title="Refresh building"
+        android:summary="Reload the current building" />
+</PreferenceScreen>

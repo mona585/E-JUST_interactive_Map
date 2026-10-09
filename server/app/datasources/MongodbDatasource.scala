@@ -63,7 +63,6 @@ import scala.collection.mutable.ListBuffer
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import scala.jdk.CollectionConverters.MapHasAsScala
-import scala.util.Random
 import scala.util.control.Breaks
 
 object MongodbDatasource {
@@ -127,7 +126,15 @@ object MongodbDatasource {
     else
       start = "apGoogle_"
     val end = "ap"
-    start + Random.alphanumeric.take(500).mkString("") + end
+    val rng = new java.security.SecureRandom()
+    val alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    val sb = new StringBuilder(500)
+    var i = 0
+    while (i < 500) {
+      sb.append(alphabet.charAt(rng.nextInt(alphabet.length)))
+      i += 1
+    }
+    start + sb.toString() + end
   }
 
   /**
@@ -774,6 +781,22 @@ class MongodbDatasource @Inject() () extends IDatasource {
       hm = JsonUtils.getHashMapStrStr(edge)
       if (!hm.get(SCHEMA.fEdgeType).equalsIgnoreCase(Connection.EDGE_TYPE_OUTDOOR))
         conns.add(hm)
+    }
+    conns
+  }
+
+  override def connectionsByCampusAsMap(buids: List[String]): java.util.List[java.util.HashMap[String, String]] = {
+    val conns = new util.ArrayList[util.HashMap[String, String]]()
+    val distinct = buids.distinct
+    if (distinct.isEmpty) return conns
+    val collection = mdb.getCollection(SCHEMA.cEdges)
+    val query = BsonDocument(
+      SCHEMA.fBuidA -> BsonDocument("$in" -> distinct),
+      SCHEMA.fBuidB -> BsonDocument("$in" -> distinct),
+      SCHEMA.fEdgeType -> Connection.EDGE_TYPE_OUTDOOR)
+    val awaited = Await.result(collection.find(query).toFuture(), MongodbDatasource.DB_TIMEOUT)
+    for (edge <- convertJson(awaited.toList)) {
+      conns.add(JsonUtils.getHashMapStrStr(edge))
     }
     conns
   }
@@ -1715,9 +1738,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
   override def deleteRadiosInBox(): Boolean = ???
 
   override def BuildingSetsCuids(cuid: String): Boolean = {
-    if (getBuildingSet(cuid).size > 1)
-      return true
-    false
+    getBuildingSet(cuid).nonEmpty
   }
 
   override def getAllBuildingsetsByOwner(owner_id: String): List[JsValue] = {

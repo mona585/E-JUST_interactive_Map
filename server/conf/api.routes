@@ -17,6 +17,16 @@
 ###
 GET        /api/version                                     controllers.MainController.getVersion
 
+###
+#  summary: Liveness probe for systemd / Nginx / uptime checks
+#  tags:
+#    - Misc
+#  responses:
+#    200:
+#      description: success
+###
+GET        /api/health                                      controllers.MainController.getHealth
+
 ################
 ### USERS
 ################
@@ -1093,6 +1103,29 @@ POST        /api/navigation/route/coordinates               controllers.Navigati
 ###
 POST        /api/navigation/route                           controllers.NavigationController.getNavigationRoute()
 
+###
+#      tags:
+#        - Navigation
+#      summary: Find fastest outdoor route across a campus
+#      description: "Shortest path between two POIs over the campus outdoor connector graph. Same response shape as route."
+#      operationId: routeCampus
+#      consumes:
+#        - application/json
+#      produces:
+#        - application/json
+#      parameters:
+#        - in: body
+#          name: Body
+#          description: Campus + POI description
+#          required: true
+#          schema:
+#            type: object
+#      responses:
+#        '200':
+#          description: Successful operation
+###
+POST        /api/navigation/route/campus                    controllers.NavigationController.getCampusRoute()
+
 # SPACE
 
 ###
@@ -1613,7 +1646,7 @@ POST        /api/heatmap/floor/average/timestamp/2          controllers.HeatmapC
 #        '200':
 #          description: Successful operation
 ###
-POST        /api/heatmap/floor/average/timestamp/3          controllers.HeatmapController.floorWifiTimestampAVG2()
+POST        /api/heatmap/floor/average/timestamp/3          controllers.HeatmapController.floorWifiTimestampAVG3()
 
 ###
 #      tags:
@@ -1682,5 +1715,5 @@ POST        /anyplace/position/radio/heatmap_building_floor_average_3           
 POST        /anyplace/position/radio/heatmap_building_floor_average_3_tiles      controllers.HeatmapController.floorWifiAVG3tiles()
 POST        /anyplace/position/radio/heatmap_building_floor_timestamp_average_1  controllers.HeatmapController.floorWifiTimestampAVG1()
 POST        /anyplace/position/radio/heatmap_building_floor_timestamp_average_2  controllers.HeatmapController.floorWifiTimestampAVG2()
-POST        /anyplace/position/radio/heatmap_building_floor_timestamp_average_3  controllers.HeatmapController.floorWifiTimestampAVG2()
+POST        /anyplace/position/radio/heatmap_building_floor_timestamp_average_3  controllers.HeatmapController.floorWifiTimestampAVG3()
 POST        /anyplace/position/radio/heatmap_building_floor_timestamp_tiles      controllers.HeatmapController.floorWifiTimestampTiles()

@@ -35,6 +35,13 @@ db.users.createIndex({ "username": 1 }, { unique: true, sparse: true });
 db.users.createIndex({ "email": 1 }, { unique: true, sparse: true });
 db.users.createIndex({ "owner_id": 1 });
 db.users.createIndex({ "user_id": 1 });
+// Single-admin invariant: first registered user becomes admin; later
+// promotions only reach moderator. Enforced atomically so concurrent first
+// registrations cannot mint two admins (check-then-act race in register()).
+db.users.createIndex({ "type": 1 }, {
+  unique: true,
+  partialFilterExpression: { type: "admin" }
+});
 
 // Indexes for Spaces (Buildings / Vessels)
 db.spaces.createIndex({ "buid": 1 }, { unique: true, sparse: true });

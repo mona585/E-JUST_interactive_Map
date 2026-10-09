@@ -40,7 +40,7 @@ package controllers
 import datasources.{DatasourceException, MongodbDatasource, ProxyDataSource, SCHEMA}
 import models.oauth.OAuth2Request
 import javax.inject.{Inject, Singleton}
-import play.api.libs.json.{JsValue, Json}
+import play.api.libs.json.{JsObject, JsValue, Json}
 import play.api.mvc._
 import utils.Utils.appendGoogleIdIfNeeded
 import utils.{LOG, RESPONSE}
@@ -95,7 +95,9 @@ class UserAdminController @Inject()(cc: ControllerComponents,
         if(!user.isAdminOrModerator(owner_id)) return RESPONSE.FORBIDDEN("Only moderators users can see all accounts.")
         try {
           val users: List[JsValue] = pds.db.getAllAccounts()
-          val res: JsValue = Json.obj("users_num" -> users.length, SCHEMA.cUsers -> Json.arr(users))
+          // Never disclose credential material: hashes and live tokens stay server-side.
+          val safe: List[JsValue] = users.map(u => (u.as[JsObject] - SCHEMA.fPassword - SCHEMA.fAccessToken))
+          val res: JsValue = Json.obj("users_num" -> safe.length, SCHEMA.cUsers -> Json.toJson(safe))
           RESPONSE.gzipJsonOk(res, "Successfully retrieved all accounts!")
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR_INTERNAL("500: " + e.getMessage)

@@ -83,6 +83,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
+        val apiKey = anyReq.getAccessToken()
+        if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         if (!anyReq.assertJsonBody())
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -90,6 +92,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         val checkRequirements = VALIDATE.checkRequirements(
           json, SCHEMA.fBuid, SCHEMA.fFloor, "lat1", "lon1", "lat2", "lon2", SCHEMA.fTimestampX, SCHEMA.fTimestampY)
         if (checkRequirements != null) return checkRequirements
+        val owner_id = user.authorize(apiKey)
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
         val buid = (json \ SCHEMA.fBuid).as[String]
         val floorNum = (json \ SCHEMA.fFloor).as[String]
         val lat1 = (json \ "lat1").as[String]
@@ -132,12 +136,16 @@ class RadiomapController @Inject()(cc: ControllerComponents,
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
+        val apiKey = anyReq.getAccessToken()
+        if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         if (!anyReq.assertJsonBody())
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
         LOG.D2("Radiomap: byTime: " + Utils.stripJsValueStr(json))
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid, SCHEMA.fFloor)
         if (checkRequirements != null) return checkRequirements
+        val owner_id = user.authorize(apiKey)
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
         val buid = (json \ SCHEMA.fBuid).as[String]
         val floorNum = (json \ SCHEMA.fFloor).as[String]
 
@@ -168,7 +176,13 @@ class RadiomapController @Inject()(cc: ControllerComponents,
 
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
+        val apiKey = anyReq.getAccessToken()
+        if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
+        val owner_id = user.authorize(apiKey)
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
+        // Global wipe with no scope: admins/moderators only.
+        if (!user.isAdminOrModerator(owner_id)) return RESPONSE.FORBIDDEN("Admins only.")
         val json = anyReq.getJsonBody()
         LOG.D2("Radiomap: deleteBoundingBox: " + Utils.stripJsValueStr(json))
         try {
@@ -195,6 +209,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
+        val owner_id = user.authorize(apiKey)
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
 
         val body = anyReq.getMultipartFormData()
         if (body == null) {return RESPONSE.BAD("Invalid request type: Not multipart.")}
@@ -214,6 +230,15 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         if (newBuildingsFloors == null) {
           return RESPONSE.BAD("Uploaded a corrupted rss-log file.")
         } else {
+          try {
+            for (buid <- newBuildingsFloors.keySet.asScala) {
+              val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
+              if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+              if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
+            }
+          } catch {
+            case e: DatasourceException => return RESPONSE.ERROR(e)
+          }
           mapHelper.storeRadioMapRawToServer(rssLog)
           ret = storeFloorRssToDB(rssLog)
           LOG.D2("RSS values already exist: " + ret)
@@ -501,6 +526,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
           RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         }
         val json = anyReq.getJsonBody()
+        if (!Utils.isSafePathSegment(radio_folder) || !Utils.isSafePathSegment(fileName))
+          return RESPONSE.BAD("Invalid radiomap identifier.")
         val filePath = "radiomaps" + api.sep + radio_folder + api.sep + fileName
         LOG.D2("serveRadioMap: requested: " + filePath)
         val file = new File(filePath)
@@ -520,6 +547,9 @@ class RadiomapController @Inject()(cc: ControllerComponents,
     def inner(): Result = {
       val radioMapsFrozenDir = conf.get[String]("radioMapFrozenDir")
       val S = api.sep
+      if (!Utils.isSafePathSegment(space) || !Utils.isSafePathSegment(floor) ||
+        !Utils.isSafePathSegment(fileName))
+        return RESPONSE.BAD("Invalid radiomap identifier.")
       val filePath = radioMapsFrozenDir + S + space + S + floor + S + fileName
       LOG.D2("getFrozen: requested: " + filePath)
       val file = new File(filePath)

@@ -90,4 +90,13 @@ class MainController @Inject()(cc: ControllerComponents,
     val result = models.Protocol.Version(version, variant, port, address)
     Ok(Json.toJson(result))
   }
+
+  // Campus pilot liveness probe: no DB, no public.baseUrl dependency.
+  // Used by systemd / Nginx / uptime checks. Ready check (DB ping) stays
+  // on the authenticated staging runbook curl, not here.
+  def getHealth: Action[AnyContent] = Action {
+    val version = conf.get[String]("application.version")
+    val uptimeMs = java.lang.management.ManagementFactory.getRuntimeMXBean.getUptime
+    Ok(Json.obj("status" -> "ok", "version" -> version, "uptime_ms" -> uptimeMs))
+  }
 }

@@ -242,7 +242,6 @@ class HeatmapController @Inject()(cc: ControllerComponents,
    *
    * Called by crossfilter when on zoom level 21.
    */
-  @deprecated("notInUse")
   def floorWifiTimestampAVG3(): Action[AnyContent] = Action {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {

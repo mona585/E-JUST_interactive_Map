@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reconstructed 2026-10-09: res/xml was absent, breaking resource linking
+     (@xml/searchable referenced by manifests and search metadata). -->
+<searchable xmlns:android="http://schemas.android.com/apk/res/android"
+    android:label="@string/app_name"
+    android:hint="Search places on campus" />

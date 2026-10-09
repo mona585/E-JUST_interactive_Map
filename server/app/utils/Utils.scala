@@ -60,6 +60,27 @@ object Utils {
 
     def getRandomUUID(): String = UUID.randomUUID().toString
 
+    /** Rejects path-traversal segments for filesystem-backed endpoints.
+     *  Ids in this system are app-generated (`buid_*`, floor numbers, tile
+     *  names); anything with separators, parent refs, or a leading dot is
+     *  hostile, not data. Canonical-path checks happen at open time too —
+     *  this is the cheap front gate. */
+    def isSafePathSegment(s: String): Boolean = {
+        if (s == null || s.isEmpty) return false
+        if (s.contains("..")) return false
+        if (s.contains("/") || s.contains("\\") || s.contains("\u0000")) return false
+        if (s.startsWith(".")) return false
+        true
+    }
+
+    /** Every `/`-separated part of a relative tile path must be a safe segment. */
+    def isSafeRelativePath(path: String): Boolean = {
+        if (path == null || path.isEmpty) return false
+        // Never absolute, never escaping, whatever the platform separator.
+        if (new java.io.File(path).isAbsolute) return false
+        path.split("[/\\\\]").forall(isSafePathSegment)
+    }
+
     def genErrorUniqueID(): String = {
         java.net.InetAddress.getLocalHost.getHostName.toUpperCase +
         "x" + UUID.randomUUID().toString.split("-").last.toUpperCase

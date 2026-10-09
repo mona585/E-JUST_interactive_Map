@@ -88,14 +88,14 @@ object RESPONSE {
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
-                  ("status_code" -> JsNumber(401))
+                  ("status_code" -> JsNumber(403))
                 Results.Forbidden(res.toString)
 
             case Response.UNAUTHORIZED_ACCESS =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
-                  ("status_code" -> JsNumber(403))
+                  ("status_code" -> JsNumber(401))
                 Results.Unauthorized(res.toString)
 
             case Response.INTERNAL_SERVER_ERROR =>

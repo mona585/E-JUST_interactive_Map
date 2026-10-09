@@ -448,7 +448,14 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
             return;
         }
 
-        var jsonReq = $scope.creds;
+        // Cross-building legs route over the campus outdoor graph (own data,
+        // works offline); same-building legs keep the indoor endpoint.
+        if (from.buid && to.buid && from.buid !== to.buid && $scope.urlCampus) {
+            $scope.retrieveCampusRoute(from, to);
+            return;
+        }
+
+        var jsonReq = {};
 
         jsonReq.pois_from = from.puid;
         jsonReq.pois_to = to.puid;
@@ -523,6 +530,70 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                     userToPoiPolyline.setMap($scope.gmapService.gmap);
 
                     poiClosestToUserPos = undefined;
+                }
+            },
+            function (resp) {
+                ShowError($scope, resp, "Something went wrong while fetching route.", true);
+            }
+        );
+
+    };
+
+    // Campus leg: same response shape as the indoor endpoint, but points span
+    // buildings. Key polylines by building+floor and show every leg: hiding
+    // non-selected buildings would hide the path itself.
+    $scope.retrieveCampusRoute = function (from, to) {
+        if (!from || !from.puid || !to || !to.puid || !$scope.urlCampus) {
+            _err($scope, "Source POI is corrupted.");
+            return;
+        }
+
+        // Fresh object per call: never mutate the shared $scope.creds.
+        var jsonReq = {};
+
+        jsonReq.cuid = $scope.urlCampus;
+        jsonReq.pois_from = from.puid;
+        jsonReq.pois_to = to.puid;
+
+        var promise = AnyplaceAPIService.retrieveCampusRoute(jsonReq);
+        promise.then(
+            function (resp) {
+                var data = resp.data;
+
+                var listPois = data.pois;
+
+                _clearPoiRoutePolyline();
+
+                for (var i = 0; i < listPois.length; i++) {
+                    if (listPois[i].lat && listPois[i].lon && listPois[i].floor_number) {
+                        var key = (listPois[i].buid || "") + ":" + listPois[i].floor_number;
+
+                        if (!poiRoutePolyline.hasOwnProperty(key)) {
+                            poiRoutePolyline[key] = {
+                                flightPlanCoordinates: []
+                            };
+                        }
+
+                        poiRoutePolyline[key].flightPlanCoordinates.push(new google.maps.LatLng(
+                            parseFloat(listPois[i].lat),
+                            parseFloat(listPois[i].lon)
+                        ));
+                    }
+                }
+
+                for (var rkey in poiRoutePolyline) {
+                    if (poiRoutePolyline.hasOwnProperty(rkey)) {
+
+                        poiRoutePolyline[rkey].polyline = new google.maps.Polyline({
+                            path: poiRoutePolyline[rkey].flightPlanCoordinates,
+                            geodesic: true,
+                            strokeColor: '#FF0000',
+                            strokeOpacity: 0.75,
+                            strokeWeight: 6
+                        });
+
+                        poiRoutePolyline[rkey].polyline.setMap($scope.gmapService.gmap);
+                    }
                 }
             },
             function (resp) {
@@ -634,25 +705,12 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
         if (!$scope.anyService.selectedPoi || $scope.anyService.selectedPoi.puid != puid) {
             $scope.anyService.selectedPoi = $scope.myPoisHashT[puid].model;
         }
-        var viewerUrl ="https://anyplace.cs.ucy.ac.cy/viewer/?cuid="+ $scope.urlCampus + $scope.anyService.getViewerUrl();
+        var viewerUrl = window.location.origin + "/viewer/?cuid="+ $scope.urlCampus + $scope.anyService.getViewerUrl();
 
         $scope.poiShareUrl.embed = '<iframe width="100%" height="500" frameborder="0" scrolling="yes" marginheight="0" marginwidth="0" src="' + viewerUrl + '"></iframe>';
 
-        var json_req = {
-            longUrl: viewerUrl
-        };
-
-        var promise = $scope.anyAPI.googleUrlShortener(json_req);
-        promise.then(
-            function (resp) {
-                $scope.poiShareUrl.url = resp.data.id;
-                //prompt("Copy & Share:", resp.data.id);
-            },
-            function (resp) {
-                $scope.poiShareUrl.url = viewerUrl;
-                //prompt("Copy & Share:", viewerUrl);
-            }
-        );
+        // Google URL Shortener was shut down (2019): share the full portable URL.
+        $scope.poiShareUrl.url = viewerUrl;
     };
 
     $scope.startNavFromPoi = function () {

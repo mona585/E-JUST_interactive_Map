@@ -42,7 +42,10 @@ import javax.inject.{Inject, Singleton}
 import play.api.libs.json.{JsValue, Json}
 import utils.{LOG, Network}
 
-import java.security.MessageDigest
+import java.security.{MessageDigest, SecureRandom}
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
+import java.util.Base64
 
 @Singleton
 class User @Inject()(pds: ProxyDataSource,
@@ -134,15 +137,53 @@ class User @Inject()(pds: ProxyDataSource,
     false
   }
 
-  def getEncryptedPassword(password: String): String = {
-    val salt = conf.get[String]("password.salt")
-    val pepper = conf.get[String]("password.pepper")
+  /** PBKDF2-HMAC-SHA256 with per-user salt. Stored as
+   *  `pbkdf2$<iterations>$<base64 salt>$<base64 hash>`.
+   *  Legacy rows (64-char hex of SHA-256(global salt+password+pepper)) still
+   *  verify via [[verifyPassword]] so existing accounts keep working; all new
+   *  hashes use this path. Never log password material.
+   */
+  val PBKDF2_ITERATIONS = 210000
+  val PBKDF2_KEY_BITS = 256
+  val PBKDF2_SALT_BYTES = 16
 
-    val str = salt + password + pepper
-    val encryptedPwd = encryptInternal(str)
-    LOG.D5("pwd: '" + str + "'")
-    LOG.D5("encrypted: '" + encryptedPwd + "'")
-    encryptedPwd
+  def getEncryptedPassword(password: String): String = {
+    val salt = new Array[Byte](PBKDF2_SALT_BYTES)
+    new SecureRandom().nextBytes(salt)
+    pbkdf2(password, salt, PBKDF2_ITERATIONS)
+  }
+
+  def verifyPassword(password: String, stored: String): Boolean = {
+    if (stored == null) return false
+    if (stored.startsWith("pbkdf2$")) {
+      try {
+        val parts = stored.split("\\$", -1)
+        if (parts.length != 4) return false
+        val iterations = parts(1).toInt
+        val salt = Base64.getDecoder.decode(parts(2))
+        val expected = Base64.getDecoder.decode(parts(3))
+        val spec = new PBEKeySpec(password.toCharArray, salt, iterations, expected.length * 8)
+        val actual = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded
+        MessageDigest.isEqual(expected, actual)
+      } catch {
+        case _: Exception => false
+      }
+    } else {
+      // Legacy: SHA-256(global salt + password + pepper). Kept read-only for old rows.
+      val salt = conf.get[String]("password.salt")
+      val pepper = conf.get[String]("password.pepper")
+      MessageDigest.isEqual(
+        encryptInternal(salt + password + pepper).getBytes("UTF-8"),
+        stored.getBytes("UTF-8"))
+    }
+  }
+
+  private def pbkdf2(password: String, salt: Array[Byte], iterations: Int): String = {
+    val spec = new PBEKeySpec(password.toCharArray, salt, iterations, PBKDF2_KEY_BITS)
+    val hash = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded
+    "pbkdf2$" + iterations + "$" +
+      Base64.getEncoder.encodeToString(salt) + "$" +
+      Base64.getEncoder.encodeToString(hash)
   }
 
   private def encryptInternal(password: String): String = {

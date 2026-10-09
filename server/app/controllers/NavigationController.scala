@@ -41,19 +41,26 @@ import models.NavResultPoint
 import models.oauth.OAuth2Request
 import play.api.libs.json.{JsObject, JsValue, Json}
 import play.api.mvc._
+import services.CampusNavigationService
 import utils._
 import utils.json.VALIDATE
 
 import java.util
 import java.util.{ArrayList, HashMap, List}
 import javax.inject.{Inject, Singleton}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 @Singleton
 class NavigationController @Inject()(cc: ControllerComponents,
-                                     pds: ProxyDataSource)
+                                     pds: ProxyDataSource,
+                                     campusNav: CampusNavigationService,
+                                     actorSystem: akka.actor.ActorSystem)
   extends AbstractController(cc) {
   val ROUTE_MAX_DISTANCE_ALLOWED = 5.0
+  /** Blocking Mongo/graph work stays off Play's default pool (see app.play.conf). */
+  private implicit val blockingEc: ExecutionContext =
+    actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
 
   def getBuildingById: Action[AnyContent] = Action {
     implicit request =>
@@ -157,8 +164,67 @@ class NavigationController @Inject()(cc: ControllerComponents,
       inner(request)
   }
 
-  def getNavigationRouteXY: Action[AnyContent] = Action {
+  /**
+   * Campus route: shortest outdoor path between two POIs whose Spaces both
+   * belong to `cuid`. Same envelope as the indoor endpoints so clients reuse
+   * the drawing code. First async endpoint: blocking work runs on the
+   * dedicated dispatcher instead of Play's request pool.
+   */
+  def getCampusRoute: Action[AnyContent] = Action.async {
     implicit request =>
+      Future {
+        val anyReq = new OAuth2Request(request)
+        if (!anyReq.assertJsonBody()) {
+          RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
+        } else {
+          val json = anyReq.getJsonBody()
+          LOG.D2("getCampusRoute: " + json.toString)
+          val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fCampusCuid, "pois_from", "pois_to")
+          if (checkRequirements != null) checkRequirements
+          else {
+            val cuid = (json \ SCHEMA.fCampusCuid).as[String]
+            val puid_from = (json \ "pois_from").as[String]
+            val puid_to = (json \ "pois_to").as[String]
+            if (puid_from.equalsIgnoreCase(puid_to)) {
+              RESPONSE.BAD("Destination and Source is the same.")
+            } else try {
+              val poiFrom = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid_from)
+              if (poiFrom == null) {
+                RESPONSE.BAD_CANNOT_RETRIEVE("Source POI")
+              } else {
+                val poiTo = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid_to)
+                if (poiTo == null) {
+                  RESPONSE.BAD_CANNOT_RETRIEVE("Destination POI")
+                } else {
+                  val buids = campusNav.campusBuids(cuid)
+                  if (buids.isEmpty) {
+                    RESPONSE.NOT_FOUND("Campus '" + cuid + "' not found!")
+                  } else {
+                    val buid_from = (poiFrom \ SCHEMA.fBuid).as[String]
+                    val buid_to = (poiTo \ SCHEMA.fBuid).as[String]
+                    if (!buids.contains(buid_from) || !buids.contains(buid_to)) {
+                      RESPONSE.BAD("Both POIs must belong to campus '" + cuid + "'.")
+                    } else {
+                      val points = campusNav.route(buids, poiFrom, poiTo)
+                      if (points.isEmpty) {
+                        RESPONSE.BAD("No outdoor path between the two POIs on this campus yet.")
+                      } else {
+                        val res: JsValue = Json.obj("num_of_pois" -> points.size, SCHEMA.cPOIS -> points.asScala)
+                        RESPONSE.OK(res, "Plotted campus navigation.")
+                      }
+                    }
+                  }
+                }
+              }
+            } catch {
+              case e: DatasourceException => RESPONSE.ERROR_INTERNAL("500: " + e.getMessage)
+            }
+          }
+        }
+      }(blockingEc)
+  }
+
+  def getNavigationRouteXY: Action[AnyContent] = Action {    implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)

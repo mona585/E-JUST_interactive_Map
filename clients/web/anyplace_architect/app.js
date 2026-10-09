@@ -419,7 +419,14 @@ app.filter('propsFilter', function() {
 });
 
 app.factory('requestInterceptor', [function () {
-    // Intercepting /api/auth requests and adding in the headers the anyplace access_token
+    // Intercepting /api/auth requests and mutating indoor-data endpoints,
+    // adding in the headers the anyplace access_token.
+    // (/api/auth/* already covered by the first branch; /radiomap/time is the
+    // newly-gated fingerprint compute. deleteBoundingBox has no route.)
+    var MUTATING_URLS = [
+        "/mapping/floor/floorplan/upload",
+        "/radiomap/time"
+    ];
     var requestInterceptor = {
         request: function (config) {
             if (config.url !== undefined) {
@@ -427,6 +434,13 @@ app.factory('requestInterceptor', [function () {
                 if (config.url.startsWith(API.url+"/auth/")) {
                     if (!loggedIn) LOG.E("ERROR: user not logged in and requested: " + config.url)
                     if (loggedIn) config.headers.access_token = app.user.access_token;
+                } else if (loggedIn) {
+                    for (var i = 0; i < MUTATING_URLS.length; i++) {
+                        if (config.url.startsWith(API.url + MUTATING_URLS[i])) {
+                            config.headers.access_token = app.user.access_token;
+                            break;
+                        }
+                    }
                 }
             }
             return config;
