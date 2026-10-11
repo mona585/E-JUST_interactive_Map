@@ -9,19 +9,7 @@ import java.util
 import javax.inject.{Inject, Singleton}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
-/**
- * Campus (building-to-building) routing — the outdoor pilot's core.
- *
- * Unlike the indoor paths in [[controllers.NavigationController]] (same floor /
- * same building over hallway/stair/elevator edges), this routes across the
- * outdoor connector graph of a whole campus: every POI of every member Space
- * becomes a vertex, every `outdoor` edge whose endpoints both sit inside the
- * campus becomes an undirected weighted edge, Dijkstra does the rest.
- *
- * Response shape mirrors the indoor endpoints (`num_of_pois` + `pois[]` of
- * [[models.NavResultPoint]] JSON) so clients draw campus legs with the same
- * polyline code, keyed by `buid` + `floor_number`.
- */
+/** Campus building-to-building routing over outdoor connectors via Dijkstra; response mirrors indoor endpoints. */
 @Singleton
 class CampusNavigationService @Inject() (pds: ProxyDataSource) {
 
@@ -34,8 +22,10 @@ class CampusNavigationService @Inject() (pds: ProxyDataSource) {
   def route(cuid: String, fromPoi: JsValue, toPoi: JsValue): util.List[JsValue] =
     route(campusBuids(cuid), fromPoi, toPoi)
 
-  /** buids pre-resolved by the caller: one campus read per request, no TOCTOU skew. */
-  def route(buids: List[String], fromPoi: JsValue, toPoi: JsValue): util.List[JsValue] = {
+  /** Empty list = no outdoor path; callers decide how to report it.
+   *  `stepFree` drops stair edges (elevators stay) for accessible routing. */
+  def route(buids: List[String], fromPoi: JsValue, toPoi: JsValue,
+            stepFree: Boolean = false): util.List[JsValue] = {
     val points = new util.ArrayList[JsValue]()
     if (buids.isEmpty) return points
     val fromPuid = (fromPoi \ SCHEMA.fPuid).asOpt[String].orNull
@@ -45,7 +35,12 @@ class CampusNavigationService @Inject() (pds: ProxyDataSource) {
     for (buid <- buids) {
       for (poi <- pds.db.poisByBuildingAsMap(buid).asScala) graph.addPoi(poi)
     }
-    graph.addEdges(pds.db.connectionsByCampusAsMap(buids))
+    val edges = pds.db.connectionsByCampusAsMap(buids).asScala.filterNot { e =>
+      stepFree && "stair".equalsIgnoreCase(e.get(SCHEMA.fEdgeType))
+    }
+    val edgeList = new util.ArrayList[util.HashMap[String, String]]()
+    edges.foreach(edgeList.add)
+    graph.addEdges(edgeList)
     val routePois = Dijkstra.getShortestPath(graph, fromPuid, toPuid)
 
     for (poi <- routePois.asScala) {
@@ -60,4 +55,25 @@ class CampusNavigationService @Inject() (pds: ProxyDataSource) {
     }
     points
   }
+
+  /** Walking distance in meters over consecutive route points. */
+  def distanceMeters(points: util.List[JsValue]): Double = {
+    var total = 0.0
+    val it = points.asScala.toList
+    for (pair <- it.zip(it.drop(1))) {
+      try {
+        val aLat = (pair._1 \ "lat").as[String].toDouble
+        val aLon = (pair._1 \ "lon").as[String].toDouble
+        val bLat = (pair._2 \ "lat").as[String].toDouble
+        val bLon = (pair._2 \ "lon").as[String].toDouble
+        total += utils.GeoPoint.getDistanceBetweenPoints(aLon, aLat, bLon, bLat, "K") * 1000.0
+      } catch {
+        case _: Exception => // unparseable leg contributes nothing
+      }
+    }
+    total
+  }
+
+  /** Walking minutes at 80 m/min, minimum 1. */
+  def walkMinutes(distanceM: Double): Int = Math.max(1, Math.round(distanceM / 80.0).toInt)
 }

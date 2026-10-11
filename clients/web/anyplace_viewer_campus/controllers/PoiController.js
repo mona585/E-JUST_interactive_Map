@@ -317,9 +317,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
         poiRoutePolyline = {};
     };
 
-    // Matches both indoor keys ("floor") and campus keys ("buid:floor").
-    // Campus legs are shown when their building is selected (or when no
-    // building context exists); indoor legs keep the old floor-only behavior.
+    // Match indoor "floor" and campus "buid:floor" route keys.
     var _routeKeyMatches = function (key, floor_number) {
         if (key === floor_number) return true;
         var sep = key.lastIndexOf(":");
@@ -464,8 +462,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
             return;
         }
 
-        // Cross-building legs route over the campus outdoor graph (own data,
-        // works offline); same-building legs keep the indoor endpoint.
+        // Cross-building legs use campus outdoor graph; same-building keeps indoor endpoint.
         if (from.buid && to.buid && from.buid !== to.buid && $scope.urlCampus) {
             $scope.retrieveCampusRoute(from, to);
             return;
@@ -508,7 +505,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                         poiRoutePolyline[fkey].polyline = new google.maps.Polyline({
                             path: poiRoutePolyline[fkey].flightPlanCoordinates,
                             geodesic: true,
-                            strokeColor: '#FF0000',
+                            strokeColor: '#005A9C',
                             strokeOpacity: 0.75,
                             strokeWeight: 6
                         });
@@ -533,7 +530,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                             new google.maps.LatLng($scope.userPosition.lat, $scope.userPosition.lng)
                         ],
                         geodesic: true,
-                        strokeColor: '#FF0000',
+                        strokeColor: '#005A9C',
                         strokeOpacity: 0,
                         strokeWeight: 6,
                         icons: [{
@@ -555,9 +552,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
 
     };
 
-    // Campus leg: same response shape as the indoor endpoint, but points span
-    // buildings. Key polylines by building+floor and show every leg: hiding
-    // non-selected buildings would hide the path itself.
+    // Campus leg: same shape as indoor endpoint; key by building+floor, show all legs.
     $scope.retrieveCampusRoute = function (from, to) {
         if (!from || !from.puid || !to || !to.puid || !$scope.urlCampus) {
             _err($scope, "Source POI is corrupted.");
@@ -603,7 +598,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                         poiRoutePolyline[rkey].polyline = new google.maps.Polyline({
                             path: poiRoutePolyline[rkey].flightPlanCoordinates,
                             geodesic: true,
-                            strokeColor: '#FF0000',
+                            strokeColor: '#005A9C',
                             strokeOpacity: 0.75,
                             strokeWeight: 6
                         });
@@ -832,7 +827,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                     auxPoiRoutePolyline = new google.maps.Polyline({
                         path: flightPath,
                         geodesic: true,
-                        strokeColor: '#73B9FF',
+                        strokeColor: '#005A9C',
                         strokeOpacity: 0,
                         strokeWeight: 6,
                         icons: [{
@@ -992,15 +987,6 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                  +'</svg>'
                  +'</span>'
                  +'<span class="rrssb-text">email</span>'
-                 +'</a>'
-                 +'</li>'
-                 +'<li class="rrssb-googleplus">'
-                 +'<a href="https://plus.google.com/share?url={{anyService.getCampusViewerUrlEncoded()}}" class="popup">'
-                 +'<span class="rrssb-icon">'
-                 +'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M21 8.29h-1.95v2.6h-2.6v1.82h2.6v2.6H21v-2.6h2.6v-1.885H21V8.29zM7.614 10.306v2.925h3.9c-.26 1.69-1.755 2.925-3.9 2.925-2.34 0-4.29-2.016-4.29-4.354s1.885-4.353 4.29-4.353c1.104 0 2.014.326 2.794 1.105l2.08-2.08c-1.3-1.17-2.924-1.883-4.874-1.883C3.65 4.586.4 7.835.4 11.8s3.25 7.212 7.214 7.212c4.224 0 6.953-2.988 6.953-7.082 0-.52-.065-1.104-.13-1.624H7.614z"/>'
-                 +'</svg>'
-                 +'</span>'
-                 +'<span class="rrssb-text">google+</span>'
                  +'</a>'
                  +'</li>'
                  +'</ul>'

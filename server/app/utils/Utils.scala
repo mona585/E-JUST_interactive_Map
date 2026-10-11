@@ -60,11 +60,7 @@ object Utils {
 
     def getRandomUUID(): String = UUID.randomUUID().toString
 
-    /** Rejects path-traversal segments for filesystem-backed endpoints.
-     *  Ids in this system are app-generated (`buid_*`, floor numbers, tile
-     *  names); anything with separators, parent refs, or a leading dot is
-     *  hostile, not data. Canonical-path checks happen at open time too —
-     *  this is the cheap front gate. */
+    /** Rejects path-traversal segments for filesystem-backed endpoints. */
     def isSafePathSegment(s: String): Boolean = {
         if (s == null || s.isEmpty) return false
         if (s.contains("..")) return false
@@ -81,8 +77,7 @@ object Utils {
         path.split("[/\\\\]").forall(isSafePathSegment)
     }
 
-    /** Second gate at open time: the canonical target must stay inside root.
-     *  Catches separator tricks and symlinks that segment checks miss. */
+    /** Canonical target must stay inside root (catches symlinks/separator tricks). */
     def isWithinRoot(root: String, path: String): Boolean = {
         try {
             if (root == null || path == null) return false

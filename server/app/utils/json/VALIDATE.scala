@@ -127,7 +127,8 @@ object VALIDATE {
   }
 
   def newOwner(json: JsValue): String = {
-    if (String(json, "newOwner") == null) return "new_owner field must be String!"
+    if (String(json, "new_owner") == null) return "new_owner field must be String!"
+    if ((json \ "new_owner").asOpt[String].exists(_.trim.isEmpty)) return "new_owner can not be empty."
     null
   }
 
@@ -195,7 +196,19 @@ object VALIDATE {
       } else if (k == "letters" || k == "greeklish") {
         val r = stringField(json, k)
         if (r != null) errors.add(r)
-      } else if (k == fUserId || k == fOwnerId ) {
+      } else if (k == fLatBottomLeft || k == fLonBottomLeft || k == fLatTopRight || k == fLonTopRight) {
+        val r = coordinates(json, k)
+        if (r != null) errors.add(r)
+      } else if (k == fZoom) {
+        if (StringNumber(json, k) == null) errors.add(k + " field must be String, containing a number.")
+      } else if (k == fFloorNumber) {
+        // Floor identifiers ("0", "-1", "B2") are strings; non-strings crash model parsing.
+        val r = stringField(json, k)
+        if (r != null) errors.add(r)
+      } else if (k == fBuids) {
+        // Building-id array; shape-checked at use site, presence suffices here.
+      } else {
+        // Default: other required keys must be Strings, else model parsing fails with 500.
         val r = stringField(json, k)
         if (r != null) errors.add(r)
       }

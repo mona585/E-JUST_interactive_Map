@@ -98,12 +98,15 @@ class Campus(hm: HashMap[String, String]) extends AbstractModel {
 
   def getId(): String = {
     var cuid: String = fields.get(SCHEMA.fCampusCuid)
-    if (cuid.isEmpty || cuid.==("")) {
+    if (cuid == null || cuid.isEmpty) {
       val finalId: String = Utils.getRandomUUID() + "_" + System
         .currentTimeMillis()
       fields.put(SCHEMA.fCampusCuid, "cuid_" + finalId)
       cuid = fields.get(SCHEMA.fCampusCuid)
-      this.json.as[JsObject] + (SCHEMA.fCampusCuid -> Json.toJson(cuid))
+      // Assignment is load-bearing: addBuids()/toGeoJson() serialize this.json,
+      // so a discarded update orphans the row without its cuid.
+      if (this.json != null)
+        this.json = this.json.as[JsObject] + (SCHEMA.fCampusCuid -> Json.toJson(cuid))
     }
     cuid
   }
@@ -125,6 +128,7 @@ class Campus(hm: HashMap[String, String]) extends AbstractModel {
   }
 
   def addBuids(): JsValue = {
+    getId()
     if ((this.json \ SCHEMA.fDescription).as[String] == "" || (this.json \ SCHEMA.fDescription).as[String] == "-")
       this.json = this.json.as[JsObject] - SCHEMA.fDescription
     if ((this.json \ SCHEMA.fName).as[String] == "" || (this.json \ SCHEMA.fName).as[String] == "-")

@@ -38,6 +38,7 @@ package controllers
 import datasources.SCHEMA
 import play.api.Environment
 import play.api.mvc.{AbstractController, Action, AnyContent, ControllerComponents, Result}
+import utils.Utils
 //import play.Play
 import javax.inject.{Inject, Singleton}
 
@@ -90,7 +91,13 @@ class WebAppController @Inject()(cc: ControllerComponents,
       file_str = "index.html"
       header = ("Content-Disposition", "inline")
     }
+    if (!Utils.isSafeRelativePath(file_str)) {
+      return NotFound("")
+    }
     val reqFile: String = appDir + "/" + file_str
+    if (!Utils.isWithinRoot(appDir, reqFile)) {
+      return NotFound("")
+    }
     val file = env.classLoader.getResourceAsStream(reqFile)
     if (file != null)
       Ok(scala.io.Source.fromInputStream(file, "UTF-8").mkString).as("text/html")

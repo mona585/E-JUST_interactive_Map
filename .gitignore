@@ -60,3 +60,18 @@ testsprite_tests/tmp/config.json
 # never tracked. Previously committed binaries were untracked via
 # `git rm --cached` and must stay out.
 *.apk
+*.zip
+
+# Secrets / keystores (never tracked)
+*.jks
+*.keystore
+*.p12
+*.pfx
+google-services.json
+
+# Local cache (never tracked)
+.codex-cache/
+
+# Legacy docker env (untracked via `git rm --cached`; example stays tracked)
+docker/.env
+!docker/.env.example

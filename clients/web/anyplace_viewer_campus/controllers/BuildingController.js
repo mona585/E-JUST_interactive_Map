@@ -134,8 +134,7 @@ app.controller('BuildingController', ['$scope', '$compile', 'GMapService', 'Anyp
                 $scope.myBuildingsHashT[oldVal.buid].marker.setVisible(true);
             }
 
-            // Hide current building's marker (if it has one: buildings
-            // without coordinates are listed but never pinned).
+            // Hide current marker if pinned; unpinned buildings stay listed.
             var entry = $scope.myBuildingsHashT[newVal.buid];
             if (entry && entry.marker) {
                 entry.marker.setVisible(false);
@@ -299,9 +298,7 @@ app.controller('BuildingController', ['$scope', '$compile', 'GMapService', 'Anyp
                     //     title: b.name
                     // });
                     // markerCluster.addMarker(marker);
-                    // Buildings without coordinates stay listed and selectable,
-                    // but get no marker (nothing to pin). The watch tolerates
-                    // marker-less entries.
+                    // Buildings without coordinates stay listed but get no marker.
                     if (bloc) {
                     var marker = getMapsIconBuildingViewer($scope, bloc);
                     markerCluster.addMarker(marker);

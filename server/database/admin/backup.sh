@@ -1,24 +1,25 @@
 #!/bin/bash
+set -euo pipefail
 cwd="$(dirname "$0")"
-source $cwd/helper.sh
+source "$cwd/helper.sh"
 
-backupDir=$BACKUP_DIR
-host=$MDB_HOST
-port=$MDB_PORT
-user=$MDB_USER
-pass=$MDB_PASS
-database=$MDB_DATABASE
+backupDir="$BACKUP_DIR"
+host="$MDB_HOST"
+port="$MDB_PORT"
+user="$MDB_USER"
+pass="$MDB_PASS"
+database="$MDB_DATABASE"
 
 #timestamp=$(date +'%Y.%m.%d-%H.%M.%S')
 timestamp=$(date +'%Y.%m.%d-%H.%M')
-backup=$backupDir/backup.$timestamp
-backupTar=$backup.tar.gz
-backupLatest=$backupDir/backup.latest
+backup="$backupDir/backup.$timestamp"
+backupTar="$backup.tar.gz"
+backupLatest="$backupDir/backup.latest"
 
-checkBackupTaken $backup
+checkBackupTaken "$backup"
 
-backupPrepare $backupDir $backupLatest
+backupPrepare "$backupDir" "$backupLatest"
 
-createBackup $backup
+createBackup "$backup"
 
-deleteOldBackups $backupDir
+deleteOldBackups "$backupDir"

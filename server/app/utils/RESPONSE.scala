@@ -171,6 +171,11 @@ object RESPONSE {
 
     def MISSING_FIELDS(missing: util.List[String]): Result = {
         if (missing == null) { throw new IllegalArgumentException("No null List of missing keys allowed.") }
+        if (missing.isEmpty) {
+            return CreateResultResponse(Response.BAD_REQUEST,
+                Json.obj("error_messages" -> Json.arr()),
+                "Missing or invalid parameters.")
+        }
         val error_messages = new java.util.ArrayList[String]
         for (s <- missing.asScala) {
             error_messages.add(String.format("Missing or Invalid parameter: %s", s))

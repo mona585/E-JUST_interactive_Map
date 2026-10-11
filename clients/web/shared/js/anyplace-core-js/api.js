@@ -64,8 +64,10 @@ API.Mapping.RADIO_HEATMAP_RSS_BY_TIME_3 = "/heatmap/floor/average/timestamp/3";
 API.Mapping.RADIO_HEATMAP_RSS_BY_TIME_URL_3 = API.url + API.Mapping.RADIO_HEATMAP_RSS_BY_TIME_3;
 API.Mapping.RADIO_HEATMAP_BY_TIME_TILES = "/heatmap/floor/average/timestamp/tiles";
 API.Mapping.RADIO_HEATMAP_BY_TIME_TILES_URL = API.url + API.Mapping.RADIO_HEATMAP_BY_TIME_TILES;
+// No per-POI heatmap endpoint exists server-side; the old helper and its
+// caller were removed rather than pointed at an invented URL.
 
-API.Mapping.RADIOMAP_DELETE = "/api/auth/radiomap/delete"
+API.Mapping.RADIOMAP_DELETE = "/auth/radiomap/delete"
 API.Mapping.RADIOMAP_DELETE_URL = API.url + API.Mapping.RADIOMAP_DELETE;
 
 API.Mapping.RADIOMAP_FLOORS = "/radiomap/floors";
@@ -143,13 +145,13 @@ API.Mapping.REGISTER_LOCAL = "/user/register";
 API.Mapping.REGISTER_LOCAL_URL = API.url + "/user/register";
 
 API.Navigation.POIS_ROUTE = "/navigation/route";
-API.Navigation.POIS_ROUTE = API.url + API.Navigation.POIS_ROUTE;
+API.Navigation.POIS_ROUTE_URL = API.url + API.Navigation.POIS_ROUTE;
 
 // Campus outdoor routing (own graph primary, Google Directions stays the fallback).
 API.Navigation.CAMPUS_ROUTE = "/navigation/route/campus";
 API.Navigation.CAMPUS_ROUTE_URL = API.url + API.Navigation.CAMPUS_ROUTE;
 
-API.Other.GOOGLE_URL_SHORTNER_URL = "https://www.googleapis.com/urlshortener/v1/url?key=__GOOGLE_URL_SHORTENER_API_KEY__";
+// Google URL Shortener shut down (2019): share full portable URL.
 
 if (app == undefined) { LOG.F("api.js must be loaded after app.js in GruntFile)") }
 
@@ -361,18 +363,6 @@ app.factory('AnyplaceAPIService', ['$http', '$q', 'formDataObject', function ($h
         return $http({
             method: "POST",
             url: API.Mapping.POIS_ALL_BUILDING_URL,
-            data: json_req
-        }).success(function (data, status) {
-            return data;
-        }).error(function (data, status) {
-            return data;
-        });
-    };
-
-    apiService.getRadioHeatmapPoi = function (json_req) {
-        return $http({
-            method: "POST",
-            url: API.Mapping.RADIO_HEATMAP_URL_POI,
             data: json_req
         }).success(function (data, status) {
             return data;
@@ -846,7 +836,7 @@ app.factory('AnyplaceAPIService', ['$http', '$q', 'formDataObject', function ($h
     apiService.retrieveRouteFromPoiToPoi = function (json_req) {
         return $http({
             method: "POST",
-            url: API.Navigation.POIS_ROUTE,
+            url: API.Navigation.POIS_ROUTE_URL,
             data: json_req
         }).success(function (data, status) {
             return data;
@@ -859,18 +849,6 @@ app.factory('AnyplaceAPIService', ['$http', '$q', 'formDataObject', function ($h
         return $http({
             method: "POST",
             url: API.Navigation.CAMPUS_ROUTE_URL,
-            data: json_req
-        }).success(function (data, status) {
-            return data;
-        }).error(function (data, status) {
-            return data;
-        });
-    };
-
-    apiService.googleUrlShortener = function (json_req) {
-        return $http({
-            method: "POST",
-            url: API.Other.GOOGLE_URL_SHORTNER_URL,
             data: json_req
         }).success(function (data, status) {
             return data;

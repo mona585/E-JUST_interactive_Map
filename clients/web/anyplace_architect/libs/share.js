@@ -43,7 +43,7 @@
     $('body').append("<div id='fb-root'></div><script>(function(a,b,c){var d,e=a.getElementsByTagName(b)[0];a.getElementById(c)||(d=a.createElement(b),d.id=c,d.src='//connect.facebook.net/en_US/all.js#xfbml=1&appId=" + config.app_id + "',e.parentNode.insertBefore(d,e))})(document,'script','facebook-jssdk');</script>");
   }
   paths = {
-    twitter: "http://twitter.com/intent/tweet?text=" + config.twitter_text + "&url=" + config.twitter_url,
+    twitter: "https://twitter.com/intent/tweet?text=" + config.twitter_text + "&url=" + config.twitter_url,
     facebook: "https://www.facebook.com/sharer/sharer.php?u=" + config.fb_url,
     gplus: "https://plus.google.com/share?url=" + config.gplus_url
   };

@@ -9,13 +9,9 @@ import scala.concurrent.Future
 
 /**
  * Campus-only pilot contract (E-JUST outdoor, building-to-building).
- *
- * Covers the endpoints the pilot actually serves, on an empty-but-valid
- * database (init_schema.js). Indoor Wi-Fi stack (radiomap/heatmap/position)
- * is out of pilot scope and intentionally NOT asserted here; scope is
- * enforced at the Nginx edge, not by breaking API behavior field APKs use.
+ * Empty-but-valid DB; indoor Wi-Fi stack out of scope (enforced at Nginx edge).
  */
-class CampusContractSpec extends PlaySpecification {
+class CampusContractSpec extends PlaySpecification with IsolatedFixture {
 
   def extractString(result: Future[Result]): String = {
     val bytes = contentAsBytes(result).toArray
@@ -31,28 +27,6 @@ class CampusContractSpec extends PlaySpecification {
     Json.parse(extractString(result))
   }
 
-  def db(implicit app: play.api.Application): datasources.ProxyDataSource =
-    app.injector.instanceOf[datasources.ProxyDataSource]
-
-  /** Idempotent fixture write: pre-cleanup makes each test independent of
-   *  orphan rows left by killed runs (finally never runs on SIGKILL). */
-  def seed(col: String, doc: JsValue)
-      (implicit app: play.api.Application): Boolean = {
-    val key = col match {
-      case "campuses" | "edges" => "cuid"
-      case "pois" => "puid"
-      case "users" => "username"
-      case "spaces" => "buid"
-      case "floorplans" => "fuid"
-      case _ => return db.addJson(col, doc)
-    }
-    (doc \ key).asOpt[String] match {
-      case Some(value) =>
-        db.deleteFromKey(col, key, value)
-        db.addJson(col, doc)
-      case None => db.addJson(col, doc)
-    }
-  }
 
   "Campus pilot liveness" should {
 
@@ -86,11 +60,11 @@ class CampusContractSpec extends PlaySpecification {
     }
   }
 
-  "Navigation guards (campus pilot)" should {    "reject a route between unknown POIs with 400, not 500" in new WithApplication {
+  "Navigation guards (campus pilot)" should {    "404 a route between unknown POIs, not 500" in new WithApplication {
       val response = route(app, FakeRequest(POST, "/api/navigation/route")
         .withJsonBody(Json.obj("pois_from" -> "puid_does_not_exist_a",
           "pois_to" -> "puid_does_not_exist_b"))).get
-      status(response) must equalTo(BAD_REQUEST)
+      status(response) must equalTo(NOT_FOUND)
     }
 
     "reject same source and destination with 400" in new WithApplication {
@@ -100,12 +74,228 @@ class CampusContractSpec extends PlaySpecification {
       status(response) must equalTo(BAD_REQUEST)
       extractString(response) must contain("same")
     }
+
+    "400 (not 500) a POI byFloor call with a numeric floor_number" in new WithApplication {
+      val response = route(app, FakeRequest(POST, "/api/mapping/pois/floor/all")
+        .withJsonBody(Json.obj("buid" -> "buid_does_not_exist", "floor_number" -> 2))).get
+      status(response) must equalTo(BAD_REQUEST)
+    }
+
+    "400 (not 500) a POI bySpace call with a numeric buid" in new WithApplication {
+      val response = route(app, FakeRequest(POST, "/api/mapping/pois/space/all")
+        .withJsonBody(Json.obj("buid" -> 123))).get
+      status(response) must equalTo(BAD_REQUEST)
+    }
+  }
+
+  "S1 data integrity" should {
+
+    def authed(app: play.api.Application, path: String, token: String, body: JsValue) =
+      route(app, FakeRequest(POST, path,
+        FakeHeaders(Seq("access_token" -> token, "Content-Type" -> "application/json")),
+        AnyContentAsJson(body))).get
+
+    "mint and persist a cuid when campus add omits it" in new WithApplication {
+      val tag = freshTag()
+      val token = s"apLocal_s1_$tag"
+      val owner = s"s1_${tag}_local"
+      val buid = s"buid_s1_$tag"
+      seed("users", Json.obj("name" -> "S1", "email" -> s"s1_$tag@ejust.edu.eg",
+        "username" -> s"s1_$tag", "password" -> "x",
+        "access_token" -> token, "external" -> "anyplace",
+        "type" -> "user", "owner_id" -> owner))
+      seed("spaces", Json.obj("buid" -> buid, "name" -> "S1 Hall",
+        "description" -> "t", "owner_id" -> owner, "is_published" -> "true"))
+      try {
+        val add = authed(app, "/api/auth/mapping/campus/add", token, Json.obj(
+          "name" -> "S1 Campus", "description" -> "t",
+          "buids" -> Json.arr(buid), "greeklish" -> "false"))
+        status(add) must equalTo(OK)
+        val cuid = (extractJson(add) \ "cuid").asOpt[String]
+        cuid must beSome.which(_.trim.nonEmpty)
+        // The minted cuid must resolve: no orphaned row.
+        val get = route(app, FakeRequest(POST, "/api/mapping/campus/get")
+          .withJsonBody(Json.obj("cuid" -> cuid.get))).get
+        status(get) must equalTo(OK)
+        db.deleteFromKey("campuses", "cuid", cuid.get)
+      } finally {
+        db.deleteFromKey("spaces", "buid", buid)
+        db.deleteFromKey("users", "username", s"s1_$tag")
+      }
+    }
+
+    "403 campus add grafting a foreign building" in new WithApplication {
+      val tag = freshTag()
+      val token = s"apLocal_s1f_$tag"
+      val owner = s"s1f_${tag}_local"
+      seed("users", Json.obj("name" -> "S1", "email" -> s"s1f_$tag@ejust.edu.eg",
+        "username" -> s"s1f_$tag", "password" -> "x",
+        "access_token" -> token, "external" -> "anyplace",
+        "type" -> "user", "owner_id" -> owner))
+      seed("spaces", Json.obj("buid" -> s"buid_s1v_$tag", "name" -> "Victim",
+        "description" -> "t", "owner_id" -> "someone_else", "is_published" -> "true"))
+      try {
+        val add = authed(app, "/api/auth/mapping/campus/add", token, Json.obj(
+          "name" -> "Hijack", "description" -> "t",
+          "buids" -> Json.arr(s"buid_s1v_$tag"), "greeklish" -> "false"))
+        status(add) must equalTo(FORBIDDEN)
+      } finally {
+        db.deleteFromKey("spaces", "buid", s"buid_s1v_$tag")
+        db.deleteFromKey("users", "username", s"s1f_$tag")
+      }
+    }
+
+    "404 POI add on a nonexistent floor (no orphans)" in new WithApplication {
+      val tag = freshTag()
+      val token = s"apLocal_s1p_$tag"
+      val owner = s"s1p_${tag}_local"
+      val buid = s"buid_s1p_$tag"
+      seed("users", Json.obj("name" -> "S1", "email" -> s"s1p_$tag@ejust.edu.eg",
+        "username" -> s"s1p_$tag", "password" -> "x",
+        "access_token" -> token, "external" -> "anyplace",
+        "type" -> "user", "owner_id" -> owner))
+      seed("spaces", Json.obj("buid" -> buid, "name" -> "S1 Hall",
+        "description" -> "t", "owner_id" -> owner, "is_published" -> "true"))
+      try {
+        val add = authed(app, "/api/auth/mapping/pois/add", token, Json.obj(
+          "is_published" -> "true", "buid" -> buid, "floor_name" -> "Ground",
+          "floor_number" -> "99", "name" -> "Ghost", "pois_type" -> "Room",
+          "is_door" -> "false", "is_building_entrance" -> "false",
+          "coordinates_lat" -> "30.9", "coordinates_lon" -> "29.7"))
+        status(add) must equalTo(NOT_FOUND)
+      } finally {
+        db.deleteFromKey("spaces", "buid", buid)
+        db.deleteFromKey("users", "username", s"s1p_$tag")
+      }
+    }
+
+    "400 duplicate floor add" in new WithApplication {
+      val tag = freshTag()
+      val token = s"apLocal_s1d_$tag"
+      val owner = s"s1d_${tag}_local"
+      val buid = s"buid_s1d_$tag"
+      seed("users", Json.obj("name" -> "S1", "email" -> s"s1d_$tag@ejust.edu.eg",
+        "username" -> s"s1d_$tag", "password" -> "x",
+        "access_token" -> token, "external" -> "anyplace",
+        "type" -> "user", "owner_id" -> owner))
+      seed("spaces", Json.obj("buid" -> buid, "name" -> "S1 Hall",
+        "description" -> "t", "owner_id" -> owner, "is_published" -> "true"))
+      val floor = Json.obj("is_published" -> "true", "buid" -> buid,
+        "floor_name" -> "Ground", "description" -> "t", "floor_number" -> "0")
+      try {
+        status(authed(app, "/api/auth/mapping/floor/add", token, floor)) must equalTo(OK)
+        status(authed(app, "/api/auth/mapping/floor/add", token, floor)) must equalTo(BAD_REQUEST)
+      } finally {
+        db.deleteFromKey("floorplans", "fuid", s"${buid}_0")
+        db.deleteFromKey("spaces", "buid", buid)
+        db.deleteFromKey("users", "username", s"s1d_$tag")
+      }
+    }
+
+    "400 radiomap file fetch without a body, not 500" in new WithApplication {
+      val response = route(app, FakeRequest(POST, "/api/radiomaps/folder/file")).get
+      status(response) must equalTo(BAD_REQUEST)
+    }
+  }
+
+  "S2 auth hardening" should {
+
+    def authedS2(app: play.api.Application, path: String, token: String, body: JsValue) =
+      route(app, FakeRequest(POST, path,
+        FakeHeaders(Seq("access_token" -> token, "Content-Type" -> "application/json")),
+        AnyContentAsJson(body))).get
+
+    "403 when a moderator edits an admin, 200 on a regular user" in new WithApplication {
+      val tag = freshTag()
+      val modToken = s"apLocal_s2m_$tag"
+      val modOwner = s"s2m_${tag}_local"
+      val adminOwner = s"s2a_${tag}_local"
+      seed("users", Json.obj("name" -> "Mod", "email" -> s"s2m_$tag@ejust.edu.eg",
+        "username" -> s"s2m_$tag", "password" -> "x", "access_token" -> modToken,
+        "external" -> "anyplace", "type" -> "moderator", "owner_id" -> modOwner))
+      seed("users", Json.obj("name" -> "Admin", "email" -> s"s2a_$tag@ejust.edu.eg",
+        "username" -> s"s2a_$tag", "password" -> "x", "access_token" -> s"apLocal_s2a_$tag",
+        "external" -> "anyplace", "type" -> "admin", "owner_id" -> adminOwner))
+      seed("users", Json.obj("name" -> "Regular", "email" -> s"s2r_$tag@ejust.edu.eg",
+        "username" -> s"s2r_$tag", "password" -> "x", "access_token" -> s"apLocal_s2r_$tag",
+        "external" -> "anyplace", "type" -> "user", "owner_id" -> s"s2r_${tag}_local"))
+      datasources.MongodbDatasource.updateCachedModerators()
+      try {
+        val denied = authedS2(app, "/api/auth/user/update", modToken, Json.obj(
+          "user_id" -> adminOwner, "name" -> "Pwned"))
+        status(denied) must equalTo(FORBIDDEN)
+        val allowed = authedS2(app, "/api/auth/user/update", modToken, Json.obj(
+          "user_id" -> s"s2r_${tag}_local", "name" -> "Fixed Name"))
+        status(allowed) must equalTo(OK)
+      } finally {
+        db.deleteFromKey("users", "username", s"s2m_$tag")
+        db.deleteFromKey("users", "username", s"s2a_$tag")
+        db.deleteFromKey("users", "username", s"s2r_$tag")
+        datasources.MongodbDatasource.updateCachedModerators()
+      }
+    }
+
+    "stamp token expiry at registration" in new WithApplication {
+      val tag = freshTag()
+      val username = s"s2exp_$tag"
+      val reg = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
+        "name" -> s"S2 $tag", "email" -> s"s2exp_$tag@ejust.edu.eg",
+        "username" -> username, "password" -> "Password123!"))).get
+      status(reg) must equalTo(OK)
+      try {
+        val exp = (db.getFromKeyAsJson("users", "username", username) \ "token_expires")
+          .asOpt[String].map(_.toLong)
+        exp must beSome.which(_ > System.currentTimeMillis())
+      } finally {
+        db.deleteFromKey("users", "username", username)
+      }
+    }
+
+    "rotate a legacy unstamped token on login" in new WithApplication {
+      val tag = freshTag()
+      val username = s"s2leg_$tag"
+      val oldToken = s"apLocal_s2leg_$tag"
+      val md = java.security.MessageDigest.getInstance("SHA-256")
+      val sb = new StringBuffer
+      md.digest(("test-salt" + "LegacyPass1!" + "test-pepper").getBytes("UTF-8")) foreach { b =>
+        val hex = Integer.toHexString(0xFF & b)
+        if (hex.length == 1) sb.append('0') else sb.append(hex)
+      }
+      // Legacy row: valid token, no expiry stamp.
+      seed("users", Json.obj("name" -> "Legacy", "email" -> s"s2leg_$tag@ejust.edu.eg",
+        "username" -> username, "password" -> sb.toString,
+        "access_token" -> oldToken, "external" -> "anyplace",
+        "type" -> "user", "owner_id" -> s"${username}_local"))
+      try {
+        val login = route(app, FakeRequest(POST, "/api/user/login").withJsonBody(Json.obj(
+          "username" -> username, "password" -> "LegacyPass1!"))).get
+        status(login) must equalTo(OK)
+        val newToken = (extractJson(login) \ "user" \ "access_token").as[String]
+        newToken must not equalTo oldToken
+        val exp = (db.getFromKeyAsJson("users", "username", username) \ "token_expires")
+          .asOpt[String].map(_.toLong)
+        exp must beSome.which(_ > System.currentTimeMillis())
+      } finally {
+        db.deleteFromKey("users", "username", username)
+      }
+    }
+
+    "400 an over-long password at registration" in new WithApplication {
+      val tag = freshTag()
+      val long = "Aa1!" + "x" * 125
+      long.length must be_>(128)
+      val reg = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
+        "name" -> s"S2 $tag", "email" -> s"s2long_$tag@ejust.edu.eg",
+        "username" -> s"s2long_$tag", "password" -> long))).get
+      status(reg) must equalTo(BAD_REQUEST)
+      db.deleteFromKey("users", "username", s"s2long_$tag")
+    }
   }
 
   "Campus outdoor routing" should {
 
     "plot a path between two buildings over outdoor edges" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val tag = freshTag()
       val cuid = s"cuid_contract_$tag"
       val buidA = s"buid_contract_a_$tag"
       val buidB = s"buid_contract_b_$tag"
@@ -147,8 +337,8 @@ class CampusContractSpec extends PlaySpecification {
       }
     }
 
-    "400 when a POI sits outside the campus" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+    "404 when a campus POI routes to an unknown POI" in new WithApplication {
+      val tag = freshTag()
       val cuid = s"cuid_contract_out_$tag"
       val buidA = s"buid_contract_out_a_$tag"
       val puidA = s"puid_contract_out_a_$tag"
@@ -164,27 +354,27 @@ class CampusContractSpec extends PlaySpecification {
         val response = route(app, FakeRequest(POST, "/api/navigation/route/campus")
           .withJsonBody(Json.obj("cuid" -> cuid,
             "pois_from" -> puidA, "pois_to" -> "puid_does_not_exist"))).get
-        status(response) must equalTo(BAD_REQUEST)
+        status(response) must equalTo(NOT_FOUND)
       } finally {
         db.deleteFromKey("pois", "puid", puidA)
         db.deleteFromKey("campuses", "cuid", cuid)
       }
     }
 
-    "400 unknown POIs before campus resolution" in new WithApplication {
+    "404 unknown POIs before campus resolution" in new WithApplication {
       val response = route(app, FakeRequest(POST, "/api/navigation/route/campus")
         .withJsonBody(Json.obj("cuid" -> "cuid_does_not_exist",
           "pois_from" -> "puid_does_not_exist_a",
           "pois_to" -> "puid_does_not_exist_b"))).get
-      // POI resolution precedes campus resolution: deterministic 400.
-      status(response) must equalTo(BAD_REQUEST)
+      // POI resolution precedes campus resolution: deterministic 404.
+      status(response) must equalTo(NOT_FOUND)
     }
   }
 
   "Auth hardening" should {
 
     "register PBKDF2 hashes and log in, rejecting wrong passwords" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val tag = freshTag()
       val username = s"contract_auth_$tag"
       val reg = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
         "name" -> s"Contract $tag",
@@ -202,17 +392,16 @@ class CampusContractSpec extends PlaySpecification {
         (extractJson(ok) \ "user" \ "password").asOpt[String] must beNone
         val bad = route(app, FakeRequest(POST, "/api/user/login").withJsonBody(Json.obj(
           "username" -> username, "password" -> "WrongPass1!"))).get
-        status(bad) must equalTo(BAD_REQUEST)
+        status(bad) must equalTo(UNAUTHORIZED)
       } finally {
         db.deleteFromKey("users", "username", username)
       }
     }
 
     "still verify legacy SHA-256 rows (bug-compatible hex)" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val tag = freshTag()
       val username = s"contract_legacy_$tag"
-      // Replicates helper.User legacy derivation incl. its nibble-drop quirk,
-      // because production rows were written by that exact routine.
+      // Replicates helper.User legacy derivation (production rows use that routine).
       def legacyHex(password: String): String = {
         val md = java.security.MessageDigest.getInstance("SHA-256")
         val sb = new StringBuffer
@@ -232,7 +421,7 @@ class CampusContractSpec extends PlaySpecification {
         status(ok) must equalTo(OK)
         val bad = route(app, FakeRequest(POST, "/api/user/login").withJsonBody(Json.obj(
           "username" -> username, "password" -> "Nope12345!"))).get
-        status(bad) must equalTo(BAD_REQUEST)
+        status(bad) must equalTo(UNAUTHORIZED)
       } finally {
         db.deleteFromKey("users", "username", username)
       }
@@ -260,34 +449,38 @@ class CampusContractSpec extends PlaySpecification {
       (json \ "uptime_ms").asOpt[Long] must beSome
     }
 
-    "stamp token expiry on login and slide it on refresh" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+    "stamp token expiry on login and rotate it on refresh" in new WithApplication {
+      val tag = freshTag()
       val username = s"contract_exp_$tag"
       val reg = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
         "name" -> s"Exp $tag", "email" -> s"exp_$tag@ejust.edu.eg",
         "username" -> username, "password" -> "Password123!"))).get
-      println("DBG-SUITE-REGSTATUS=" + status(reg))
+      status(reg) must equalTo(OK)
       try {
-        println("DBG-SUITE-FOUND=" + (db.getFromKeyAsJson("users", "username", username) != null))
         val login = route(app, FakeRequest(POST, "/api/user/login").withJsonBody(Json.obj(
           "username" -> username, "password" -> "Password123!"))).get
         status(login) must equalTo(OK)
         val token = (extractJson(login) \ "user" \ "access_token").as[String]
         val exp1 = (db.getFromKeyAsJson("users", "username", username) \ "token_expires").as[String].toLong
         exp1 must be_>(System.currentTimeMillis())
-        Thread.sleep(5)
         val refresh = route(app, FakeRequest(POST, "/api/user/refresh").withJsonBody(Json.obj(
           "access_token" -> token))).get
         status(refresh) must equalTo(OK)
+        val token2 = (extractJson(refresh) \ "user" \ "access_token").as[String]
+        token2 must not equalTo token
         val exp2 = (db.getFromKeyAsJson("users", "username", username) \ "token_expires").as[String].toLong
         exp2 must be_>=(exp1)
+        // The rotated-out token is dead.
+        val stale = route(app, FakeRequest(POST, "/api/user/refresh").withJsonBody(Json.obj(
+          "access_token" -> token))).get
+        status(stale) must equalTo(UNAUTHORIZED)
       } finally {
         db.deleteFromKey("users", "username", username)
       }
     }
 
     "reject expired tokens on protected endpoints and refresh" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val tag = freshTag()
       val username = s"contract_expired_$tag"
       val token = s"apLocal_contract_expired_$tag"
       seed("users", Json.obj("name" -> "Old", "email" -> s"old_$tag@ejust.edu.eg",
@@ -301,14 +494,14 @@ class CampusContractSpec extends PlaySpecification {
         status(denied) must equalTo(UNAUTHORIZED)
         val noRefresh = route(app, FakeRequest(POST, "/api/user/refresh").withJsonBody(Json.obj(
           "access_token" -> token))).get
-        status(noRefresh) must equalTo(BAD_REQUEST)
+        status(noRefresh) must equalTo(UNAUTHORIZED)
       } finally {
         db.deleteFromKey("users", "username", username)
       }
     }
 
     "forbid moderators changing other users' passwords" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val tag = freshTag()
       val modToken = s"apLocal_contract_mod_$tag"
       val modOwner = s"contract_mod_${tag}_local"
       val victimOwner = s"contract_victim_${tag}_local"
@@ -321,8 +514,7 @@ class CampusContractSpec extends PlaySpecification {
         "access_token" -> s"apLocal_contract_victim_$tag", "external" -> "anyplace",
         "type" -> "user", "owner_id" -> victimOwner))
       try {
-        // Moderator/admin lists are boot-cached statics: refresh so the
-        // fixture moderator is recognized (mirrors login/refresh behavior).
+        // Moderator lists are boot-cached: refresh so fixture moderator is recognized.
         datasources.MongodbDatasource.updateCachedModerators()
         def authed(body: JsValue) = FakeRequest(POST, "/api/auth/user/update",
           FakeHeaders(Seq("access_token" -> modToken, "Content-Type" -> "application/json")),
@@ -360,7 +552,7 @@ class CampusContractSpec extends PlaySpecification {
     }
 
     "404 unknown campus with known POIs" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val tag = freshTag()
       val buid = s"buid_contract_nc_$tag"
       val puidA = s"puid_contract_nc_a_$tag"
       val puidB = s"puid_contract_nc_b_$tag"
@@ -382,7 +574,7 @@ class CampusContractSpec extends PlaySpecification {
     }
 
     "400 disconnected campus POIs with a clear message" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val tag = freshTag()
       val cuid = s"cuid_contract_dc_$tag"
       val buidA = s"buid_contract_dc_a_$tag"
       val buidB = s"buid_contract_dc_b_$tag"
@@ -475,7 +667,8 @@ class CampusContractSpec extends PlaySpecification {
       status(response) must equalTo(BAD_REQUEST)
     }
 
-    "tolerate corrupt floor docs without 500" in new WithApplication {      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+    "tolerate corrupt floor docs without 500" in new WithApplication {
+      val tag = freshTag()
       val buid = s"buid_contract_cf_$tag"
       seed("spaces", Json.obj("buid" -> buid, "name" -> "CF",
         "description" -> "t", "owner_id" -> "test", "is_published" -> "true"))
@@ -493,8 +686,8 @@ class CampusContractSpec extends PlaySpecification {
 
   "Ownership binding (IDOR)" should {
 
-    "401 POI update bound to another building" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+    "403 POI update/delete bound to another building" in new WithApplication {
+      val tag = freshTag()
       val token = s"apLocal_contract_idor_$tag"
       val owner = s"contract_idor_${tag}_local"
       val buidA = s"buid_idor_a_$tag"
@@ -518,11 +711,11 @@ class CampusContractSpec extends PlaySpecification {
           FakeHeaders(Seq("access_token" -> token, "Content-Type" -> "application/json")),
           AnyContentAsJson(Json.obj("buid" -> buidA, "puid" -> puidV,
             "name" -> "Pwned")))).get
-        status(r) must equalTo(UNAUTHORIZED)
+        status(r) must equalTo(FORBIDDEN)
         val r2 = route(app, FakeRequest(POST, "/api/auth/mapping/pois/delete",
           FakeHeaders(Seq("access_token" -> token, "Content-Type" -> "application/json")),
           AnyContentAsJson(Json.obj("buid" -> buidA, "puid" -> puidV)))).get
-        status(r2) must equalTo(UNAUTHORIZED)
+        status(r2) must equalTo(FORBIDDEN)
       } finally {
         db.deleteFromKey("pois", "puid", puidV)
         db.deleteFromKey("spaces", "buid", buidA)
@@ -532,7 +725,7 @@ class CampusContractSpec extends PlaySpecification {
     }
 
     "400 connection anchored in a third building" in new WithApplication {
-      val tag = java.util.UUID.randomUUID().toString.takeRight(12)
+      val tag = freshTag()
       val token = s"apLocal_contract_idorc_$tag"
       val owner = s"contract_idorc_${tag}_local"
       val buidA = s"buid_idorc_a_$tag"
@@ -578,7 +771,8 @@ class CampusContractSpec extends PlaySpecification {
       app.injector.instanceOf[controllers.helper.User]
 
     def tokenInfo(aud: String, exp: String, sub: String) = Json.obj(
-      "aud" -> aud, "expires_in" -> exp, "sub" -> sub, "email" -> "u@ejust.edu.eg")
+      "aud" -> aud, "expires_in" -> exp, "sub" -> sub, "email" -> "u@ejust.edu.eg",
+      "iss" -> "https://accounts.google.com")
 
     "accept a live token for our audience" in new WithApplication {
       verifier.validateGoogleTokenInfo(
@@ -599,6 +793,123 @@ class CampusContractSpec extends PlaySpecification {
       verifier.validateGoogleTokenInfo(
         Json.obj("aud" -> "ejust-client", "expires_in" -> "3600"),
         Some("ejust-client")) must beNull
+    }
+  }
+
+  "Privacy + product surface" should {
+
+    "never disclose hashes or tokens in the moderator user list" in new WithApplication {
+      val tag = freshTag()
+      val token = s"apLocal_contract_pii_$tag"
+      db.addJson("users", Json.obj("name" -> "PII", "email" -> s"pii_$tag@ejust.edu.eg",
+        "username" -> s"contract_pii_$tag", "password" -> "x",
+        "access_token" -> token, "external" -> "anyplace",
+        "type" -> "moderator", "owner_id" -> s"contract_pii_${tag}_local"))
+      datasources.MongodbDatasource.updateCachedModerators()
+      try {
+        val response = route(app, FakeRequest(POST, "/api/auth/moderator/users/all")
+          .withHeaders("access_token" -> token)
+          .withJsonBody(Json.obj())).get
+        status(response) must equalTo(OK)
+        val body = extractString(response)
+        body must not contain "password"
+        body must not contain token
+      } finally {
+        db.deleteFromKey("users", "username", s"contract_pii_$tag")
+      }
+    }
+
+    "report distance and walk time on campus routes" in new WithApplication {
+      val tag = freshTag()
+      val cuid = s"cuid_contract_dist_$tag"
+      val buidA = s"buid_contract_dist_a_$tag"
+      val buidB = s"buid_contract_dist_b_$tag"
+      val puidA = s"puid_contract_dist_a_$tag"
+      val puidB = s"puid_contract_dist_b_$tag"
+      db.addJson("campuses", Json.obj("cuid" -> cuid, "name" -> "Dist",
+        "description" -> "t", "greeklish" -> "false",
+        "buids" -> Json.arr(buidA, buidB), "owner_id" -> "test"))
+      db.addJson("pois", Json.obj("puid" -> puidA, "buid" -> buidA,
+        "floor_number" -> "0", "name" -> "A",
+        "coordinates_lat" -> "30.9501", "coordinates_lon" -> "29.7501",
+        "pois_type" -> "Entrance"))
+      db.addJson("pois", Json.obj("puid" -> puidB, "buid" -> buidB,
+        "floor_number" -> "0", "name" -> "B",
+        "coordinates_lat" -> "30.9510", "coordinates_lon" -> "29.7510",
+        "pois_type" -> "Entrance"))
+      db.addJson("edges", Json.obj("cuid" -> s"conn_${puidA}_${puidB}",
+        "pois_a" -> puidA, "pois_b" -> puidB,
+        "buid_a" -> buidA, "buid_b" -> buidB,
+        "floor_a" -> "0", "floor_b" -> "0", "buid" -> buidA,
+        "edge_type" -> "outdoor", "weight" -> "180.0",
+        "is_published" -> "true"))
+      try {
+        val response = route(app, FakeRequest(POST, "/api/navigation/route/campus")
+          .withJsonBody(Json.obj("cuid" -> cuid,
+            "pois_from" -> puidA, "pois_to" -> puidB))).get
+        status(response) must equalTo(OK)
+        val json = extractJson(response)
+        val dist = (json \ "distance_m").as[Long]
+        dist must be_>(50L)
+        dist must be_<(2000L)
+        (json \ "walk_min").as[Int] must be_>=(1)
+      } finally {
+        db.deleteFromKey("edges", "cuid", s"conn_${puidA}_${puidB}")
+        db.deleteFromKey("pois", "puid", puidA)
+        db.deleteFromKey("pois", "puid", puidB)
+        db.deleteFromKey("campuses", "cuid", cuid)
+      }
+    }
+
+    "exclude stairs with step_free and say so when disconnected" in new WithApplication {
+      val tag = freshTag()
+      val cuid = s"cuid_contract_sf_$tag"
+      val buid = s"buid_contract_sf_$tag"
+      val puidA = s"puid_contract_sf_a_$tag"
+      val puidB = s"puid_contract_sf_b_$tag"
+      def routeBody() = Json.obj("cuid" -> cuid,
+        "pois_from" -> puidA, "pois_to" -> puidB) + ("step_free" -> Json.toJson(true))
+      db.addJson("campuses", Json.obj("cuid" -> cuid, "name" -> "SF",
+        "description" -> "t", "greeklish" -> "false",
+        "buids" -> Json.arr(buid), "owner_id" -> "test"))
+      for ((puid, nm) <- Seq((puidA, "A"), (puidB, "B"))) {
+        db.addJson("pois", Json.obj("puid" -> puid, "buid" -> buid,
+          "floor_number" -> "0", "name" -> nm,
+          "coordinates_lat" -> "30.9501", "coordinates_lon" -> "29.7501",
+          "pois_type" -> "Entrance"))
+      }
+      db.addJson("edges", Json.obj("cuid" -> s"conn_${puidA}_${puidB}",
+        "pois_a" -> puidA, "pois_b" -> puidB,
+        "buid_a" -> buid, "buid_b" -> buid,
+        "floor_a" -> "0", "floor_b" -> "0", "buid" -> buid,
+        "edge_type" -> "stair", "weight" -> "10.0",
+        "is_published" -> "true"))
+      try {
+        val off = route(app, FakeRequest(POST, "/api/navigation/route/campus")
+          .withJsonBody(Json.obj("cuid" -> cuid,
+            "pois_from" -> puidA, "pois_to" -> puidB))).get
+        status(off) must equalTo(OK)
+        val on = route(app, FakeRequest(POST, "/api/navigation/route/campus")
+          .withJsonBody(routeBody())).get
+        status(on) must equalTo(BAD_REQUEST)
+        extractString(on) must contain("step-free")
+        // Elevators stay step-free: swap the connector and re-run.
+        db.deleteFromKey("edges", "cuid", s"conn_${puidA}_${puidB}")
+        db.addJson("edges", Json.obj("cuid" -> s"conn_${puidA}_${puidB}",
+          "pois_a" -> puidA, "pois_b" -> puidB,
+          "buid_a" -> buid, "buid_b" -> buid,
+          "floor_a" -> "0", "floor_b" -> "0", "buid" -> buid,
+          "edge_type" -> "elevator", "weight" -> "10.0",
+          "is_published" -> "true"))
+        val lift = route(app, FakeRequest(POST, "/api/navigation/route/campus")
+          .withJsonBody(routeBody())).get
+        status(lift) must equalTo(OK)
+      } finally {
+        db.deleteFromKey("edges", "cuid", s"conn_${puidA}_${puidB}")
+        db.deleteFromKey("pois", "puid", puidA)
+        db.deleteFromKey("pois", "puid", puidB)
+        db.deleteFromKey("campuses", "cuid", cuid)
+      }
     }
   }
 }

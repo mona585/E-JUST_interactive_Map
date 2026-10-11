@@ -75,10 +75,7 @@ object MongodbDatasource {
   private var admins: List[String] = List[String]()
   private var moderators: List[String] = List[String]()
   private var rolesRefreshedAt: Long = 0L
-  // Role lists were boot-cached statics: newly promoted moderators stayed
-  // powerless until an unrelated login refreshed them. 60s TTL keeps checks
-  // cheap (2 queries per minute worst case) and never breaks requests: a
-  // failed refresh keeps serving the last known lists.
+  // Role cache with 60s TTL: bounds refresh queries; refresh failures keep serving cached lists.
   private val ROLES_TTL_MS: Long = 60000L
 
   def getAdmins: List[String] = { refreshRolesIfStale(); admins }
@@ -111,7 +108,7 @@ object MongodbDatasource {
     sInstance = createInstance(hostname, database, username, password, port)
   }
 
-  // Campus-tuned timeout: avoid Duration.Inf which hangs campus burst load
+  // Bounded DB timeout to avoid hanging on slow queries.
   val DB_TIMEOUT = Duration(10, "seconds")
 
   def createInstance(hostname: String, database: String, username: String, password: String, port: String): MongodbDatasource = {
@@ -123,7 +120,7 @@ object MongodbDatasource {
     } else {
       "mongodb://" + hostname + ":" + port
     }
-    // Campus burst tuning: bounded pool, timeouts, retry
+    // Bounded pool with timeouts and retry.
     val uri = baseUri + "/?maxPoolSize=40&minPoolSize=5&maxIdleTimeMS=30000&serverSelectionTimeoutMS=3000&connectTimeoutMS=5000&socketTimeoutMS=10000&retryWrites=true&w=majority"
     mongoClient = MongoClient(uri)
     // TODO check if database anyplace exists
@@ -807,11 +804,13 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val conns = new util.ArrayList[util.HashMap[String, String]]()
     val distinct = buids.distinct
     if (distinct.isEmpty) return conns
+    // Outdoor/stair/elevator connectors; step-free routing drops stairs later.
     val collection = mdb.getCollection(SCHEMA.cEdges)
     val query = BsonDocument(
       SCHEMA.fBuidA -> BsonDocument("$in" -> distinct),
       SCHEMA.fBuidB -> BsonDocument("$in" -> distinct),
-      SCHEMA.fEdgeType -> Connection.EDGE_TYPE_OUTDOOR)
+      SCHEMA.fEdgeType -> BsonDocument("$in" -> List(
+        Connection.EDGE_TYPE_OUTDOOR, Connection.EDGE_TYPE_STAIR, Connection.EDGE_TYPE_ELEVATOR)))
     val awaited = Await.result(collection.find(query).toFuture(), MongodbDatasource.DB_TIMEOUT)
     for (edge <- convertJson(awaited.toList)) {
       conns.add(JsonUtils.getHashMapStrStr(edge))
@@ -1524,7 +1523,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     var newJson: JsValue = null
     val newList = new util.ArrayList[JsValue]()
     for (x <- listJson) {
-      newJson = x.as[JsObject] - SCHEMA.fGeometry - SCHEMA.fOwnerId - SCHEMA.fCoOwners - SCHEMA.fId
+      newJson = x.as[JsObject] - SCHEMA.fGeometry - SCHEMA.fOwnerId - SCHEMA.fCoOwners - SCHEMA.fId - SCHEMA.fSchema
       newList.add(newJson)
     }
     newList.toList
@@ -1918,10 +1917,16 @@ class MongodbDatasource @Inject() () extends IDatasource {
                         accType: String): JsValue = {
     val accessToken = generateAccessToken(true)
     val owner_id = createOwnerId(username) + "_local"
+    // Stamp expiry at birth: a token must never have an unbounded window
+    // before first login. Canonical TTL lives in helper.User.TOKEN_TTL_MS —
+    // this mirrors it because the datasource cannot depend on the helper
+    // (helper injects the datasource; keep the two values in sync).
+    val tokenExpires = (System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000).toString
     val json: JsValue = Json.obj("name" -> JsString(name), SCHEMA.fEmail -> JsString(email),
       SCHEMA.fUsername -> JsString(username), SCHEMA.fPassword -> JsString(password),
       SCHEMA.fAccessToken -> JsString(accessToken), SCHEMA.fExternal -> JsString(external),
-      SCHEMA.fType -> JsString(accType), SCHEMA.fOwnerId -> JsString(owner_id))
+      SCHEMA.fType -> JsString(accType), SCHEMA.fOwnerId -> JsString(owner_id),
+      SCHEMA.fTokenExpires -> JsString(tokenExpires))
     addJson(SCHEMA.cUsers, json)
 
     json.as[JsObject] - SCHEMA.fPassword

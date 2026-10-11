@@ -1,23 +1,9 @@
-// E-JUST outdoor-pilot demo seed — EXECUTED 2026-10-09 against Mongo 6.0,
-// verified end to end: campus/get, space/public, pois/space, navigation/route.
-// Idempotent: wipes only the fixed demo ids, leaves everything else alone.
-// NEVER run against production: fixed demo ids (buid_eng/buid_lib/...) would
-// collide with real mapping. Staging/test databases only.
-// Usage (staging, after init_database.sh):
-//   mongosh "mongodb://127.0.0.1:27017/anyplace" server/database/seed_demo_campus.js
-// Ownership: demo rows belong to owner_id "seed" (nonexistent user), so only
-// admins pass the floorplan space-access gate on them. After seeding, assign
-// the buildings to real staff via Architect (space co-owners) or:
-//   db.spaces.updateMany({buid:{$in:["buid_eng","buid_lib"]}},{$set:{owner_id:"<staff_owner_id>"}})
-// Then walk the acceptance test:
-//   POST /api/mapping/campus/get {"cuid":"cuid_ejust_demo"} -> 2 spaces
-//   POST /api/navigation/route {"pois_from":"puid_eng_entrance","pois_to":"puid_eng_lab"}
-//     -> num_of_pois 2, "Plotted navigation."
-//   POST /api/navigation/route/campus {"cuid":"cuid_ejust_demo",
-//     "pois_from":"puid_eng_entrance","pois_to":"puid_lib_entrance"}
-//     -> num_of_pois 2, "Plotted campus navigation."
-// Product rule this seed documents: spaces need is_published:"true" to appear
-// in space/public (getAllBuildings filters on it); campus/get does not.
+// Demo seed (staging/test only): idempotent, wipes only fixed demo ids; never run in production.
+// Usage: mongosh "mongodb://127.0.0.1:27017/anyplace" server/database/seed_demo_campus.js
+// Demo rows use owner_id "seed"; reassign buid_eng/buid_lib to staff owner_id after seeding.
+// Acceptance: campus/get cuid_ejust_demo -> 2 spaces; route puid_eng_entrance->puid_eng_lab -> 2 pois.
+// Acceptance: route/campus cuid_ejust_demo puid_eng_entrance->puid_lib_entrance -> 2 pois.
+// Product rule: spaces need is_published:"true" for space/public; campus/get does not.
 
 db = db.getSiblingDB('anyplace');
 

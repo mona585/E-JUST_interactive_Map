@@ -459,7 +459,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                         poiRoutePolyline[fkey].polyline = new google.maps.Polyline({
                             path: poiRoutePolyline[fkey].flightPlanCoordinates,
                             geodesic: true,
-                            strokeColor: '#FF0000',
+                            strokeColor: '#005A9C',
                             strokeOpacity: 0.75,
                             strokeWeight: 6
                         });
@@ -480,7 +480,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                             new google.maps.LatLng($scope.userPosition.lat, $scope.userPosition.lng)
                         ],
                         geodesic: true,
-                        strokeColor: '#FF0000',
+                        strokeColor: '#005A9C',
                         strokeOpacity: 0,
                         strokeWeight: 6,
                         icons: [{
@@ -709,7 +709,7 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
                     auxPoiRoutePolyline = new google.maps.Polyline({
                         path: flightPath,
                         geodesic: true,
-                        strokeColor: '#73B9FF',
+                        strokeColor: '#005A9C',
                         strokeOpacity: 0,
                         strokeWeight: 6,
                         icons: [{

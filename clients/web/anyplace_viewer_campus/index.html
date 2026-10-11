@@ -121,7 +121,7 @@
 
     <script type="text/javascript" src="bower_components/angular-loading-bar/src/loading-bar.js"></script>
     <link rel="stylesheet" href="bower_components/angular-loading-bar/src/loading-bar.css">
-    <script type="text/javascript" src="build/js/anyplace.js?campus"></script>
+    <script type="text/javascript" src="build/js/anyplace.min.js?campus"></script>
     <script type="text/javascript" src="libs/svg-assets-cache.js"></script>
     <link rel="stylesheet" type="text/css" href="build/css/anyplace.css?campus"/>
 
@@ -144,11 +144,6 @@
 
 <div ng-click="close()" id="control-bar" class="box-shadow-1 ng-cloak" ng-controller="ControlBarController as ctrlBarCtrl" ng-cloak>
 
-    <div id="ejust-loading-veil" ng-show="anyService.BuildingsLoaded" class="ng-cloak" ng-cloak role="status" aria-live="polite">
-        <div class="ejust-spinner" aria-hidden="true"></div>
-        <p>Loading E-JUST campus…</p>
-    </div>
-
     <div class="container-fluid" id="gray-bg">
         <!-- LOGO: hidden at sm, xs -->
         <div class="col-md-2 col-sm-1 d-none d-sm-block hidden-xs hidden-md" id="div-logo">
@@ -168,7 +163,7 @@
                     <div ng-bind-html="b.name | highlight: $select.search"></div>
                     <small>
                         <div ng-bind-html="b.description | highlight: $select.search"></div>
-                        (<span ng-bind-html="b.buname"></span>)
+                        (<span ng-bind-html="b.buname | highlight: $select.search"></span>)
                     </small>
                 </ui-select-choices>
             </ui-select>
@@ -276,7 +271,7 @@
                     id="android_top_BR_8"/>
             </div>
             <div id="android_top_DIV_17">
-                <!-- TODO(E-JUST): point at the hosted APK / Play listing once published -->
+                <!-- TODO: point at hosted APK / Play listing once published -->
                 <a href="https://ejust.edu.eg" target="_blank" rel="noopener"
                    id="android_top_A_18">Install</a>
             </div>
@@ -287,6 +282,11 @@
 
 
 <div id="map-canvas"></div>
+
+<div id="ejust-loading-veil" ng-show="anyService.BuildingsLoaded" class="ng-cloak" ng-cloak role="status" aria-live="polite">
+    <div class="ejust-spinner" aria-hidden="true"></div>
+    <p>Loading E-JUST campus…</p>
+</div>
 
 <div id="ejust-maps-unavailable" ng-show="mapsUnavailable" class="ng-cloak" ng-cloak role="alert">
     <p><strong>Map unavailable.</strong> The map library could not load (offline or missing API key).

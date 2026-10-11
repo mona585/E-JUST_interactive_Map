@@ -1,7 +1,4 @@
-/* E-JUST campus theme — layered over map.css via Grunt concat (style/*.css).
- * Design tokens first, component overrides below. No framework changes;
- * every rule targets existing ids/classes. ES5-era browsers safe
- * (CSS variables with static fallbacks on critical color rules). */
+/* E-JUST campus theme: tokens first, component overrides below. */
 
 #control-bar {
     --ejust-navy: #123a6d;
@@ -82,8 +79,7 @@
     color: var(--ejust-navy);
 }
 
-/* Full-screen loading veil while the campus model loads.
- * Shown via ng-show="anyService.BuildingsLoaded" (true until first fetch). */
+/* Full-screen loading veil while campus model loads. */
 #ejust-loading-veil {
     position: fixed;
     top: 0;
@@ -177,6 +173,24 @@
 
 #ejust-maps-unavailable p {
     margin: 0;
+}
+
+/* z-scale: 0 map / 10 floating / 20 header / 30 dropdown / 40 sidenav / 50 banners / 60 veil / 70 promo. */
+#control-bar {
+    z-index: 20;
+}
+
+#control-bar.box-shadow-1 {
+    box-shadow: none;
+    margin: 0;
+}
+
+#ejust-loading-veil {
+    z-index: 60;
+}
+
+#ejust-maps-unavailable {
+    z-index: 50;
 }
 
 /* Small screens: tighter bar, full-width menu, readable type. */

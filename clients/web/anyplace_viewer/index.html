@@ -181,7 +181,7 @@
              ng-show="anyService.selectedBuilding !== undefined && anyService.selectedBuilding !== null && anyService.selectedFloor !== undefined && anyService.selectedFloor !== null">
             <div class="bold-f one-line-wrap-div">
                 <button ng-click="unselectBuilding()" id="change-building-btn" class="btn btn-primary"
-                        style="padding: 3px 6px; margin-bottom: 3px; outline-style: none">
+                        style="padding: 3px 6px; margin-bottom: 3px; outline-style: none" aria-label="Change building">
                     <span class="glyphicon glyphicon-remove" id="change-building-box"></span>
                 </button>
                 <span id="clear-routes-box" ng-click="clearNavPolylines()"
@@ -221,7 +221,7 @@
 
                 <!-- Single button -->
                 <div class="btn-group" dropdown is-open="status.isopen">
-                    <button type="button" class="btn btn-primary dropdown-toggle" dropdown-toggle>
+                    <button type="button" class="btn btn-primary dropdown-toggle" dropdown-toggle aria-label="Menu" aria-haspopup="true">
                         <span
                                 class="glyphicon glyphicon-menu-hamburger"> </span>
                         <!--</span><span class="caret"></span>-->

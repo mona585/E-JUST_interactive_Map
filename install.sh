@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# LEGACY/UNMAINTAINED: not the deploy path; use docs/recovery/PHASE_2_STAGING_RUNBOOK.md (manual host provisioning) instead.
+# WARNING: its port-443 assumption is outdated.
+# WARNING: its env-file handling is outdated.
 
 # ==============================================================================
 #  Anyplace - Automated Standalone Local Installation Script
@@ -48,7 +51,7 @@ pkg_install() {
     fi
 }
 
-# Ubuntu 22.04 recovery target: use the pinned OpenJDK 17 runtime.
+# Requires OpenJDK 17 on Ubuntu 22.04.
 if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
     export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
     export PATH="$JAVA_HOME/bin:$PATH"
@@ -105,8 +108,7 @@ if ! command -v nc &> /dev/null; then
     pkg_install "netcat-openbsd" || true
 fi
 
-# Check for the pre-provisioned local MongoDB service. This legacy helper must
-# not create Docker containers that publish MongoDB on all host interfaces.
+# Requires pre-provisioned local MongoDB; never create Docker containers exposing it.
 HAS_MONGO=false
 if command -v mongod &> /dev/null || (command -v nc &> /dev/null && nc -z 127.0.0.1 27017 &> /dev/null); then
     HAS_MONGO=true
@@ -169,9 +171,7 @@ if [ ! -f "$CONF_FILE" ]; then
     cp "$CONF_EXAMPLE" "$CONF_FILE"
 fi
 
-# Generate secrets only when the private configuration is empty or still uses a
-# documented placeholder. Existing values must remain stable because they protect
-# sessions and password hashes.
+# Generate secrets only for empty/placeholder values; existing values protect sessions/hashes.
 if needs_generated_secret "$(get_conf_val "application.secret")"; then
     upsert_conf_val "application.secret" "$APP_SECRET"
 fi
@@ -260,8 +260,7 @@ build_web_app() {
     fi
 }
 
-# The recovery build is deliberately fail-closed: only generated browser assets
-# are staged under server/public, and a missing dependency/build stops here.
+# Fail-closed: stage only generated browser assets; missing dependency/build stops here.
 bash "$ROOT_DIR/scripts/build-web-assets.sh"
 
 # ------------------------------------------------------------------------------
@@ -305,7 +304,7 @@ if [ -e "/var/run/docker.sock" ]; then
     export DOCKER_HOST="unix:///var/run/docker.sock"
 fi
 
-# Ubuntu 22.04 recovery target: use the pinned OpenJDK 17 runtime.
+# Requires OpenJDK 17 on Ubuntu 22.04.
 if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
     export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
     export PATH="$JAVA_HOME/bin:$PATH"
@@ -335,8 +334,7 @@ fi
 rm -f "$SERVER_DIR/target/universal/stage/RUNNING_PID"
 rm -f "$ROOT_DIR/RUNNING_PID"
 
-# Use an explicit environment value when supplied; otherwise read the private
-# configuration. A missing or placeholder secret must stop startup.
+# Secret comes from environment or private config; missing/placeholder must stop startup.
 CONF_PATH="$SERVER_DIR/conf/app.private.conf"
 APP_SECRET="${APPLICATION_SECRET:-$(grep -E '^(play\.http\.secret\.key|application\.secret)' "$CONF_PATH" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -n 1 || true)}"
 if [ -z "$APP_SECRET" ] || [[ "$APP_SECRET" == CHANGE_ME_* ]] || [[ "$APP_SECRET" == "APPLICATION_SECRET_KEY" ]] || [[ "$APP_SECRET" == "YOUR_APPLICATION_SECRET" ]]; then

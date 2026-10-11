@@ -73,15 +73,17 @@ class NavigationController @Inject()(cc: ControllerComponents,
         LOG.D2("getBuildingById: " + json.toString)
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid)
         if (checkRequirements != null) return checkRequirements
-        val buid = (json \ SCHEMA.fBuid).as[String]
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
         try {
-          val doc = pds.db.buildingFromKeyAsJson(buid)
+          var doc = pds.db.buildingFromKeyAsJson(buid)
           if (doc == null) {
-            return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+            return RESPONSE.NOT_FOUND("Space not found.")
           }
+          doc = doc.as[JsObject] - SCHEMA.fOwnerId - SCHEMA.fCoOwners - SCHEMA.fId - SCHEMA.fSchema
           return RESPONSE.OK(doc, "Successfully fetched building information.")
         } catch {
-          case e: DatasourceException => return RESPONSE.ERROR_INTERNAL("500: " + e.getMessage + "]")
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not retrieve space.")
         }
       }
 
@@ -99,16 +101,17 @@ class NavigationController @Inject()(cc: ControllerComponents,
         LOG.D2("getPoisById: " + json.toString)
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.cPOIS)
         if (checkRequirements != null) return checkRequirements
-        val puid = (json \ SCHEMA.cPOIS).as[String]
+        val puid = (json \ SCHEMA.cPOIS).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid pois id."))
         try {
           var doc = pds.db.poiFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid)
           if (doc == null) {
-            return RESPONSE.BAD_CANNOT_RETRIEVE_POI
+            return RESPONSE.NOT_FOUND("POI not found.")
           }
           doc = doc.as[JsObject] - SCHEMA.fOwnerId - SCHEMA.fId - SCHEMA.fSchema
           return RESPONSE.OK(doc, "Fetched POI information.")
         } catch {
-          case e: DatasourceException => return RESPONSE.ERROR_INTERNAL("500: " + e.getMessage + "]")
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not retrieve POI.")
         }
       }
 
@@ -126,24 +129,26 @@ class NavigationController @Inject()(cc: ControllerComponents,
         LOG.D2("getNavigationRoute: " + json.toString)
         val checkRequirements = VALIDATE.checkRequirements(json, "pois_from", "pois_to")
         if (checkRequirements != null) return checkRequirements
-        val puid_from = (json \ "pois_from").as[String]
-        val puid_to = (json \ "pois_to").as[String]
+        val puid_from = (json \ "pois_from").asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid pois_from."))
+        val puid_to = (json \ "pois_to").asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid pois_to."))
         if (puid_from.equalsIgnoreCase(puid_to)) {
           return RESPONSE.BAD("Destination and Source is the same.")
         }
         try {
           val poiFrom = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid_from)
           if (poiFrom == null) {
-            return RESPONSE.BAD_CANNOT_RETRIEVE("Source POI")
+            return RESPONSE.NOT_FOUND("Source POI not found.")
           }
           val poiTo = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid_to)
           if (poiTo == null) {
-            return RESPONSE.BAD_CANNOT_RETRIEVE("Destination POI")
+            return RESPONSE.NOT_FOUND("Destination POI not found.")
           }
-          val buid_from = (poiFrom \ SCHEMA.fBuid).as[String]
-          val floor_from = (poiFrom \ SCHEMA.fFloorNumber).as[String]
-          val buid_to = (poiTo \ SCHEMA.fBuid).as[String]
-          val floor_to = (poiTo \ SCHEMA.fFloorNumber).as[String]
+          val buid_from = (poiFrom \ SCHEMA.fBuid).asOpt[String].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid route data."))
+          val floor_from = (poiFrom \ SCHEMA.fFloorNumber).asOpt[String].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid route data."))
+          val buid_to = (poiTo \ SCHEMA.fBuid).asOpt[String].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid route data."))
+          val floor_to = (poiTo \ SCHEMA.fFloorNumber).asOpt[String].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid route data."))
           var points: util.List[JsValue] = null
           if (buid_from.equalsIgnoreCase(buid_to)) {
             if (floor_from.equalsIgnoreCase(floor_to)) {
@@ -157,19 +162,14 @@ class NavigationController @Inject()(cc: ControllerComponents,
           val res: JsValue = Json.obj("num_of_pois" -> points.size, SCHEMA.cPOIS -> points.asScala)
           return RESPONSE.OK(res, "Plotted navigation.")
         } catch {
-          case e: DatasourceException => return RESPONSE.ERROR_INTERNAL("500: " + e.getMessage)
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not plot navigation.")
         }
       }
 
       inner(request)
   }
 
-  /**
-   * Campus route: shortest outdoor path between two POIs whose Spaces both
-   * belong to `cuid`. Same envelope as the indoor endpoints so clients reuse
-   * the drawing code. First async endpoint: blocking work runs on the
-   * dedicated dispatcher instead of Play's request pool.
-   */
+  /** Outdoor campus route between POIs in `cuid`. */
   def getCampusRoute: Action[AnyContent] = Action.async {
     implicit request =>
       Future {
@@ -182,34 +182,51 @@ class NavigationController @Inject()(cc: ControllerComponents,
           val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fCampusCuid, "pois_from", "pois_to")
           if (checkRequirements != null) checkRequirements
           else {
-            val cuid = (json \ SCHEMA.fCampusCuid).as[String]
-            val puid_from = (json \ "pois_from").as[String]
-            val puid_to = (json \ "pois_to").as[String]
+            val cuidOpt = (json \ SCHEMA.fCampusCuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+            val fromOpt = (json \ "pois_from").asOpt[String].map(_.trim).filter(_.nonEmpty)
+            val toOpt = (json \ "pois_to").asOpt[String].map(_.trim).filter(_.nonEmpty)
+            if (cuidOpt.isEmpty) RESPONSE.BAD("Invalid cuid.")
+            else if (fromOpt.isEmpty) RESPONSE.BAD("Invalid pois_from.")
+            else if (toOpt.isEmpty) RESPONSE.BAD("Invalid pois_to.")
+            else {
+              val cuid = cuidOpt.get
+              val puid_from = fromOpt.get
+              val puid_to = toOpt.get
             if (puid_from.equalsIgnoreCase(puid_to)) {
               RESPONSE.BAD("Destination and Source is the same.")
             } else try {
               val poiFrom = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid_from)
               if (poiFrom == null) {
-                RESPONSE.BAD_CANNOT_RETRIEVE("Source POI")
+                RESPONSE.NOT_FOUND("Source POI not found.")
               } else {
                 val poiTo = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid_to)
                 if (poiTo == null) {
-                  RESPONSE.BAD_CANNOT_RETRIEVE("Destination POI")
+                  RESPONSE.NOT_FOUND("Destination POI not found.")
                 } else {
                   val buids = campusNav.campusBuids(cuid)
                   if (buids.isEmpty) {
                     RESPONSE.NOT_FOUND("Campus '" + cuid + "' not found!")
                   } else {
-                    val buid_from = (poiFrom \ SCHEMA.fBuid).as[String]
-                    val buid_to = (poiTo \ SCHEMA.fBuid).as[String]
+                    val buid_from = (poiFrom \ SCHEMA.fBuid).asOpt[String].getOrElse("")
+                    val buid_to = (poiTo \ SCHEMA.fBuid).asOpt[String].getOrElse("")
                     if (!buids.contains(buid_from) || !buids.contains(buid_to)) {
                       RESPONSE.BAD("Both POIs must belong to campus '" + cuid + "'.")
                     } else {
-                      val points = campusNav.route(buids, poiFrom, poiTo)
+                      val stepFree = (json \ "step_free").toOption.exists(v =>
+                        v.asOpt[String].contains("true") || v.asOpt[Boolean].contains(true))
+                      val points = campusNav.route(buids, poiFrom, poiTo, stepFree)
                       if (points.isEmpty) {
-                        RESPONSE.BAD("No outdoor path between the two POIs on this campus yet.")
+                        if (stepFree)
+                          RESPONSE.BAD("No step-free outdoor path between the two POIs on this campus yet.")
+                        else
+                          RESPONSE.BAD("No outdoor path between the two POIs on this campus yet.")
                       } else {
-                        val res: JsValue = Json.obj("num_of_pois" -> points.size, SCHEMA.cPOIS -> points.asScala)
+                        val distM = campusNav.distanceMeters(points)
+                        val res: JsValue = Json.obj(
+                          "num_of_pois" -> points.size,
+                          SCHEMA.cPOIS -> points.asScala,
+                          "distance_m" -> Math.round(distM),
+                          "walk_min" -> campusNav.walkMinutes(distM))
                         RESPONSE.OK(res, "Plotted campus navigation.")
                       }
                     }
@@ -217,7 +234,8 @@ class NavigationController @Inject()(cc: ControllerComponents,
                 }
               }
             } catch {
-              case e: DatasourceException => RESPONSE.ERROR_INTERNAL("500: " + e.getMessage)
+              case _: DatasourceException => RESPONSE.ERROR_INTERNAL("Could not plot campus navigation.")
+            }
             }
           }
         }
@@ -234,20 +252,24 @@ class NavigationController @Inject()(cc: ControllerComponents,
           SCHEMA.fCoordinatesLat, SCHEMA.fCoordinatesLon, SCHEMA.fFloorNumber,
           "pois_to")
         if (checkRequirements != null) return checkRequirements
-        val coordinates_lat = (json \ SCHEMA.fCoordinatesLat).as[String]
-        val coordinates_lon = (json \ SCHEMA.fCoordinatesLon).as[String]
-        val floor_number = (json \ SCHEMA.fFloorNumber).as[String]
-        val puid_to = (json \ "pois_to").as[String]
+        val coordinates_lat = (json \ SCHEMA.fCoordinatesLat).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates_lat."))
+        val coordinates_lon = (json \ SCHEMA.fCoordinatesLon).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates_lon."))
+        val floor_number = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
+        val puid_to = (json \ "pois_to").asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid pois_to."))
         var res: Result = null
         try {
           val poiTo = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid_to)
           if (poiTo == null) {
-            return RESPONSE.BAD("Destination POI does not exist or could not be retrieved.")
+            return RESPONSE.NOT_FOUND("Destination POI not found.")
           }
-          val buid_to = (poiTo \ SCHEMA.fBuid).as[String]
-          val floor_to = (poiTo \ SCHEMA.fFloorNumber).as[String]
-          val dlat = java.lang.Double.parseDouble(coordinates_lat)
-          val dlon = java.lang.Double.parseDouble(coordinates_lon)
+          val buid_to = (poiTo \ SCHEMA.fBuid).asOpt[String].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid route data."))
+          val floor_to = (poiTo \ SCHEMA.fFloorNumber).asOpt[String].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid route data."))
+          val dlat = try { coordinates_lat.toDouble } catch { case _: NumberFormatException => return RESPONSE.BAD("Invalid coordinates_lat.") }
+          val dlon = try { coordinates_lon.toDouble } catch { case _: NumberFormatException => return RESPONSE.BAD("Invalid coordinates_lon.") }
           val floorPois = pds.db.poisByBuildingFloorAsJson(buid_to, floor_number)
           if (0 == floorPois.size) {
             return RESPONSE.BAD("Navigation is not supported on your floor.")
@@ -260,12 +282,18 @@ class NavigationController @Inject()(cc: ControllerComponents,
           // Find the closest POI to start navigation
           var startingPoi: JsValue = null
           for (poi <- floorPois) {
-            dlat2 = java.lang.Double.parseDouble((poi \ SCHEMA.fCoordinatesLat).as[String])
-            dlon2 = java.lang.Double.parseDouble((poi \ SCHEMA.fCoordinatesLon).as[String])
-            cdist = GeoPoint.getDistanceBetweenPoints(dlon, dlat, dlon2, dlat2, "K")
-            if (cdist < min_distance) {
-              min_distance = cdist
-              startingPoi = poi
+            val plat = try { (poi \ SCHEMA.fCoordinatesLat).asOpt[String].map(_.toDouble) } catch { case _: NumberFormatException => None }
+            val plon = try { (poi \ SCHEMA.fCoordinatesLon).asOpt[String].map(_.toDouble) } catch { case _: NumberFormatException => None }
+            if (plat.isEmpty || plon.isEmpty) {
+              LOG.D1("Skipping POI with unparsable coordinates in route-XY search.")
+            } else {
+              dlat2 = plat.get
+              dlon2 = plon.get
+              cdist = GeoPoint.getDistanceBetweenPoints(dlon, dlat, dlon2, dlat2, "K")
+              if (cdist < min_distance) {
+                min_distance = cdist
+                startingPoi = poi
+              }
             }
           }
           if (startingPoi == null) {
@@ -277,10 +305,10 @@ class NavigationController @Inject()(cc: ControllerComponents,
             return RESPONSE.BAD(msg)
           }
 
-          LOG.D3("Starting poi: " + (startingPoi \ SCHEMA.fPuid).as[String])
+          LOG.D3("Starting poi: " + (startingPoi \ SCHEMA.fPuid).asOpt[String].getOrElse("?"))
           LOG.D3("min_distance: " + min_distance)
-          val buid_from = (startingPoi \ SCHEMA.fBuid).as[String]
-          val floor_from = (startingPoi \ SCHEMA.fFloorNumber).as[String]
+          val buid_from = (startingPoi \ SCHEMA.fBuid).asOpt[String].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid route data."))
+          val floor_from = (startingPoi \ SCHEMA.fFloorNumber).asOpt[String].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid route data."))
           var points: util.List[JsValue] = null
           if (buid_from.equalsIgnoreCase(buid_to)) {
             points = if (floor_from.equalsIgnoreCase(floor_to)) navigateSameFloor(startingPoi, poiTo)
@@ -292,8 +320,8 @@ class NavigationController @Inject()(cc: ControllerComponents,
           val json: JsValue = Json.obj("num_of_pois" -> points.size, SCHEMA.cPOIS -> points.asScala)
           return RESPONSE.OK(json, "Successfully plotted navigation.")
         } catch {
-          //case e: DatasourceException => AnyResponseHelper.internal_server_error("500: " + e.getMessage)
-          case e: Exception => return RESPONSE.ERROR_INTERNAL(e.getClass.toString + ": " + e.getMessage)
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not plot navigation.")
+          case _: NumberFormatException => return RESPONSE.BAD("Invalid coordinate value.")
         }
       }
 
@@ -301,15 +329,19 @@ class NavigationController @Inject()(cc: ControllerComponents,
   }
 
   private def navigateSameFloor(from: JsValue, to: JsValue): List[JsValue] = {
-    navigateSameFloor(from, to, pds.db.poisByBuildingFloorAsMap((from \ SCHEMA.fBuid).as[String],
-      (from \ SCHEMA.fFloorNumber).as[String]))
+    val buid = (from \ SCHEMA.fBuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+    val floor = (from \ SCHEMA.fFloorNumber).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+    navigateSameFloor(from, to, pds.db.poisByBuildingFloorAsMap(buid, floor))
   }
 
   private def navigateSameFloor(from: JsValue, to: JsValue, floorPois: util.List[HashMap[String, String]]): util.List[JsValue] = {
+    val buid = (from \ SCHEMA.fBuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+    val puidFrom = (from \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+    val puidTo = (to \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val graph = new Dijkstra.Graph()
     graph.addPois(floorPois)
-    graph.addEdges(pds.db.connectionsByBuildingAsMap((from \ SCHEMA.fBuid).as[String]))
-    val routePois = Dijkstra.getShortestPath(graph, (from \ SCHEMA.fPuid).as[String], (to \ SCHEMA.fPuid).as[String])
+    graph.addEdges(pds.db.connectionsByBuildingAsMap(buid))
+    val routePois = Dijkstra.getShortestPath(graph, puidFrom, puidTo)
 
     val final_points = new util.ArrayList[JsValue]()
     var p: NavResultPoint = null
@@ -327,10 +359,13 @@ class NavigationController @Inject()(cc: ControllerComponents,
   }
 
   private def navigateSameBuilding(from: JsValue, to: JsValue): util.List[JsValue] = {
+    val buid = (from \ SCHEMA.fBuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+    val puidFrom = (from \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+    val puidTo = (to \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val graph = new Dijkstra.Graph()
-    graph.addPois(pds.db.poisByBuildingAsMap((from \ SCHEMA.fBuid).as[String]))
-    graph.addEdges(pds.db.connectionsByBuildingAsMap((from \ SCHEMA.fBuid).as[String]))
-    val routePois = Dijkstra.getShortestPath(graph, (from \ SCHEMA.fPuid).as[String], (to \ SCHEMA.fPuid).as[String])
+    graph.addPois(pds.db.poisByBuildingAsMap(buid))
+    graph.addEdges(pds.db.connectionsByBuildingAsMap(buid))
+    val routePois = Dijkstra.getShortestPath(graph, puidFrom, puidTo)
     val final_points = new util.ArrayList[JsValue]()
     var p: NavResultPoint = null
     for (poi <- routePois.asScala) {

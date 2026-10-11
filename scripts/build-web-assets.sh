@@ -38,12 +38,15 @@ for app in "${APPS[@]}"; do
     mkdir -p "$target_dir"
     (
         cd "$app_dir"
-        # WebAppController/Assets serve the whole app tree (index.html, libs,
-        # controllers, images, build/, bower_components/), so stage everything
-        # except development-only dependencies.
+        # Stage full app tree (Assets serves it); exclude dev-only dependencies.
         tar --exclude=node_modules --exclude=.git -cf - . | tar -xf - -C "$target_dir"
         test -f "$target_dir/index.html"
     )
 done
+
+# Stage shared favicon (no app tree provides it; /favicon.ico route needs it).
+mkdir -p "$SERVER_PUBLIC/images"
+cp -f "$WEB_DIR/shared/images/favicon.png" "$SERVER_PUBLIC/images/favicon.png"
+test -f "$SERVER_PUBLIC/images/favicon.png"
 
 printf 'Web assets staged in %s\n' "$SERVER_PUBLIC"

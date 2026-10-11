@@ -27,10 +27,7 @@
 
 var app = angular.module('anyViewer', ['ngRoute', 'ui.bootstrap', 'ui.select', 'ngSanitize', 'ngMaterial', 'angular-loading-bar']);
 
-/* Secure highlight: overrides angular-ui-select's raw-HTML highlighter.
- * Server-controlled names/descriptions are escaped BEFORE match-wrapping,
- * closing the stored-XSS sink in every ng-bind-html="...| highlight" site.
- * Registered after ui-select loads, so this definition wins. */
+/* Escape server names/descriptions before match-wrapping to close stored-XSS sink. */
 app.filter('highlight', ['$sce', function ($sce) {
     function esc(s) {
         return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -59,8 +56,7 @@ app.service('GMapService', function () {
     var self = this;
     var element = document.getElementById("map-canvas");
 
-    // Offline / invalid-key guard: without the Maps library nothing below can
-    // run. Bail with a flag (AppCtrl shows the banner) instead of killing boot.
+    // Guard: without Maps library bail with flag instead of killing boot.
     if (typeof google === "undefined" || !google.maps) {
         self.mapsError = "Google Maps library failed to load (offline or invalid API key).";
         return;
@@ -427,6 +423,22 @@ app.factory('AnyplaceService', ['$rootScope', '$q', function ($rootScope, $q) {
             return baseUrl;
         baseUrl += "&selected=" + this.selectedPoi.puid;
         return baseUrl;
+    };
+
+    anyService.VIEWER_URL = location.origin + "/viewer";
+
+    anyService.getCampusViewerUrl = function () {
+        if (!this.selectedCampus) { return "N/A"; }
+        var cuid = this.selectedCampus.cuid || this.selectedCampus;
+        if (!cuid) { return "N/A"; }
+        return anyService.VIEWER_URL + "/?cuid=" + cuid;
+    };
+
+    anyService.getCampusViewerUrlEncoded = function () {
+        if (!this.selectedCampus) { return "N/A"; }
+        var cuid = this.selectedCampus.cuid || this.selectedCampus;
+        if (!cuid) { return "N/A"; }
+        return encodeURIComponent(anyService.VIEWER_URL + "/?cuid=" + cuid);
     };
 
     anyService.clearAllData = function () {

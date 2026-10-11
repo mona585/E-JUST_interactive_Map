@@ -8,7 +8,7 @@ if [ -e "/var/run/docker.sock" ]; then
     export DOCKER_HOST="unix:///var/run/docker.sock"
 fi
 
-# Ubuntu 22.04 recovery target: use the pinned OpenJDK 17 runtime.
+# Requires OpenJDK 17 on Ubuntu 22.04.
 if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
     export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
     export PATH="$JAVA_HOME/bin:$PATH"
@@ -19,9 +19,7 @@ export JDK_JAVA_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens
 
 echo "=== Starting Anyplace Local Environment ==="
 
-# The D-06 baseline is an authenticated MongoDB service bound to loopback.
-# Never create a Docker MongoDB instance from this script: its default port
-# publishing can expose the database on every host interface.
+# Requires authenticated MongoDB on loopback; never create Docker MongoDB here.
 for required_var in APPLICATION_SECRET MONGODB_HOST MONGODB_PORT MONGODB_DATABASE MONGODB_USERNAME MONGODB_PASSWORD; do
     required_value="${!required_var:-}"
     if [ -z "$required_value" ] || [[ "$required_value" == CHANGE_ME_* ]]; then
@@ -54,8 +52,7 @@ fi
 rm -f "$SERVER_DIR/target/universal/stage/RUNNING_PID"
 rm -f "$ROOT_DIR/RUNNING_PID"
 
-# Configuration is resolved from the protected environment through
-# server/conf/app.private.conf. Do not fall back to a tracked or generated key.
+# Config comes from protected environment via app.private.conf; no fallback key.
 APP_SECRET="$APPLICATION_SECRET"
 
 echo "[*] Launching Anyplace Backend on port 9000..."

@@ -57,6 +57,13 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         val lat2 = (json \ "lat2").as[String]
         val lon2 = (json \ "lon2").as[String]
         try {
+          val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
+          if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.FORBIDDEN("Forbidden.")
+        } catch {
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not delete fingerprints.")
+        }
+        try {
           val fingerprints: List[JsValue] = pds.db.getFingerPrintsBBox(
             buid, floorNum, lat1, lon1, lat2, lon2)
           if (fingerprints.isEmpty)
@@ -71,8 +78,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
           Future { mapHelper.updateFrozenRadioMap(buid, floorNum) }(ec)
           return RESPONSE.gzipJsonOk(res, "Deleted " + fingerprints.size + " fingerprints and returning them.")
         } catch {
-          case e: Exception =>
-            return RESPONSE.ERROR_INTERNAL("FingerPrintsDelete: " + e.getClass + ": " + e.getMessage)
+          case _: Exception =>
+            return RESPONSE.ERROR_INTERNAL("Could not delete fingerprints.")
         }
       }
 
@@ -103,6 +110,13 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         val timestampX = (json \ SCHEMA.fTimestampX).as[String]
         val timestampY = (json \ SCHEMA.fTimestampY).as[String]
         try {
+          val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
+          if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.FORBIDDEN("Forbidden.")
+        } catch {
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not delete fingerprints.")
+        }
+        try {
           val fingerprints: List[JsValue] = pds.db.getFingerPrintsTimestampBBox(
             buid, floorNum, lat1, lon1, lat2, lon2, timestampX, timestampY)
           if (fingerprints.isEmpty)
@@ -119,7 +133,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
               return RESPONSE.OK(res, "Successfully retrieved all Fingerprints.")
           }
         } catch {
-          case e: DatasourceException => return RESPONSE.ERROR(e)
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not delete fingerprints.")
         }
       }
 
@@ -149,6 +163,13 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         val buid = (json \ SCHEMA.fBuid).as[String]
         val floorNum = (json \ SCHEMA.fFloor).as[String]
 
+        try {
+          val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
+          if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.FORBIDDEN("Forbidden.")
+        } catch {
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not retrieve fingerprints.")
+        }
         // create cache-collections
         pds.db.cacheHeatmapByTime(SCHEMA.cHeatmapWifiTimestamp1, buid, floorNum, 1)
         pds.db.cacheHeatmapByTime(SCHEMA.cHeatmapWifiTimestamp2, buid, floorNum, 2)
@@ -165,7 +186,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
               return RESPONSE.OK(res, "Successfully retrieved all Fingerprints.")
           }
         } catch {
-          case e: DatasourceException => return RESPONSE.ERROR(e)
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not retrieve fingerprints.")
         }
       }
       inner(request)
@@ -191,7 +212,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
           }
           return RESPONSE.OK("Success")
         } catch {
-          case e: DatasourceException => return RESPONSE.ERROR(e)
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not delete radios.")
         }
       }
 
@@ -526,7 +547,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
-          RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
+          return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         }
         val json = anyReq.getJsonBody()
         if (!Utils.isSafePathSegment(radio_folder) || !Utils.isSafePathSegment(fileName))
@@ -537,11 +558,11 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         if (!Utils.isWithinRoot("radiomaps", file.getPath))
           return RESPONSE.BAD("Invalid radiomap identifier.")
         try {
-          if (!file.exists()) return RESPONSE.BAD("File does not exist: " + fileName)
-          if (!file.canRead) return RESPONSE.BAD("File cannot be read: " + fileName)
+          if (!file.exists()) return RESPONSE.NOT_FOUND("Radiomap file not found.")
+          if (!file.canRead) return RESPONSE.NOT_FOUND("Radiomap file not found.")
           Ok.sendFile(file)
         } catch {
-          case e: FileNotFoundException => RESPONSE.ERROR_INTERNAL("500: " + e.getMessage)
+          case _: FileNotFoundException => RESPONSE.ERROR_INTERNAL("Could not read radiomap file.")
         }
       }
 

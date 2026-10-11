@@ -296,11 +296,11 @@ app.controller('BuildingController', ['$cookieStore', '$scope', '$compile', 'GMa
                     }
 
                     var htmlContent = '<div class="infowindow-scroll-fix">'
-                        + '<div class="infowindow-title">'+b.name+'</div>'
+                        + '<div class="infowindow-title">'+escapeHtml(b.name)+'</div>'
                         + '<div class="font-weight-bold">BUID:</div>'
-                        + '<input class="form-control input-tiny" value="'+b.buid+'" onClick="selectAllInputText(this)" readonly/>'
+                        + '<input class="form-control input-tiny" value="'+escapeId(b.buid)+'" onClick="selectAllInputText(this)" readonly/>'
                         + '<div class="infowindow-title">Description:</div>'
-                        + '<textarea class="infowindow-text-area"  rows="3" readonly>' + b.description + '</textarea>'
+                        + '<textarea class="infowindow-text-area"  rows="3" readonly>' + escapeHtml(b.description) + '</textarea>'
                         + '</div>';
 
 

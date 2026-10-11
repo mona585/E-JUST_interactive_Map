@@ -33,18 +33,25 @@ class MapFloorController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id))
-        val buid = (json \ SCHEMA.fBuid).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id))
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
-        val floorNum = (json \ SCHEMA.fFloorNumber).as[String]
+        val floorNum = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
         if (!Floor.checkFloorNumberFormat(floorNum)) return RESPONSE.BAD("Floor number cannot contain whitespace.")
+        if (!Utils.isSafePathSegment(floorNum)) return RESPONSE.BAD("Invalid floor identifier.")
         try {
+          // Duplicate guard: fuid is deterministic per building+floor.
+          if (pds.db.getFromKeyAsJson(SCHEMA.cFloorplans, SCHEMA.fFuid, Floor.getId(buid, floorNum)) != null)
+            return RESPONSE.BAD("Floor already exists.")
           json = json.as[JsObject] - SCHEMA.fAccessToken
           val floor = new Floor(json)
           if (!pds.db.addJson(SCHEMA.cFloorplans, Utils.stripJsValue(floor.toJson())))
@@ -73,26 +80,29 @@ class MapFloorController @Inject()(cc: ControllerComponents,
         if (!requiredMissing.isEmpty) return RESPONSE.MISSING_FIELDS(requiredMissing)
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id))
-        val buid = (json \ SCHEMA.fBuid).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id))
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
-        val floorNum = (json \ "fllor_number").as[String]
+        val floorNum = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
         if (!Floor.checkFloorNumberFormat(floorNum)) return RESPONSE.BAD("Floor number cannot contain whitespace.")
         try {
           val fuid = Floor.getId(buid, floorNum)
           var storedFloor = pds.db.getFromKeyAsJson(SCHEMA.cFloorplans, SCHEMA.fFuid, fuid)
-          if (storedFloor == null) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOOR
-          if (json.\(SCHEMA.fIsPublished).getOrElse(null) != null)
+          if (storedFloor == null) return RESPONSE.NOT_FOUND("Floor not found.")
+          if ((json \ SCHEMA.fIsPublished).asOpt[String].exists(s => s == "true" || s == "false"))
             storedFloor = storedFloor.as[JsObject] + (SCHEMA.fIsPublished -> JsString((json \ SCHEMA.fIsPublished).as[String]))
-          if (json.\(SCHEMA.fFloorName).getOrElse(null) != null)
+          if ((json \ SCHEMA.fFloorName).asOpt[String].exists(_.trim.nonEmpty))
             storedFloor = storedFloor.as[JsObject] + (SCHEMA.fFloorName, JsString((json \ SCHEMA.fFloorName).as[String]))
-          if (json.\(SCHEMA.fDescription).getOrElse(null) != null)
+          if ((json \ SCHEMA.fDescription).asOpt[String].isDefined)
             storedFloor = storedFloor.as[JsObject] + (SCHEMA.fDescription, JsString((json \ SCHEMA.fDescription).as[String]))
           val floor = new Floor(storedFloor)
           if (!pds.db.replaceJsonDocument(SCHEMA.cFloorplans, SCHEMA.fFuid, floor.getId(), floor.toJson().toString))
@@ -119,12 +129,17 @@ class MapFloorController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id))
-        val buid = (json \ SCHEMA.fBuid).as[String]
-        val floorNum = (json \ SCHEMA.fFloorNumber).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id))
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        val floorNum = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
+        if (!Floor.checkFloorNumberFormat(floorNum)) return RESPONSE.BAD("Floor number cannot contain whitespace.")
+        if (!Utils.isSafePathSegment(floorNum)) return RESPONSE.BAD("Invalid floor identifier.")
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
@@ -159,7 +174,8 @@ class MapFloorController @Inject()(cc: ControllerComponents,
         LOG.D2("Floor: all: " + Utils.stripJsValueStr(json))
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid)
         if (checkRequirements != null) return checkRequirements
-        val buid = (json \ SCHEMA.fBuid).as[String]
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
         try {
           val floors = pds.db.floorsByBuildingAsJson(buid)
           val res: JsValue = Json.obj("floors" -> floors.asScala)

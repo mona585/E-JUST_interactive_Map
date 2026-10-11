@@ -61,6 +61,12 @@ app.service('GMapService', function () {
     var self = this;
     var element = document.getElementById("map-canvas");
 
+    // Guard: without Maps library bail with flag instead of killing boot.
+    if (typeof google === "undefined" || !google.maps) {
+        self.mapsError = "Google Maps library failed to load (offline or invalid API key).";
+        return;
+    }
+
     /**
      * @constructor
      * @implements {google.maps.MapType}
@@ -346,7 +352,7 @@ app.factory('AnyplaceService', function () {
 
     anyService.getCampusViewerUrlEncoded = function () {
         if (!this.selectedCampus || !this.selectedCampus.cuid) { return "N/A"; }
-        return encodeURIComponent(anyService.VIEWER_URL+"/viewer/?cuid=" + this.selectedCampus.cuid);
+        return encodeURIComponent(anyService.VIEWER_URL+"/?cuid=" + this.selectedCampus.cuid);
     };
 
     anyService.setAllPois = function (p) {

@@ -1770,9 +1770,9 @@ app.controller('WiFiController', ['$cookieStore', '$scope', 'AnyplaceService', '
                     if (!infowindow.getMap()) {
                         APmap[c].addListener('click', function () {
                             if (this.mun !== "N/A") {
-                                infowindow.setContent(this.id + "<br><center>-</center><br>" + this.mun);
+                                infowindow.setContent(escapeHtml(this.id) + "<br><center>-</center><br>" + escapeHtml(this.mun));
                             } else {
-                                infowindow.setContent(this.id);
+                                infowindow.setContent(escapeHtml(this.id));
                             }
                             infowindow.open(this.gmap, this);
                         });

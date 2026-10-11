@@ -25,7 +25,7 @@ lazy val root = (project in file("."))
   )
 
 resolvers ++= Seq(
-  Resolver.jcenterRepo,
+  Resolver.mavenCentral,
 )
 
 swaggerRoutesFile := "api.routes"

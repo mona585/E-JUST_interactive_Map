@@ -507,43 +507,5 @@ app.controller('FloorController',
                 ShowError($scope, resp, "Upload error", true);
             }); // on error
     };
-
-    $scope.showRadioHeatmapPoi = function () {
-        var jsonReq = {
-            "buid": $scope.anyService.getBuildingId(),
-            "floor": $scope.anyService.getFloorNumber(),
-            "coordinates_lat": $scope.anyService.selectedPoi.coordinates_lat,
-            "coordinates_lon": $scope.anyService.selectedPoi.coordinates_lon,
-            "range": "1"
-        };
-
-        var promise = $scope.anyAPI.getRadioHeatmapPoi(jsonReq);
-        promise.then(
-            function (resp) {
-                // on success
-                var data = resp.data;
-                var heatMapData = [];
-                var i = resp.data.radioPoints.length;
-
-                if (i <= 0) {
-                    _err($scope, "Floor not mapped. Use logger (Google Play) to map it.");
-                    return;
-                }
-
-                while (i--) {
-                    var rp = resp.data.radioPoints[i];
-                    heatMapData.push( {location: new google.maps.LatLng(rp.x, rp.y), weight: 1} );
-                    resp.data.radioPoints.splice(i, 1);
-                }
-
-                if (heatmap && heatmap.getMap()) { heatmap.setMap(null); }
-                heatmap = new google.maps.visualization.HeatmapLayer({ data: heatMapData });
-                heatmap.setMap($scope.gmapService.gmap);
-            },
-            function (resp) {
-                ShowWarningAutohide($scope, resp, "", false);
-            }
-        );
-    }
 }
 ]);

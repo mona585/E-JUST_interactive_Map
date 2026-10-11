@@ -1,7 +1,8 @@
 ###################
 # Unused Endpoints
+# NOTE: spaceUpdateCoOwners WAS listed here but is routed in api.routes —
+# do not add routed actions to this file.
 ###################
-POST        /api/auth/space/coowners/update                controllers.MapSpaceController.spaceUpdateCoOwners()
 POST        /api/auth/space/owner/update                controllers.MapSpaceController.spaceUpdateOwner()
 POST        /api/auth/space/bucode              controllers.MapSpaceController.spaceByBucode()
 

@@ -27,10 +27,7 @@
 
 var app = angular.module('anyViewer', ['ngRoute', 'ui.bootstrap', 'ui.select', 'ngSanitize','angular-loading-bar']);
 
-/* Secure highlight: overrides angular-ui-select's raw-HTML highlighter.
- * Server-controlled names/descriptions are escaped BEFORE match-wrapping,
- * closing the stored-XSS sink in every ng-bind-html="...| highlight" site.
- * Registered after ui-select loads, so this definition wins. */
+/* Escape server names/descriptions before match-wrapping to close stored-XSS sink. */
 app.filter('highlight', ['$sce', function ($sce) {
     function esc(s) {
         return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -62,6 +59,12 @@ app.service('GMapService', function () {
     var self = this;
 
     var element = document.getElementById("map-canvas");
+
+    // Guard: without Maps library bail with flag instead of killing boot.
+    if (typeof google === "undefined" || !google.maps) {
+        self.mapsError = "Google Maps library failed to load (offline or invalid API key).";
+        return;
+    }
 
     /**
      * @constructor
@@ -225,13 +228,13 @@ app.service('GMapService', function () {
             map.controls[google.maps.ControlPosition.BOTTOM_RIGHT].push(attributionElm);
         }
         if (self.gmap.getMapTypeId() === "OSM")
-            attributionElm.innerHTML = '<a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+            attributionElm.innerHTML = '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
         if (self.gmap.getMapTypeId() === "roadmap")
             attributionElm.innerHTML = '';
         if (self.gmap.getMapTypeId() === "satellite")
             attributionElm.innerHTML = '';
         if (self.gmap.getMapTypeId() === "CartoLight")
-            attributionElm.innerHTML = '<a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attribution">CARTO</a>';
+            attributionElm.innerHTML = '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attribution">CARTO</a>';
     }
 
     //Define OSM map type pointing at the OpenStreetMap tile server
@@ -489,6 +492,9 @@ app.filter('propsFilter', function () {
                 for (var i = 0; i < keys.length; i++) {
                     var prop = keys[i];
                     var text = props[prop].toLowerCase();
+                    if (item[prop] === undefined || item[prop] === null) {
+                        continue;
+                    }
                     if (item[prop].toString().toLowerCase().indexOf(text) !== -1) {
                         itemMatches = true;
                         break;

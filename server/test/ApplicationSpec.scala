@@ -48,8 +48,9 @@ class ApplicationSpec extends PlaySpecification {
     "reject unauthenticated space co-owner and access requests" in new WithApplication {
       val coOwners = route(app, FakeRequest(POST, "/api/auth/mapping/space/coowners").withJsonBody(Json.obj())).get
       val access = route(app, FakeRequest(POST, "/api/auth/mapping/space/access").withJsonBody(Json.obj())).get
-      status(coOwners) must beOneOf(UNAUTHORIZED, BAD_REQUEST, FORBIDDEN)
-      status(access) must beOneOf(UNAUTHORIZED, BAD_REQUEST, FORBIDDEN)
+      // Both endpoints return NO_ACCESS_TOKEN (401) before any body/DB checks.
+      status(coOwners) must equalTo(UNAUTHORIZED)
+      status(access) must equalTo(UNAUTHORIZED)
     }
 
     "build public API URLs from public.baseUrl" in {

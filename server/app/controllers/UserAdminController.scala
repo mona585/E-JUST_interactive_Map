@@ -51,12 +51,7 @@ class UserAdminController @Inject()(cc: ControllerComponents,
                                     user: helper.User)
   extends AbstractController(cc) {
 
-  /**
-   * Not in use. It fills all the heatmap caches, which needs around 6 hours
-   * for each collection (6 in total) of the Anyplace dataset.
-   *
-   * Instead, we are creating/destroying these heatmap caches on demand.
-   */
+  /** Not in use. Heatmap caches are created/destroyed on demand (full fill ~6h per collection). */
   def migrateToMongoDB(): Action[AnyContent] = Action {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
@@ -66,8 +61,9 @@ class UserAdminController @Inject()(cc: ControllerComponents,
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val owner_id = user.authorize(apiKey)
-        if (owner_id == null) return RESPONSE.FORBIDDEN("Unauthorized")
-        if(!user.isAdminOrModerator(owner_id)) {
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED("Unauthorized")
+        // Heatmap generation is an admin-only, hours-long job: moderators must not trigger it.
+        if (!MongodbDatasource.getAdmins.contains(owner_id)) {
           return RESPONSE.FORBIDDEN("Unauthorized. Only admins can generate heatmaps.")
         }
         if (!pds.db.generateHeatmaps())
@@ -91,16 +87,16 @@ class UserAdminController @Inject()(cc: ControllerComponents,
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val owner_id = user.authorize(apiKey)
-        if (owner_id == null) return RESPONSE.FORBIDDEN("Unauthorized")
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED("Unauthorized")
         if(!user.isAdminOrModerator(owner_id)) return RESPONSE.FORBIDDEN("Only moderators users can see all accounts.")
         try {
-          val users: List[JsValue] = pds.db.getAllAccounts()
-          // Never disclose credential material: hashes and live tokens stay server-side.
-          val safe: List[JsValue] = users.map(u => (u.as[JsObject] - SCHEMA.fPassword - SCHEMA.fAccessToken))
+          val users: List[JsValue] = pds.db.getAllAccounts().take(500)
+          // Never disclose credential material; skip corrupt rows instead of 500ing listing.
+          val safe: List[JsValue] = users.flatMap(_.asOpt[JsObject]).map(_ - SCHEMA.fPassword - SCHEMA.fAccessToken - SCHEMA.fTokenExpires)
           val res: JsValue = Json.obj("users_num" -> safe.length, SCHEMA.cUsers -> Json.toJson(safe))
           RESPONSE.gzipJsonOk(res, "Successfully retrieved all accounts!")
         } catch {
-          case e: DatasourceException => return RESPONSE.ERROR_INTERNAL("500: " + e.getMessage)
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not retrieve accounts.")
         }
       }
       inner(request)

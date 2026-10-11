@@ -4,7 +4,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Anyplace Service Status ==="
 
-# Check MongoDB (honor environment overrides; default loopback baseline)
+# Check MongoDB (honor env overrides; default loopback).
 MDB_HOST="${MONGODB_HOST:-127.0.0.1}"
 MDB_PORT="${MONGODB_PORT:-27017}"
 if nc -z "$MDB_HOST" "$MDB_PORT" &> /dev/null; then

@@ -1,10 +1,10 @@
 #!/bin/bash
 cwd="$(dirname "$0")"
-source $cwd/config.sh
+source "$cwd/config.sh"
 
-host=$MDB_HOST
-port=$MDB_PORT
-user=$MDB_USER
-pass=$MDB_PASS
+host="$MDB_HOST"
+port="$MDB_PORT"
+user="$MDB_USER"
+pass="$MDB_PASS"
 
-mongo --host $host --port $port --username $user --password $pass
+mongosh --host "$host" --port "$port" --username "$user" --password "$pass" --authenticationDatabase admin

@@ -23,8 +23,7 @@ if [ -n "$PID" ]; then
     sleep 1
 fi
 
-# Never fuser -k the port: it would kill whatever unrelated process holds it.
-# Report instead; the operator decides.
+# Never fuser -k the port (would kill unrelated processes); report instead.
 for port in 9000 9001; do
     if command -v nc &>/dev/null && nc -z 127.0.0.1 "$port" &>/dev/null; then
         echo "[!] Port $port still occupied after stop (left for the operator)."
