@@ -113,10 +113,14 @@ object MongodbDatasource {
 
   def createInstance(hostname: String, database: String, username: String, password: String, port: String): MongodbDatasource = {
     val baseUri: String = if (username != null && username.trim.nonEmpty) {
-      // Encode credentials to handle special characters
+      // Encode credentials to handle special characters.
+      // The database path doubles as the auth source: without it the driver
+      // defaults to `admin`, which rejects app-DB users with a bare
+      // MongoSecurityException at Guice boot (seen on first staging).
       val encUser = java.net.URLEncoder.encode(username, "UTF-8")
       val encPass = java.net.URLEncoder.encode(password, "UTF-8")
-      "mongodb://" + encUser + ":" + encPass + "@" + hostname + ":" + port
+      val encDb = java.net.URLEncoder.encode(database, "UTF-8")
+      "mongodb://" + encUser + ":" + encPass + "@" + hostname + ":" + port + "/" + encDb
     } else {
       "mongodb://" + hostname + ":" + port
     }
