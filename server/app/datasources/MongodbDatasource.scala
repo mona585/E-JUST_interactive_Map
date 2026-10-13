@@ -120,12 +120,12 @@ object MongodbDatasource {
       val encUser = java.net.URLEncoder.encode(username, "UTF-8")
       val encPass = java.net.URLEncoder.encode(password, "UTF-8")
       val encDb = java.net.URLEncoder.encode(database, "UTF-8")
-      "mongodb://" + encUser + ":" + encPass + "@" + hostname + ":" + port + "/" + encDb
+      "mongodb://" + encUser + ":" + encPass + "@" + hostname + ":" + port + "/" + encDb + "?"
     } else {
-      "mongodb://" + hostname + ":" + port
+      "mongodb://" + hostname + ":" + port + "/?"
     }
     // Bounded pool with timeouts and retry.
-    val uri = baseUri + "/?maxPoolSize=40&minPoolSize=5&maxIdleTimeMS=30000&serverSelectionTimeoutMS=3000&connectTimeoutMS=5000&socketTimeoutMS=10000&retryWrites=true&w=majority"
+    val uri = baseUri + "maxPoolSize=40&minPoolSize=5&maxIdleTimeMS=30000&serverSelectionTimeoutMS=3000&connectTimeoutMS=5000&socketTimeoutMS=10000&retryWrites=true&w=majority"
     mongoClient = MongoClient(uri)
     // TODO check if database anyplace exists
     mdb = mongoClient.getDatabase(database)
