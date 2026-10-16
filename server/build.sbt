@@ -25,10 +25,23 @@ lazy val root = (project in file("."))
   )
 
 resolvers ++= Seq(
-  Resolver.jcenterRepo,
+  Resolver.mavenCentral,
 )
 
 swaggerRoutesFile := "api.routes"
 // auto generate swagger definitions for domain classes
 swaggerDomainNameSpaces := Seq("models")
 swaggerPrettyJson := true
+
+// Java 17+: old Guice/cglib needs these opens in EVERY JVM that runs app
+// code — including forked tests, which inherit neither .jvmopts nor SBT_OPTS
+// reliably across launchers. Keep in sync with anyplace.service's
+// JDK_JAVA_OPTIONS. Heap kept modest for 1 GB build boxes (swap-backed).
+Test / fork := true
+Test / javaOptions ++= Seq(
+  "--add-opens=java.base/java.lang=ALL-UNNAMED",
+  "--add-opens=java.base/java.util=ALL-UNNAMED",
+  "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+  "--add-opens=java.base/java.io=ALL-UNNAMED",
+  "-Xmx768m"
+)

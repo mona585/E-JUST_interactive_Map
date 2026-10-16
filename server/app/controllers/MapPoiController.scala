@@ -34,12 +34,20 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id)) - SCHEMA.fAccessToken
-        val buid = (json \ SCHEMA.fBuid).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id)) - SCHEMA.fAccessToken
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        val floorNum = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
+          // No orphan POIs: the floor must exist in this building.
+          val fuid = Floor.getId(buid, floorNum)
+          if (pds.db.getFromKeyAsJson(SCHEMA.cFloorplans, SCHEMA.fFuid, fuid) == null)
+            return RESPONSE.NOT_FOUND("Floor not found.")
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
@@ -69,47 +77,48 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id))
-        val puid = (json \ SCHEMA.fPuid).as[String]
-        val buid = (json \ SCHEMA.fBuid).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id))
+        val puid = (json \ SCHEMA.fPuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid puid."))
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
         try {
           var storedPoi = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid)
-          if (storedPoi == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
-          if (json.\(SCHEMA.fIsPublished).getOrElse(null) != null) {
-            val is_published = (json \ SCHEMA.fIsPublished).as[String]
-            if (is_published == "true" || is_published == "false")
-              storedPoi = storedPoi.as[JsObject] + (SCHEMA.fIsPublished -> JsString((json \ SCHEMA.fIsPublished).as[String]))
+          if (storedPoi == null) return RESPONSE.NOT_FOUND("POI not found.")
+          // Verify POI building match.
+          if ((storedPoi \ SCHEMA.fBuid).asOpt[String].getOrElse("") != buid)
+            return RESPONSE.FORBIDDEN("POI belongs to a different space.")
+          if ((json \ SCHEMA.fIsPublished).asOpt[String].exists(s => s == "true" || s == "false")
+          ) {
+            storedPoi = storedPoi.as[JsObject] + (SCHEMA.fIsPublished -> JsString((json \ SCHEMA.fIsPublished).as[String]))
           }
-          if (json.\(SCHEMA.fName).getOrElse(null) != null)
+          if ((json \ SCHEMA.fName).asOpt[String].exists(_.trim.nonEmpty))
             storedPoi = storedPoi.as[JsObject] + (SCHEMA.fName -> JsString((json \ SCHEMA.fName).as[String]))
-          if (json.\(SCHEMA.fDescription).getOrElse(null) != null)
+          if ((json \ SCHEMA.fDescription).asOpt[String].isDefined)
             storedPoi = storedPoi.as[JsObject] + (SCHEMA.fDescription -> JsString((json \ SCHEMA.fDescription).as[String]))
-          if (json.\(SCHEMA.fURL).getOrElse(null) != null)
+          if ((json \ SCHEMA.fURL).asOpt[String].isDefined)
             storedPoi = storedPoi.as[JsObject] + (SCHEMA.fURL -> JsString((json \ SCHEMA.fURL).as[String]))
-          if (json.\(SCHEMA.fPoisType).getOrElse(null) != null)
+          if ((json \ SCHEMA.fPoisType).asOpt[String].isDefined)
             storedPoi = storedPoi.as[JsObject] + (SCHEMA.fPoisType -> JsString((json \ SCHEMA.fPoisType).as[String]))
-          if (json.\(SCHEMA.fIsDoor).getOrElse(null) != null) {
-            val is_door = (json \ SCHEMA.fIsDoor).as[String]
-            if (is_door == "true" || is_door == "false")
-              storedPoi = storedPoi.as[JsObject] + (SCHEMA.fIsDoor -> JsString((json \ SCHEMA.fIsDoor).as[String]))
+          if ((json \ SCHEMA.fIsDoor).asOpt[String].exists(s => s == "true" || s == "false")) {
+            storedPoi = storedPoi.as[JsObject] + (SCHEMA.fIsDoor -> JsString((json \ SCHEMA.fIsDoor).as[String]))
           }
-          if (json.\(SCHEMA.fIsBuildingEntrance).getOrElse(null) != null) {
-            val is_building_entrance = (json \ SCHEMA.fIsBuildingEntrance).as[String]
-            if (is_building_entrance == "true" || is_building_entrance == "false")
-              storedPoi = storedPoi.as[JsObject] + (SCHEMA.fIsBuildingEntrance, JsString((json \ SCHEMA.fIsBuildingEntrance).as[String]))
+          if ((json \ SCHEMA.fIsBuildingEntrance).asOpt[String].exists(s => s == "true" || s == "false")) {
+            storedPoi = storedPoi.as[JsObject] + (SCHEMA.fIsBuildingEntrance, JsString((json \ SCHEMA.fIsBuildingEntrance).as[String]))
           }
-          if (json.\(SCHEMA.fImage).getOrElse(null) != null)
+          if ((json \ SCHEMA.fImage).asOpt[String].isDefined)
             storedPoi = storedPoi.as[JsObject] + (SCHEMA.fImage, JsString((json \ SCHEMA.fImage).as[String]))
-          if (json.\(SCHEMA.fCoordinatesLat).getOrElse(null) != null)
+          if ((json \ SCHEMA.fCoordinatesLat).asOpt[String].isDefined)
             storedPoi = storedPoi.as[JsObject] + (SCHEMA.fCoordinatesLat, JsString((json \ SCHEMA.fCoordinatesLat).as[String]))
-          if (json.\(SCHEMA.fCoordinatesLon).getOrElse(null) != null)
+          if ((json \ SCHEMA.fCoordinatesLon).asOpt[String].isDefined)
             storedPoi = storedPoi.as[JsObject] + (SCHEMA.fCoordinatesLon, JsString((json \ SCHEMA.fCoordinatesLon).as[String]))
           val poi = new Poi(storedPoi)
           if (!pds.db.replaceJsonDocument(SCHEMA.cPOIS, SCHEMA.fPuid, poi.getId(), poi.toGeoJsonStr()))
@@ -136,17 +145,25 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id))
-        val buid = (json \ SCHEMA.fBuid).as[String]
-        val puid = (json \ SCHEMA.fPuid).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id))
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        val puid = (json \ SCHEMA.fPuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid puid."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
         try {
+          val storedPoi = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, puid)
+          if (storedPoi == null) return RESPONSE.NOT_FOUND("POI not found.")
+          // Verify POI building match.
+          if ((storedPoi \ SCHEMA.fBuid).asOpt[String].getOrElse("") != buid)
+            return RESPONSE.FORBIDDEN("POI belongs to a different space.")
           val all_items_failed = pds.db.deleteAllByPoi(puid)
           if (all_items_failed.size > 0) {
             val res = Json.obj("ids" -> all_items_failed.asScala)
@@ -173,11 +190,13 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         LOG.D2("POI: byFloor: " + Utils.stripJsValueStr(json))
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid, SCHEMA.fFloorNumber)
         if (checkRequirements != null) return checkRequirements
-        val buid = (json \ SCHEMA.fBuid).as[String]
-        val floorNum = (json \ SCHEMA.fFloorNumber).as[String]
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        val floorNum = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           val pois = pds.db.poisByBuildingFloorAsJson(buid, floorNum)
           val res: JsValue = Json.obj(SCHEMA.cPOIS -> pois)
           try {
@@ -202,10 +221,11 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         LOG.D2("POI: bySpace: " + Utils.stripJsValueStr(json))
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid)
         if (checkRequirements != null) return checkRequirements
-        val buid = (json \ SCHEMA.fBuid).as[String]
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           val pois = pds.db.poisByBuildingAsJson(buid)
           val res: JsValue = Json.obj(SCHEMA.cPOIS -> pois.asScala)
           try {
@@ -236,14 +256,16 @@ class MapPoiController @Inject()(cc: ControllerComponents,
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
         LOG.D3("json = " + json)
-        var cuid = request.getQueryString(SCHEMA.fConCuid).orNull
-        if (cuid == null) cuid = (json \ SCHEMA.fConCuid).as[String]
-        var letters = request.getQueryString("letters").orNull
-        if (letters == null) letters = (json \ "letters").as[String]
-        var buid = request.getQueryString(SCHEMA.fBuid).orNull
-        if (buid == null) buid = (json \ SCHEMA.fBuid).as[String]
-        var greeklish = request.getQueryString(SCHEMA.fGreeklish).orNull
-        if (greeklish == null) greeklish = (json \ SCHEMA.fGreeklish).as[String]
+        // Query-string overrides JSON body; `letters` is required.
+        val cuid = request.getQueryString(SCHEMA.fConCuid)
+          .orElse((json \ SCHEMA.fConCuid).asOpt[String]).getOrElse("")
+        val letters = request.getQueryString("letters")
+          .orElse((json \ "letters").asOpt[String]).orNull
+        if (letters == null) return RESPONSE.MISSING_FIELDS(java.util.Collections.singletonList("letters"))
+        val buid = request.getQueryString(SCHEMA.fBuid)
+          .orElse((json \ SCHEMA.fBuid).asOpt[String]).getOrElse("")
+        val greeklish = request.getQueryString(SCHEMA.fGreeklish)
+          .orElse((json \ SCHEMA.fGreeklish).asOpt[String]).getOrElse("")
         try {
           var result: List[JsValue] = null
           if (cuid.compareTo("") == 0)

@@ -60,6 +60,35 @@ object Utils {
 
     def getRandomUUID(): String = UUID.randomUUID().toString
 
+    /** Rejects path-traversal segments for filesystem-backed endpoints. */
+    def isSafePathSegment(s: String): Boolean = {
+        if (s == null || s.isEmpty) return false
+        if (s.contains("..")) return false
+        if (s.contains("/") || s.contains("\\") || s.contains("\u0000")) return false
+        if (s.startsWith(".")) return false
+        true
+    }
+
+    /** Every `/`-separated part of a relative tile path must be a safe segment. */
+    def isSafeRelativePath(path: String): Boolean = {
+        if (path == null || path.isEmpty) return false
+        // Never absolute, never escaping, whatever the platform separator.
+        if (new java.io.File(path).isAbsolute) return false
+        path.split("[/\\\\]").forall(isSafePathSegment)
+    }
+
+    /** Canonical target must stay inside root (catches symlinks/separator tricks). */
+    def isWithinRoot(root: String, path: String): Boolean = {
+        try {
+            if (root == null || path == null) return false
+            val base = new java.io.File(root).getCanonicalPath
+            val target = new java.io.File(path).getCanonicalPath
+            target == base || target.startsWith(base + java.io.File.separator)
+        } catch {
+            case _: Exception => false
+        }
+    }
+
     def genErrorUniqueID(): String = {
         java.net.InetAddress.getLocalHost.getHostName.toUpperCase +
         "x" + UUID.randomUUID().toString.split("-").last.toUpperCase
@@ -224,18 +253,21 @@ object Utils {
     }
 
     def gzip(input: String): ByteArrayOutputStream = {
-        val inputStream = new ByteArrayInputStream(input.getBytes)
-        val stringOutputStream = new ByteArrayOutputStream((input.length * 0.75).toInt)
+        val inputBytes = input.getBytes("UTF-8")
+        val inputStream = new ByteArrayInputStream(inputBytes)
+        val stringOutputStream = new ByteArrayOutputStream((inputBytes.length * 0.75).toInt max 1024)
         val gzipOutputStream = new GZIPOutputStream(stringOutputStream)
-        val buf = Array.ofDim[Byte](5000)
-        var len = 0
-        len = inputStream.read(buf)
-        while (len > 0) {
+        val buf = Array.ofDim[Byte](8192)
+        try {
+          var len = inputStream.read(buf)
+          while (len > 0) {
             gzipOutputStream.write(buf, 0, len)
             len = inputStream.read(buf)
+          }
+        } finally {
+          try { inputStream.close() } catch { case _: Exception => }
+          try { gzipOutputStream.close() } catch { case _: Exception => }
         }
-        inputStream.close()
-        gzipOutputStream.close()
         stringOutputStream
     }
 

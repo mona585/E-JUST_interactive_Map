@@ -73,8 +73,9 @@ class MainController @Inject()(cc: ControllerComponents,
 
   def getVersion: Action[AnyContent] = Action {
     val version = conf.get[String]("application.version")
-    val address = conf.get[String]("server.address")
-    val port = conf.get[String]("server.port")
+    val address = conf.get[String]("public.baseUrl").stripSuffix("/")
+    val uri = new java.net.URI(address)
+    val port = if (uri.getPort != -1) uri.getPort.toString else if (uri.getScheme == "https") "443" else "80"
     LOG.D4("port: " + port)
     LOG.D4("address: " + address)
 
@@ -88,5 +89,14 @@ class MainController @Inject()(cc: ControllerComponents,
 
     val result = models.Protocol.Version(version, variant, port, address)
     Ok(Json.toJson(result))
+  }
+
+  // Campus pilot liveness probe: no DB, no public.baseUrl dependency.
+  // Used by systemd / Nginx / uptime checks. Ready check (DB ping) stays
+  // on the authenticated staging runbook curl, not here.
+  def getHealth: Action[AnyContent] = Action {
+    val version = conf.get[String]("application.version")
+    val uptimeMs = java.lang.management.ManagementFactory.getRuntimeMXBean.getUptime
+    Ok(Json.obj("status" -> "ok", "version" -> version, "uptime_ms" -> uptimeMs))
   }
 }

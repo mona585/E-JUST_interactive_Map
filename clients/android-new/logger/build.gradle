@@ -1,7 +1,37 @@
 apply plugin: 'com.android.application'
 
+import java.net.URI
+
 //def githubProperties = new Properties()
 //githubProperties.load(new FileInputStream(rootProject.file("github.properties")))
+
+def loadAnyplaceProperties() {
+    def props = new Properties()
+    [rootProject.file("secure.properties"), rootProject.file("local.properties"), project.file("local.properties")].each { propFile ->
+        if (propFile.exists()) {
+            propFile.withInputStream { props.load(it) }
+        }
+    }
+    props
+}
+
+def quoteString(String value) {
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+}
+
+def anyplaceProps = loadAnyplaceProperties()
+def publicBaseUrl = (anyplaceProps.getProperty("PUBLIC_BASE_URL") ?: System.getenv("PUBLIC_BASE_URL") ?: "").trim()
+if (publicBaseUrl.endsWith("/")) {
+    publicBaseUrl = publicBaseUrl.substring(0, publicBaseUrl.length() - 1)
+}
+if (!publicBaseUrl) {
+    throw new GradleException("PUBLIC_BASE_URL is required for Android Logger builds.")
+}
+def publicBaseUri = new URI(publicBaseUrl)
+if (!publicBaseUri.scheme || !publicBaseUri.host) {
+    throw new GradleException("PUBLIC_BASE_URL must be an absolute URL, for example https://staging.example.edu")
+}
+def publicBasePort = publicBaseUri.port == -1 ? (publicBaseUri.scheme == "https" ? "443" : "80") : publicBaseUri.port.toString()
 
 android {
     compileSdkVersion 29
@@ -16,28 +46,36 @@ android {
 
         //testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' CHECK REMOVE?
 
-        // Read settings from clients/.env or central .env file
-        def envFile = file("../.env")
-        if (!envFile.exists()) {
-            envFile = file("../../.env")
-        }
-        def envProps = new Properties()
-        if (envFile.exists()) {
-            envFile.withInputStream { envProps.load(it) }
-        }
-        def keyVal = envProps.getProperty("MAPS_API_KEY") ?: ""
-        if (keyVal.isEmpty() && file("${System.properties['user.home']}/MAPS_API_KEY").exists()) {
-            keyVal = file("${System.properties['user.home']}/MAPS_API_KEY").text.trim()
-        }
-        def serverUrl = envProps.getProperty("SERVER_URL") ?: "http://anyplace.ejust.edu.eg:443"
+        // Read the API key from properties into R.string.maps_api_key
+        resValue "string", "maps_api_key", (anyplaceProps.getProperty("MAPS_API_KEY") ?: "")
+        buildConfigField "String", "PUBLIC_BASE_URL", quoteString(publicBaseUrl)
+        buildConfigField "String", "SERVER_HOST", quoteString(publicBaseUri.host)
+        buildConfigField "String", "SERVER_PORT", quoteString(publicBasePort)
+        buildConfigField "String", "API_BASE_URL", quoteString(publicBaseUrl + "/api")
+        buildConfigField "String", "BOOTSTRAP_USERNAME", quoteString(anyplaceProps.getProperty("ANYPLACE_BOOTSTRAP_USERNAME") ?: "")
+        buildConfigField "String", "BOOTSTRAP_PASSWORD", quoteString(anyplaceProps.getProperty("ANYPLACE_BOOTSTRAP_PASSWORD") ?: "")
+        buildConfigField "String", "BOOTSTRAP_ACCESS_TOKEN", quoteString(anyplaceProps.getProperty("ANYPLACE_BOOTSTRAP_ACCESS_TOKEN") ?: "")
 
-        resValue "string", "maps_api_key", keyVal
-        resValue "string", "default_server_ip_address", serverUrl
 
+    }
+
+    signingConfigs {
+        release {
+            def storeFilePath = anyplaceProps.getProperty("ANDROID_KEYSTORE_FILE")
+            if (storeFilePath) {
+                storeFile file(storeFilePath)
+                storePassword anyplaceProps.getProperty("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias anyplaceProps.getProperty("ANDROID_KEY_ALIAS")
+                keyPassword anyplaceProps.getProperty("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (anyplaceProps.getProperty("ANDROID_KEYSTORE_FILE")) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -93,10 +131,12 @@ dependencies {
   implementation 'com.google.android.gms:play-services-auth:18.1.0'
   implementation 'com.google.maps.android:android-maps-utils:0.3.4'
   implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
-  implementation 'com.squareup.okhttp3:okhttp:4.9.1'
 
   implementation 'com.github.dmsl:anyplace-lib-core:4.0.2'
   implementation 'com.github.dmsl:anyplace-lib-android:4.0.2'
+  implementation 'com.squareup.okhttp3:okhttp:4.3.1'
+  implementation 'com.squareup.okio:okio:2.4.1'
+
   //
 
 //  implementation("com.github.dmsl:anyplace-lib-android:1.0")1
@@ -107,6 +147,16 @@ dependencies {
     testImplementation 'junit:junit:4.13'
   androidTestImplementation 'androidx.test.ext:junit:1.1.1'
   androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
+}
 
-
+android.applicationVariants.all { variant ->
+    variant.assembleProvider.configure {
+        doLast {
+            copy {
+                from variant.outputs.first().outputFile
+                into rootProject.file("../../APKs")
+                rename { "logger.apk" }
+            }
+        }
+    }
 }

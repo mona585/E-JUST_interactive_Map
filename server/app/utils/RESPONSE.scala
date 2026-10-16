@@ -88,14 +88,14 @@ object RESPONSE {
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
-                  ("status_code" -> JsNumber(401))
+                  ("status_code" -> JsNumber(403))
                 Results.Forbidden(res.toString)
 
             case Response.UNAUTHORIZED_ACCESS =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
-                  ("status_code" -> JsNumber(403))
+                  ("status_code" -> JsNumber(401))
                 Results.Unauthorized(res.toString)
 
             case Response.INTERNAL_SERVER_ERROR =>
@@ -171,6 +171,11 @@ object RESPONSE {
 
     def MISSING_FIELDS(missing: util.List[String]): Result = {
         if (missing == null) { throw new IllegalArgumentException("No null List of missing keys allowed.") }
+        if (missing.isEmpty) {
+            return CreateResultResponse(Response.BAD_REQUEST,
+                Json.obj("error_messages" -> Json.arr()),
+                "Missing or invalid parameters.")
+        }
         val error_messages = new java.util.ArrayList[String]
         for (s <- missing.asScala) {
             error_messages.add(String.format("Missing or Invalid parameter: %s", s))

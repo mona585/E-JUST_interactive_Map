@@ -35,34 +35,47 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id))
-        val buid = (json \ SCHEMA.fBuid).as[String]
-        val buid1 = (json \ SCHEMA.fBuidA).as[String]
-        val buid2 = (json \ SCHEMA.fBuidB).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id))
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        val buid1 = (json \ SCHEMA.fBuidA).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid_a."))
+        val buid2 = (json \ SCHEMA.fBuidB).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid_b."))
         try {
           var storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid1)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
           storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid2)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
           storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
-        val edge_type = (json \ SCHEMA.fEdgeType).as[String]
+        if (buid != buid1 && buid != buid2)
+          return RESPONSE.BAD("Connection must belong to one of its endpoint buildings.")
+        val edge_type = (json \ SCHEMA.fEdgeType).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid edge type specified."))
         if (edge_type != Connection.EDGE_TYPE_ELEVATOR && edge_type != Connection.EDGE_TYPE_HALLWAY &&
           edge_type != Connection.EDGE_TYPE_ROOM && edge_type != Connection.EDGE_TYPE_OUTDOOR &&
           edge_type != Connection.EDGE_TYPE_STAIR)
           return RESPONSE.BAD("Invalid edge type specified.")
-        val pois_a = (json \ SCHEMA.fPoisA).as[String]
-        val pois_b = (json \ SCHEMA.fPoisB).as[String]
-
-        if (!pds.db.poiByBuidFloorPuid(buid1, (json \ SCHEMA.fFloorA).as[String], (json \ SCHEMA.fPoisA).as[String]))
-          return RESPONSE.BAD_CANNOT_RETRIEVE("POI-A")
-        if (!pds.db.poiByBuidFloorPuid(buid2, (json \ SCHEMA.fFloorB).as[String], (json \ SCHEMA.fPoisB).as[String]))
-          return RESPONSE.BAD_CANNOT_RETRIEVE("POI-B")
+        val pois_a = (json \ SCHEMA.fPoisA).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid pois_a."))
+        val pois_b = (json \ SCHEMA.fPoisB).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid pois_b."))
+        val floor_a = (json \ SCHEMA.fFloorA).asOpt[String].getOrElse(return RESPONSE.BAD("Invalid floor_a."))
+        val floor_b = (json \ SCHEMA.fFloorB).asOpt[String].getOrElse(return RESPONSE.BAD("Invalid floor_b."))
+        if (!pds.db.poiByBuidFloorPuid(buid1, floor_a, pois_a))
+          return RESPONSE.NOT_FOUND("POI-A not found.")
+        if (!pds.db.poiByBuidFloorPuid(buid2, floor_b, pois_b))
+          return RESPONSE.NOT_FOUND("POI-B not found.")
+        // Duplicate guard: cuid is deterministic per endpoint pair.
+        if (pds.db.getFromKeyAsJson(SCHEMA.cEdges, SCHEMA.fConCuid, Connection.getId(pois_a, pois_b)) != null)
+          return RESPONSE.BAD("Connection already exists.")
         try {
           val weight = getConnectionWeight(pois_a, pois_b)
           json = json.as[JsObject] + (SCHEMA.fWeight -> JsString(java.lang.Double.toString(weight)))
@@ -102,35 +115,39 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         if (!requiredMissing.isEmpty) return RESPONSE.MISSING_FIELDS(requiredMissing)
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id))
-        val buid1 = (json \ SCHEMA.fBuidA).as[String]
-        val buid2 = (json \ SCHEMA.fBuidB).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id))
+        val buid1 = (json \ SCHEMA.fBuidA).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid_a."))
+        val buid2 = (json \ SCHEMA.fBuidB).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid_b."))
         try {
           var storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid1)
           if (storedSpace == null)
-            return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+            return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
           storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid2)
           if (storedSpace == null)
-            return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+            return RESPONSE.NOT_FOUND("Space not found.")
           if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
         try {
-          val pois_a = (json \ SCHEMA.fPoisA).as[String]
-          val pois_b = (json \ SCHEMA.fPoisB).as[String]
+          val pois_a = (json \ SCHEMA.fPoisA).asOpt[String].map(_.trim).filter(_.nonEmpty)
+            .getOrElse(return RESPONSE.BAD("Invalid pois_a."))
+          val pois_b = (json \ SCHEMA.fPoisB).asOpt[String].map(_.trim).filter(_.nonEmpty)
+            .getOrElse(return RESPONSE.BAD("Invalid pois_b."))
           val cuid = Connection.getId(pois_a, pois_b)
           var storedConn = pds.db.getFromKeyAsJson(SCHEMA.cEdges, SCHEMA.fConCuid, cuid)
           if (storedConn == null)
-            return RESPONSE.BAD_CANNOT_RETRIEVE_CONNECTION
-          if (json.\(SCHEMA.fIsPublished).getOrElse(null) != null) {
-            val is_published = (json \ SCHEMA.fIsPublished).as[String]
-            if (is_published == "true" || is_published == "false")
-              storedConn = storedConn.as[JsObject] + (SCHEMA.fIsPublished -> JsString((json \ SCHEMA.fIsPublished).as[String]))
+            return RESPONSE.NOT_FOUND("Connection not found.")
+          if ((json \ SCHEMA.fIsPublished).asOpt[String].exists(s => s == "true" || s == "false")) {
+            storedConn = storedConn.as[JsObject] + (SCHEMA.fIsPublished -> JsString((json \ SCHEMA.fIsPublished).as[String]))
           }
-          if (json.\(SCHEMA.fEdgeType).getOrElse(null) != null) {
-            val edge_type = (json \ SCHEMA.fEdgeType).as[String]
+          if ((json \ SCHEMA.fEdgeType).asOpt[String].isDefined) {
+            val edge_type = (json \ SCHEMA.fEdgeType).asOpt[String].map(_.trim).filter(_.nonEmpty)
+              .getOrElse(return RESPONSE.BAD("Invalid edge type specified."))
             if (edge_type != Connection.EDGE_TYPE_ELEVATOR && edge_type != Connection.EDGE_TYPE_HALLWAY &&
               edge_type != Connection.EDGE_TYPE_ROOM && edge_type != Connection.EDGE_TYPE_OUTDOOR &&
               edge_type != Connection.EDGE_TYPE_STAIR)
@@ -162,9 +179,12 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val owner_id = user.authorize(apiKey)
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
-        json = json.as[JsObject] + (SCHEMA.fOwnerId -> Json.toJson(owner_id))
-        val buid1 = (json \ SCHEMA.fBuidA).as[String]
-        val buid2 = (json \ SCHEMA.fBuidB).as[String]
+        json = json.asOpt[JsObject].getOrElse(return RESPONSE.BAD("Body must be a JSON object.")) +
+          (SCHEMA.fOwnerId -> Json.toJson(owner_id))
+        val buid1 = (json \ SCHEMA.fBuidA).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid_a."))
+        val buid2 = (json \ SCHEMA.fBuidB).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid_b."))
         try {
           var storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid1)
           if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE("SpaceA")
@@ -175,15 +195,21 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
-        val pois_a = (json \ SCHEMA.fPoisA).as[String]
-        val pois_b = (json \ SCHEMA.fPoisB).as[String]
+        val pois_a = (json \ SCHEMA.fPoisA).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid pois_a."))
+        val pois_b = (json \ SCHEMA.fPoisB).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid pois_b."))
         try {
           val cuid = Connection.getId(pois_a, pois_b)
-          val all_items_failed = pds.db.deleteAllByConnection(cuid)
-          if (all_items_failed == null) {
-            LOG.E("connectionDelete: " + cuid + " not found.")
-            return RESPONSE.BAD("POI Connection not found")
+          // Verify connection endpoint access.
+          val storedConn = pds.db.getFromKeyAsJson(SCHEMA.cEdges, SCHEMA.fConCuid, cuid)
+          if (storedConn == null) return RESPONSE.NOT_FOUND("Connection not found.")
+          for (bk <- Seq(SCHEMA.fBuidA, SCHEMA.fBuidB)) {
+            val eb = (storedConn \ bk).asOpt[String].getOrElse("")
+            val esp = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, eb)
+            if (esp == null || !user.canAccessSpace(esp, owner_id)) return RESPONSE.UNAUTHORIZED_USER
           }
+          val all_items_failed = pds.db.deleteAllByConnection(cuid)
           if (all_items_failed.size > 0) {
             val obj: JsValue = Json.obj("ids" -> all_items_failed.asScala)
             return RESPONSE.BAD(obj, "Some items related to the deleted connection could not be deleted: " +
@@ -207,17 +233,19 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         LOG.D2("PoiConnection: byFloor: " + Utils.stripJsValueStr(json))
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid, SCHEMA.fFloorNumber)
         if (checkRequirements != null) return checkRequirements
-        val buid = (json \ SCHEMA.fBuid).as[String]
-        val floorNum = (json \ SCHEMA.fFloorNumber).as[String]
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        val floorNum = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           val storedFloors = pds.db.floorsByBuildingAsJson(buid)
           var floorExists = false
           for (floor <- storedFloors.asScala)
-            if ((floor \ SCHEMA.fFloorNumber).as[String] == floorNum)
+            if ((floor \ SCHEMA.fFloorNumber).asOpt[String].contains(floorNum))
               floorExists = true
-          if (!floorExists) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOOR
+          if (!floorExists) return RESPONSE.NOT_FOUND("Floor not found.")
 
           val pois = pds.db.connectionsByBuildingFloorAsJson(buid, floorNum)
           val res: JsValue = Json.obj("connections" -> pois)
@@ -251,10 +279,11 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         LOG.I("PoiConnection: byFloorsAll: " + Utils.stripJsValueStr(json))
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid)
         if (checkRequirements != null) return checkRequirements
-        val buid = (json \ SCHEMA.fBuid).as[String]
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
-          if (storedSpace == null) return RESPONSE.BAD_CANNOT_RETRIEVE_SPACE
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
           val pois = pds.db.connectionsByBuildingAllFloorsAsJson(buid)
           val res: JsValue = Json.obj("connections" -> pois)
           try
@@ -283,20 +312,22 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
       lat_a = 0.0
       lon_a = 0.0
     } else try {
-      lat_a = nf.parse((pa \ SCHEMA.fCoordinatesLat).as[String]).doubleValue()
-      lon_a = nf.parse((pa \ SCHEMA.fCoordinatesLon).as[String]).doubleValue()
+      lat_a = nf.parse((pa \ SCHEMA.fCoordinatesLat).asOpt[String].getOrElse("0")).doubleValue()
+      lon_a = nf.parse((pa \ SCHEMA.fCoordinatesLon).asOpt[String].getOrElse("0")).doubleValue()
     } catch {
-      case e: ParseException => LOG.E("getConnectionWeight", e)
+      case _: ParseException => LOG.E("getConnectionWeight: unparsable POI-A coordinates.")
+      case _: Exception => LOG.E("getConnectionWeight: unreadable POI-A coordinates.")
     }
     val pb = pds.db.getFromKeyAsJson(SCHEMA.cPOIS, SCHEMA.fPuid, pois_b)
     if (pb == null) {
       lat_b = 0.0
       lon_b = 0.0
     } else try {
-      lat_b = nf.parse((pb \ SCHEMA.fCoordinatesLat).as[String]).doubleValue()
-      lon_b = nf.parse((pb \ SCHEMA.fCoordinatesLon).as[String]).doubleValue()
+      lat_b = nf.parse((pb \ SCHEMA.fCoordinatesLat).asOpt[String].getOrElse("0")).doubleValue()
+      lon_b = nf.parse((pb \ SCHEMA.fCoordinatesLon).asOpt[String].getOrElse("0")).doubleValue()
     } catch {
-      case e: ParseException => e.printStackTrace()
+      case _: ParseException => LOG.E("getConnectionWeight: unparsable POI-B coordinates.")
+      case _: Exception => LOG.E("getConnectionWeight: unreadable POI-B coordinates.")
     }
     GeoPoint.getDistanceBetweenPoints(lat_a, lon_a, lat_b, lon_b, "K")
   }

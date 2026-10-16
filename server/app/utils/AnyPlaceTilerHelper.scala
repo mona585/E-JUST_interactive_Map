@@ -65,9 +65,7 @@ class AnyPlaceTilerHelper @Inject()(cc: ControllerComponents,
         if (buid.trim().isEmpty || floor.trim().isEmpty) {
             return null
         }
-        //TODO:NN from /developers .. this must also change..
-        api.SERVER_FULL_URL + api.sep +
-          "anyplace/floortiles/" + buid + api.sep + floor + api.sep + FLOOR_TILES_ZIP_NAME
+        api.urlPath("api", "floortiles", buid, floor, FLOOR_TILES_ZIP_NAME)
     }
 
     /**
@@ -198,5 +196,4 @@ class AnyPlaceTilerHelper @Inject()(cc: ControllerComponents,
         true
     }
 }
-
 

@@ -62,121 +62,110 @@ public class LoggerPrefs extends PreferenceActivity implements OnSharedPreferenc
 	
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
-
 		super.onCreate(savedInstanceState);
 
 		getPreferenceManager().setSharedPreferencesName(getString(R.string.preferences_file));
-
 		addPreferencesFromResource(cy.ac.ucy.cs.anyplace.lib.R.xml.preferences_logger);
 
 		getPreferenceManager().getSharedPreferences().registerOnSharedPreferenceChangeListener(this);
 
-		// getPreferenceManager().findPreference("image_custom").setOnPreferenceClickListener(new
-		// OnPreferenceClickListener() {
-		//
-		// @Override
-		// public boolean onPreferenceClick(Preference preference) {
-		// Intent i = new Intent(Intent.ACTION_PICK,
-		// android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-		// i.setType("image/*");
-		// startActivityForResult(i, SELECT_IMAGE);
-		// return true;
-		// }
-		// });
+		Preference folderPref = findPreference("folder_browser");
+		if (folderPref != null) {
+			folderPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+				@Override
+				public boolean onPreferenceClick(Preference preference) {
+					Intent i = new Intent(getBaseContext(), AndroidFileBrowser.class);
+					Bundle extras = new Bundle();
+					extras.putBoolean("selectFolder", true);
+					SharedPreferences preferences = getSharedPreferences(getString(R.string.preferences_file), MODE_PRIVATE);
+					extras.putString("defaultPath", preferences.getString("folder_browser", ""));
+					i.putExtras(extras);
+					startActivityForResult(i, SELECT_PATH);
+					return true;
+				}
+			});
+		}
 
-		getPreferenceManager().findPreference("folder_browser").setOnPreferenceClickListener(new OnPreferenceClickListener() {
+		Preference addBldPref = findPreference("add_building");
+		if (addBldPref != null) {
+			addBldPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+				@Override
+				public boolean onPreferenceClick(Preference preference) {
+					Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.PUBLIC_BASE_URL + "/architect/"));
+					startActivity(browserIntent);
+					return true;
+				}
+			});
+		}
 
-			@Override
-			public boolean onPreferenceClick(Preference preference) {
+		Preference refBldPref = findPreference("refresh_building");
+		if (refBldPref != null) {
+			refBldPref.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+				@Override
+				public boolean onPreferenceClick(Preference preference) {
+					Intent returnIntent = new Intent();
+					returnIntent.putExtra("action", Action.REFRESH_BUILDING);
+					setResult(RESULT_OK, returnIntent);
+					finish();
+					return true;
+				}
+			});
+		}
 
-				Intent i = new Intent(getBaseContext(), AndroidFileBrowser.class);
+		updateSummaries();
+	}
 
-				Bundle extras = new Bundle();
-				extras.putBoolean("selectFolder", true);
-				SharedPreferences preferences = getSharedPreferences("LoggerPreferences", MODE_PRIVATE);
-				extras.putString("defaultPath", preferences.getString("folder_browser", ""));
-				i.putExtras(extras);
+	private void updateSummaries() {
+		SharedPreferences sp = getPreferenceManager().getSharedPreferences();
+		if (sp == null) return;
 
-				startActivityForResult(i, SELECT_PATH);
-				return true;
-			}
-		});
-		
-		getPreferenceManager().findPreference("add_building").setOnPreferenceClickListener(new OnPreferenceClickListener() {
+		Preference intervalPref = findPreference("samples_interval");
+		if (intervalPref != null) {
+			intervalPref.setSummary("Sampling Interval: " + sp.getString("samples_interval", "1000") + " ms");
+		}
 
-			@Override
-			public boolean onPreferenceClick(Preference preference) {
-				
-				Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://anyplace.ejust.edu.eg:443/architect/"));
-				startActivity(browserIntent);
-				return true;
-			}
-		});
+		Preference folderPref = findPreference("folder_browser");
+		if (folderPref != null) {
+			folderPref.setSummary("Storage Path: " + sp.getString("folder_browser", getFilesDir().getAbsolutePath()));
+		}
 
-		getPreferenceManager().findPreference("refresh_building").setOnPreferenceClickListener(new OnPreferenceClickListener() {
-			@Override
-			public boolean onPreferenceClick(Preference preference) {
-				Intent returnIntent = new Intent();
-				returnIntent.putExtra("action", Action.REFRESH_BUILDING);
-				setResult(RESULT_OK, returnIntent);
-				finish();
-				return true;
-			}
-		});
+		Preference logPref = findPreference("filename_log");
+		if (logPref != null) {
+			logPref.setSummary("Log Filename: " + sp.getString("filename_log", "anyplace_rss.txt"));
+		}
 
+		Preference userPref = findPreference("username");
+		if (userPref != null) {
+			userPref.setSummary("Username: " + sp.getString("username", "anonymous"));
+		}
 	}
 
 	@Override
 	public void onActivityResult(int requestCode, int resultCode, Intent data) {
-
 		super.onActivityResult(requestCode, resultCode, data);
 
-		SharedPreferences customSharedPreference;
-
-		customSharedPreference = getSharedPreferences("LoggerPreferences", MODE_PRIVATE);
-
-		switch (requestCode) {
-
-		case SELECT_IMAGE:
-			if (resultCode == Activity.RESULT_OK) {
-				Uri selectedImage = data.getData();
-				String RealPath;
-				SharedPreferences.Editor editor = customSharedPreference.edit();
-				RealPath = getRealPathFromURI(selectedImage);
-				editor.putString("image_custom", RealPath);
-				editor.commit();
-			}
-			break;
-		case SELECT_PATH:
-			if (resultCode == Activity.RESULT_OK) {
-				Uri selectedFolder = data.getData();
+		if (requestCode == SELECT_PATH && resultCode == Activity.RESULT_OK && data != null) {
+			Uri selectedFolder = data.getData();
+			if (selectedFolder != null) {
 				String path = selectedFolder.toString();
-				SharedPreferences.Editor editor = customSharedPreference.edit();
+				SharedPreferences preferences = getSharedPreferences(getString(R.string.preferences_file), MODE_PRIVATE);
+				SharedPreferences.Editor editor = preferences.edit();
 				editor.putString("folder_browser", path);
 				editor.commit();
+				updateSummaries();
 			}
-			break;
 		}
-	}
-
-	public String getRealPathFromURI(Uri contentUri) {
-		String[] proj = { MediaColumns.DATA };
-		Cursor cursor = managedQuery(contentUri, proj, null, null, null);
-		int column_index = cursor.getColumnIndexOrThrow(MediaColumns.DATA);
-		cursor.moveToFirst();
-		return cursor.getString(column_index);
 	}
 
 	@Override
 	protected void onResume() {
 		super.onResume();
-		// Set up a listener whenever a key changes
 		getPreferenceScreen().getSharedPreferences().registerOnSharedPreferenceChangeListener(this);
+		updateSummaries();
 	}
 
 	@Override
 	protected void onDestroy() {
-		// Unregister the listener whenever a key changes
 		getPreferenceManager().getSharedPreferences().unregisterOnSharedPreferenceChangeListener(this);
 		super.onDestroy();
 	}
@@ -184,13 +173,11 @@ public class LoggerPrefs extends PreferenceActivity implements OnSharedPreferenc
 	@Override
 	protected void onPause() {
 		super.onPause();
-		// Unregister the listener whenever a key changes
 		getPreferenceScreen().getSharedPreferences().unregisterOnSharedPreferenceChangeListener(this);
 	}
 
 	@Override
 	public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-
+		updateSummaries();
 	}
-
 }

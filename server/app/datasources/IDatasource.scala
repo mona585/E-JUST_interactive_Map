@@ -99,6 +99,8 @@ trait IDatasource {
   def floorsByBuildingAsJson(buid: String): java.util.List[JsValue]
   def connectionsByBuildingAsJson(buid: String): List[JsValue]
   def connectionsByBuildingAsMap(buid: String): java.util.List[HashMap[String, String]]
+  /** Campus connectors with both endpoints inside buids (outdoor/stair/elevator); step-free callers drop stairs. */
+  def connectionsByCampusAsMap(buids: List[String]): java.util.List[HashMap[String, String]]
   def connectionsByBuildingFloorAsJson(buid: String, floor_number: String): List[JsValue]
   def connectionsByBuildingAllFloorsAsJson(buid: String): List[JsValue]
   def deleteAllByBuilding(buid: String): Boolean

@@ -13,13 +13,13 @@ PORT="${MDB_PORT:-27017}"
 DB="${MDB_DATABASE:-anyplace}"
 DROP_FIRST=false
 
-for arg in "$@"; do
-    case $arg in
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --drop)
             DROP_FIRST=true
-            shift
             ;;
     esac
+    shift
 done
 
 echo "[+] Initializing Anyplace MongoDB Database at $HOST:$PORT/$DB..."

@@ -67,14 +67,14 @@ object Dijkstra {
 
     def addEdges(conns: List[HashMap[String, String]]) : Unit ={
       val nf = NumberFormat.getInstance(Locale.ENGLISH)
-      var w = 0.0
       for (e <- conns.asScala) {
+        var w = 0.0
         try {
           val weight = e.getOrDefault(SCHEMA.fWeight,null)
           if (weight != null)
             w = nf.parse(weight).doubleValue()
         } catch {
-          case e1: ParseException =>
+          case e1: ParseException => w = 0.0
         }
         val a = hmp.getOrDefault(e.get(SCHEMA.fPoisA), null)
         val b = hmp.getOrDefault(e.get(SCHEMA.fPoisB), null)
@@ -89,9 +89,11 @@ object Dijkstra {
       val nf = NumberFormat.getInstance(Locale.ENGLISH)
       var w = 0.0
       try {
-        w = nf.parse(conn.get(SCHEMA.fWeight)).doubleValue()
+        val weight = conn.get(SCHEMA.fWeight)
+        if (weight != null)
+          w = nf.parse(weight).doubleValue()
       } catch {
-        case e1: ParseException =>
+        case e1: ParseException => w = 0.0
       }
       val a = hmp.getOrDefault(conn.get(SCHEMA.fPoisA), null)
       val b = hmp.getOrDefault(conn.get(SCHEMA.fPoisB), null)

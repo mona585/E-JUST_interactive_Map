@@ -73,18 +73,21 @@ class PositioningController @Inject()(cc: ControllerComponents,
         try {
           alg1 = new Algo1(json)
         } catch {
-          case ex: Exception => {
-            return RESPONSE.BAD(ex.getClass.toString() + ": " + ex.getMessage + ": " + ex.getCause.toString())
+          case _: Exception => {
+            return RESPONSE.BAD("Invalid positioning payload.")
           }
         }
         try {
-          val lat = json.\("dlat").as[Double]
-          val lot = json.\("dlong").as[Double]
+          val lat = (json \ "dlat").asOpt[Double].getOrElse(return RESPONSE.BAD("Invalid dlat."))
+          val lot = (json \ "dlong").asOpt[Double].getOrElse(return RESPONSE.BAD("Invalid dlong."))
           val bbox = GeoPoint.getGeoBoundingBox(lat, lot, 100)
           val strongestMAC = new ArrayList[String](2)
-          if (json.\("first").getOrElse(null) == null) return RESPONSE.BAD("Sent Wi-Fi first parameter.")
-          strongestMAC.add(json.\("first").\(SCHEMA.fMac).as[String])
-          if (json.\("second").getOrElse(null) != null) strongestMAC.add(json.\("second").\(SCHEMA.fMac).as[String])
+          if ((json \ "first").toOption.isEmpty) return RESPONSE.BAD("Sent Wi-Fi first parameter.")
+          val firstMac = (json \ "first" \ SCHEMA.fMac).asOpt[String].map(_.trim).filter(_.nonEmpty)
+            .getOrElse(return RESPONSE.BAD("Invalid first AP MAC."))
+          strongestMAC.add(firstMac)
+          val secondMac = (json \ "second" \ SCHEMA.fMac).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          if (secondMac.isDefined) strongestMAC.add(secondMac.get)
           LOG.D2("strongestMAC " + strongestMAC)
           var res: JsValue = Json.obj()
           var msg = ""
@@ -97,7 +100,7 @@ class PositioningController @Inject()(cc: ControllerComponents,
           }
           RESPONSE.OK(res, msg)
         } catch {
-          case e: Exception => RESPONSE.ERROR_INTERNAL("500: " + e.getMessage + ": " + e.getCause)
+          case _: Exception => RESPONSE.ERROR_INTERNAL("Could not predict floor.")
         }
       }
 
@@ -114,13 +117,26 @@ class PositioningController @Inject()(cc: ControllerComponents,
         LOG.D2("Positioning: estimatePosition: " + Utils.stripJsValueStr(json))
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid, SCHEMA.fFloor,"APs","algorithm_choice")
         if (checkRequirements != null) return checkRequirements
-        val buid = (json \ SCHEMA.fBuid).as[String]
-        val floor = (json \ SCHEMA.fFloor).as[String]
-        val accessOpt = Json.parse((json \ "APs").as[String])
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        val floor = (json \ SCHEMA.fFloor).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor."))
+        if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floor))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
+        val accessOpt = try {
+          Json.parse((json \ "APs").as[String])
+        } catch {
+          case _: Exception => return RESPONSE.BAD("APs must be a JSON-encoded array string.")
+        }
         val tempAP = Json.obj("accessPoint" -> accessOpt)
-        val accessPoints = (tempAP \ "accessPoint").as[List[JsValue]]
-        val algorithm_choice: Int = (json \ "algorithm_choice").as[String].toInt
+        val accessPoints = (tempAP \ "accessPoint").asOpt[List[JsValue]].getOrElse(null)
+        if (accessPoints == null) return RESPONSE.BAD("APs must be a JSON-encoded array string.")
+        val algorithm_choice: Int = (json \ "algorithm_choice").asOpt[String]
+          .flatMap(s => try { Some(s.toInt) } catch { case _: NumberFormatException => None })
+          .getOrElse(return RESPONSE.BAD("algorithm_choice must be a String containing an integer."))
         val radioMapsFrozenDir = conf.get[String]("radioMapFrozenDir")
+        val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
+        if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
         val rmapFile = new File(radioMapsFrozenDir + api.sep + buid + api.sep +
           floor + api.sep + "indoor-radiomap-mean.txt")
         if (!rmapFile.exists()) {  // Regenerate the radiomap files
@@ -129,8 +145,10 @@ class PositioningController @Inject()(cc: ControllerComponents,
         val latestScanList: util.ArrayList[location.LogRecord] = new util.ArrayList[location.LogRecord]()
         var i = 0
         for (i <- 0 until accessPoints.size) {
-          val bssid = (accessPoints(i) \ "bssid").as[String]
-          val rss = (accessPoints(i) \ SCHEMA.fRSS).as[Int]
+          val bssid = (accessPoints(i) \ "bssid").asOpt[String].orNull
+          val rss = (accessPoints(i) \ SCHEMA.fRSS).asOpt[Int].getOrElse(Int.MinValue)
+          if (bssid == null || rss == Int.MinValue)
+            return RESPONSE.BAD("Each AP entry needs a String bssid and an integer rss.")
           latestScanList.add(new location.LogRecord(bssid, rss))
         }
 
@@ -140,6 +158,7 @@ class PositioningController @Inject()(cc: ControllerComponents,
 
         if (response == null) { response = "0 0" }
         val lat_long = response.split(" ")
+        if (lat_long.length != 2) return RESPONSE.ERROR_INTERNAL("Could not determine position.")
         val res = Json.obj("lat" -> lat_long(0), "long" -> lat_long(1))
         return RESPONSE.OK(res, "Successfully found position.")
       }

@@ -56,16 +56,13 @@ class Algo1(json: JsValue) extends IAlgo {
 
     for (listenObject <- listenList) {
         val obj = Json.parse(listenObject)
-        val mac = (obj\SCHEMA.fMac).as[String]
-        val rss = (obj\SCHEMA.fRSS).as[String].toInt
-        //for (listenObject <- listenList.iterator()) {
-        //    val obj=listenObject.asInstanceOf[JsonObject]
-        //    val mac = obj.getString("MAC")
-        //    val rss = obj.getInt("rss")
+        val mac = (obj\SCHEMA.fMac).asOpt[String].orNull
         if (mac == null) {
             throw new Exception("Invalid array wifi. Require: mac,rss")
         }
-
+        val rss = (obj\SCHEMA.fRSS).asOpt[String]
+          .flatMap(s => try { Some(s.toInt) } catch { case _: NumberFormatException => None })
+          .getOrElse(throw new Exception("Invalid array wifi. Require numeric rss"))
         input.put(mac, new Wifi(mac, rss))
     }
 

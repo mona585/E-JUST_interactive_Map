@@ -153,8 +153,8 @@ class HeatmapController @Inject()(cc: ControllerComponents,
           val radioPointsInXY: util.ArrayList[JsValue] = new util.ArrayList[JsValue]()
           // assigns fingerprints to map tiles because its overkill to load everything at once.
           for (radioPoint <- radioPoints) {
-            val lat = (radioPoint \ "x").as[Double]
-            val lon = (radioPoint \ "y").as[Double]
+            val lat = (radioPoint \ "x").asOpt[Double].getOrElse(return RESPONSE.ERROR_INTERNAL("Could not retrieve radio points."))
+            val lon = (radioPoint \ "y").asOpt[Double].getOrElse(return RESPONSE.ERROR_INTERNAL("Could not retrieve radio points."))
             val xyConverter = convertToXY(lat, lon, zoomLevel)
             LOG.D2(xyConverter(0).toString + " " + xyConverter(1).toString)
             if (xyConverter(0) == tileX && xyConverter(1) == tileY) {
@@ -242,7 +242,6 @@ class HeatmapController @Inject()(cc: ControllerComponents,
    *
    * Called by crossfilter when on zoom level 21.
    */
-  @deprecated("notInUse")
   def floorWifiTimestampAVG3(): Action[AnyContent] = Action {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {

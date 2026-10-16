@@ -24,6 +24,9 @@ object SCHEMA {
 
   // FIELDS
   val fAccessToken = "access_token"
+  /** Epoch millis (as String) when the access_token stops being accepted.
+   *  Absent = legacy pre-expiry token, still honored (sunset track). */
+  val fTokenExpires = "token_expires"
   val fAddress = "address"
   val fBuCode = "bucode"
   val fBuid = "buid"

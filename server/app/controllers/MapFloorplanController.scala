@@ -16,7 +16,7 @@ import javax.inject.{Inject, Singleton}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 object FloorplanSettings {
-  /** It no longer affects upload quality (fixed JS), but it might affect accuracy. */
+  /** No longer affects upload quality, but may affect accuracy. */
   var MIN_ZOOM_UPLOAD=18
 }
 
@@ -24,7 +24,8 @@ object FloorplanSettings {
 class MapFloorplanController @Inject()(cc: ControllerComponents,
                                        tilerHelper: AnyPlaceTilerHelper,
                                        pds: ProxyDataSource,
-                                       fu: FileUtils)
+                                       fu: FileUtils,
+                                       user: helper.User)
   extends AbstractController(cc) {
   implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
 
@@ -36,12 +37,16 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
         LOG.D2("serveFloorPlanBinary: " + Utils.stripJsValueStr(json))
+        if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floorNum))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val filePath = tilerHelper.getFloorPlanFor(buid, floorNum)
         LOG.D2("requested: " + filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         try {
           val file = new File(filePath)
-          if (!file.exists()) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOORPLAN(floorNum)
-          if (!file.canRead) return RESPONSE.BAD_CANNOT_READ_FLOORPLAN(floorNum)
+          if (!file.exists()) return RESPONSE.NOT_FOUND("Floorplan not found.")
+          if (!file.canRead) return RESPONSE.NOT_FOUND("Floorplan not found.")
           Ok.sendFile(file)
         } catch {
           case _: FileNotFoundException => return RESPONSE.ERROR_INTERNAL("Could not read floorplan.")
@@ -60,12 +65,16 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         var json = anyReq.getJsonBody()
         LOG.D2("FloorPlan: getTilesZip: " + Utils.stripJsValueStr(json))
         if (!Floor.checkFloorNumberFormat(floorNum)) return RESPONSE.BAD("Floor number cannot contain whitespace.")
+        if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floorNum))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val filePath = tilerHelper.getFloorTilesZipFor(buid, floorNum)
         LOG.D3("requested: " + filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         try {
           val file = new File(filePath)
-          if (!file.exists()) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOORPLAN(floorNum)
-          if (!file.canRead) return RESPONSE.BAD_CANNOT_READ_FLOORPLAN(floorNum)
+          if (!file.exists()) return RESPONSE.NOT_FOUND("Floorplan not found.")
+          if (!file.canRead) return RESPONSE.NOT_FOUND("Floorplan not found.")
           Ok.sendFile(file)
         } catch {
           case e: FileNotFoundException => return RESPONSE.ERROR_INTERNAL("Could not read floorplan.")
@@ -84,11 +93,15 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         var json = anyReq.getJsonBody()
         LOG.D2("Floorplan:: getZipLink: " + Utils.stripJsValueStr(json))
         if (!Floor.checkFloorNumberFormat(floorNum)) return RESPONSE.BAD("Floor number cannot contain whitespace.")
+        if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floorNum))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val filePath = tilerHelper.getFloorTilesZipFor(buid, floorNum)
         LOG.D3("requested: " + filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val file = new File(filePath)
-        if (!file.exists()) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOORPLAN(floorNum)
-        if (!file.canRead) return RESPONSE.BAD_CANNOT_READ_FLOORPLAN(floorNum)
+        if (!file.exists()) return RESPONSE.NOT_FOUND("Floorplan not found.")
+        if (!file.canRead) return RESPONSE.NOT_FOUND("Floorplan not found.")
         val res: JsValue = Json.obj("tiles_archive" -> tilerHelper.getFloorTilesZipLinkFor(buid, floorNum))
         return RESPONSE.OK(res, "Successfully fetched link for the tiles archive.")
       }
@@ -101,15 +114,19 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
       if (path == null || buid == null || floorNum == null ||
         path.trim().isEmpty ||
         buid.trim().isEmpty ||
-        floorNum.trim().isEmpty) NotFound(<h1>Page not found</h1>)
+        floorNum.trim().isEmpty) return NotFound(<h1>Page not found</h1>)
+      if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floorNum) ||
+        !Utils.isSafeRelativePath(path)) return NotFound(<h1>Page not found</h1>)
       var filePath: String = null
       filePath = if (path == tilerHelper.FLOOR_TILES_ZIP_NAME) tilerHelper.getFloorTilesZipFor(buid,
         floorNum) else tilerHelper.getFloorTilesDirFor(buid, floorNum) +
         path
       try {
         val file = new File(filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), file.getPath))
+          return NotFound(<h1>Page not found</h1>)
         //send ok message to tiler
-        if (!file.exists() || !file.canRead) return RESPONSE.OK("File requested not found")
+        if (!file.exists() || !file.canRead) return NotFound(<h1>Page not found</h1>)
         Ok.sendFile(file)
       } catch {
         case _: FileNotFoundException => return RESPONSE.BAD_CANNOT_READ_FLOORPLAN(floorNum)
@@ -126,12 +143,16 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         var json = anyReq.getJsonBody()
         LOG.D2("Floorplan: getBase64: " + Utils.stripJsValueStr(json))
+        if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floorNum))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val filePath = tilerHelper.getFloorPlanFor(buid, floorNum)
         LOG.D3("Floorplan: getBase64: requested: " + filePath)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val file = new File(filePath)
         try {
-          if (!file.exists()) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOORPLAN(floorNum)
-          if (!file.canRead) return RESPONSE.BAD_CANNOT_READ_FLOORPLAN(floorNum)
+          if (!file.exists()) return RESPONSE.NOT_FOUND("Floorplan not found.")
+          if (!file.canRead) return RESPONSE.NOT_FOUND("Floorplan not found.")
 
           try {
             val s = Utils.encodeFileToBase64Binary(fu, filePath)
@@ -167,12 +188,16 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
         LOG.D2("Floorplan: getAllBase64: " + Utils.stripJsValueStr(json) + " " + requestedFloors)
+        if (!Utils.isSafePathSegment(buid)) return RESPONSE.BAD("Invalid building identifier.")
         val floors = requestedFloors.split(" ")
+        if (!floors.forall(Utils.isSafePathSegment)) return RESPONSE.BAD("Invalid floor identifier.")
         val all_floors = new util.ArrayList[String]
         var z = 0
         while (z < floors.length) {
           val filePath = tilerHelper.getFloorPlanFor(buid, floors(z))
           LOG.D3("Floorplan: getAllBase64: requested: " + filePath)
+          if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+            return RESPONSE.BAD("Invalid building or floor identifier.")
           val file = new File(filePath)
           try
             if (!file.exists || !file.canRead) { all_floors.add("") }
@@ -184,9 +209,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
                 return RESPONSE.BAD("Cannot encode floorplan: " + floors(z))
             }
           catch {
-            case e: Exception =>
-              return RESPONSE.ERROR_INTERNAL("Error while getting floorplans: " + requestedFloors +" : "
-              + e.getMessage)
+            case _: Exception =>
+              return RESPONSE.ERROR_INTERNAL("Error while getting floorplans.")
           }
           z += 1
         }
@@ -208,12 +232,14 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
 
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
+        val apiKey = anyReq.getAccessToken()
+        if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         val body = anyReq.getMultipartFormData()
         if (body == null) return RESPONSE.BAD("Invalid request type - Not Multipart.")
-        val floorplan = body.file("floorplan").get
+        val floorplan = body.file("floorplan").orNull
         if (floorplan == null) return RESPONSE.BAD("Cannot find the floorplan file in your request.")
         val urlenc = body.asFormUrlEncoded
-        val json_str = urlenc("").head
+        val json_str = if (urlenc == null) null else urlenc.get("").flatMap(_.headOption).orNull
         if (json_str == null) return RESPONSE.BAD("Cannot find json in the request.")
         var json: JsValue = null
         try {
@@ -226,16 +252,33 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         val requiredMissing = JsonUtils.hasProperties(json, SCHEMA.fBuid, SCHEMA.fFloorNumber, SCHEMA.fLatBottomLeft,
           SCHEMA.fLonBottomLeft, SCHEMA.fLatTopRight, SCHEMA.fLonTopRight)
         if (!requiredMissing.isEmpty) return RESPONSE.MISSING_FIELDS(requiredMissing)
-        val buid = (json \ SCHEMA.fBuid).as[String]
-        val floorNum = (json \ SCHEMA.fFloorNumber).as[String]
-        val bottom_left_lat = (json \ SCHEMA.fLatBottomLeft).as[String]
-        val bottom_left_lng = (json \ SCHEMA.fLonBottomLeft).as[String]
-        val top_right_lat = (json \ SCHEMA.fLatTopRight).as[String]
-        val top_right_lng = (json \ SCHEMA.fLonTopRight).as[String]
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        if (!Utils.isSafePathSegment(buid)) return RESPONSE.BAD("Invalid building identifier.")
+        val owner_id = user.authorize(apiKey)
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
+        try {
+          val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
+          if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
+        } catch {
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Error while reading from backend.")
+        }
+        val floorNum = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
+        if (!Utils.isSafePathSegment(floorNum)) return RESPONSE.BAD("Invalid floor identifier.")
+        val bottom_left_lat = (json \ SCHEMA.fLatBottomLeft).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates."))
+        val bottom_left_lng = (json \ SCHEMA.fLonBottomLeft).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates."))
+        val top_right_lat = (json \ SCHEMA.fLatTopRight).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates."))
+        val top_right_lng = (json \ SCHEMA.fLonTopRight).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates."))
         val fuid = Floor.getId(buid, floorNum)
         try {
           var storedFloor = pds.db.getFromKeyAsJson(SCHEMA.cFloorplans, SCHEMA.fFuid, fuid)
-          if (storedFloor == null) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOOR
+          if (storedFloor == null) return RESPONSE.NOT_FOUND("Floor not found.")
           storedFloor = storedFloor.as[JsObject] + (SCHEMA.fLatBottomLeft -> JsString(bottom_left_lat))
           storedFloor = storedFloor.as[JsObject] + (SCHEMA.fLonBottomLeft -> JsString(bottom_left_lng))
           storedFloor = storedFloor.as[JsObject] + (SCHEMA.fLatTopRight -> JsString(top_right_lat))
@@ -276,12 +319,14 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
       def inner(request: Request[AnyContent]): Result = {
         LOG.D2("Floorplan: uploadWithZoom")
         val anyReq = new OAuth2Request(request)
+        val apiKey = anyReq.getAccessToken()
+        if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
         val body = anyReq.getMultipartFormData()
         if (body == null) return RESPONSE.BAD("Invalid request type - Not Multipart.")
-        val floorplan = body.file("floorplan").get
+        val floorplan = body.file("floorplan").orNull
         if (floorplan == null) return RESPONSE.BAD("Cannot find the floorplan file in your request.")
         val urlenc = body.asFormUrlEncoded
-        val json_str = urlenc("json").head
+        val json_str = if (urlenc == null) null else urlenc.get("json").flatMap(_.headOption).orNull
         if (json_str == null) return RESPONSE.BAD("Cannot find json in the request.")
         var json: JsValue = null
         try {
@@ -292,19 +337,38 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fBuid, SCHEMA.fFloorNumber, SCHEMA.fLatBottomLeft,
           SCHEMA.fLonBottomLeft, SCHEMA.fLatTopRight, SCHEMA.fLonTopRight, SCHEMA.fZoom)
         if (checkRequirements != null) return checkRequirements
-        val buid = (json \ SCHEMA.fBuid).as[String]
-        val zoom = (json \ SCHEMA.fZoom).as[String]
-        if (zoom.toInt < MIN_ZOOM_UPLOAD) return RESPONSE.BAD_FLOORPLAN_ZOOM_LEVEL(zoom)
+        val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        if (!Utils.isSafePathSegment(buid)) return RESPONSE.BAD("Invalid building identifier.")
+        val owner_id = user.authorize(apiKey)
+        if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
+        try {
+          val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
+          if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
+          if (!user.canAccessSpace(storedSpace, owner_id)) return RESPONSE.UNAUTHORIZED_USER
+        } catch {
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Error while reading from backend.")
+        }
+        val zoom = (json \ SCHEMA.fZoom).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid zoom."))
+        val zoomInt = try { zoom.toInt } catch { case _: NumberFormatException => return RESPONSE.BAD("Invalid zoom.") }
+        if (zoomInt < MIN_ZOOM_UPLOAD) return RESPONSE.BAD_FLOORPLAN_ZOOM_LEVEL(zoom)
 
-        val floorNum = (json \ SCHEMA.fFloorNumber).as[String]
-        val bottom_left_lat = (json \ SCHEMA.fLatBottomLeft).as[String]
-        val bottom_left_lng = (json \ SCHEMA.fLonBottomLeft).as[String]
-        val top_right_lat = (json \ SCHEMA.fLatTopRight).as[String]
-        val top_right_lng = (json \ SCHEMA.fLonTopRight).as[String]
+        val floorNum = (json \ SCHEMA.fFloorNumber).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid floor_number."))
+        if (!Utils.isSafePathSegment(floorNum)) return RESPONSE.BAD("Invalid floor identifier.")
+        val bottom_left_lat = (json \ SCHEMA.fLatBottomLeft).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates."))
+        val bottom_left_lng = (json \ SCHEMA.fLonBottomLeft).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates."))
+        val top_right_lat = (json \ SCHEMA.fLatTopRight).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates."))
+        val top_right_lng = (json \ SCHEMA.fLonTopRight).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid coordinates."))
         val fuid = Floor.getId(buid, floorNum)
         try {
           var storedFloor = pds.db.getFromKeyAsJson(SCHEMA.cFloorplans, SCHEMA.fFuid, fuid)
-          if (storedFloor == null) return RESPONSE.BAD_CANNOT_RETRIEVE_FLOOR
+          if (storedFloor == null) return RESPONSE.NOT_FOUND("Floor not found.")
           storedFloor = storedFloor.as[JsObject] + (SCHEMA.fZoom -> JsString(zoom))
           storedFloor = storedFloor.as[JsObject] + (SCHEMA.fLatBottomLeft -> JsString(bottom_left_lat))
           storedFloor = storedFloor.as[JsObject] + (SCHEMA.fLonBottomLeft -> JsString(bottom_left_lng))

@@ -1,89 +1,77 @@
-# ==========================================
-# Anyplace Platform - Comprehensive .gitignore
-# ==========================================
-
-# Environment & Secret Configuration Files
-.env
-*.env
-server/.env
-clients/.env
-**/secure.properties
-**/MAPS_API_KEY
-
-# Java & Gradle Build Artifacts
-.gradle/
-**/build/
-bin/
-!server/sbt-dist/bin/
-out/
-*.class
-*.jar
-!server/lib/*.jar
-!server/sbt-dist/bin/sbt-launch.jar
-*.war
-*.ear
-
-# SBT & Scala Build Artifacts
-**/target/
-project/target/
-project/project/
-.sbt/
-.bsp/
-
-# Android Generated Files & Logs
-*.apk
-*.aab
-apk generated/
-captures/
-.externalNativeBuild
-.cxx/
-local.properties
-
-# IDE & Editor Settings
-.idea/
-*.iml
-.vscode/
-*.ipr
-*.iws
-.project
-.classpath
-.settings/
-
-# OS & System Files
-.DS_Store
-Thumbs.db
+# Application Logs & Runtime Files
 *.log
-*.tmp
+anyplace.log
+RUNNING_PID
+*/RUNNING_PID
+
+# Private Server Configuration (contains generated secret keys and DB credentials)
+server/conf/app.private.conf
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+clients/.env
+clients/.env.*
+!clients/.env.example
+
+# Built/Deployed Web Applications & Assets
+public/
+server/public/
+server/target/
+target/
+
+# Data Directories (files generated at runtime)
+server/floorplans/*
+!server/floorplans/.gitkeep
+server/radiomaps_raw/*
+!server/radiomaps_raw/.gitkeep
+server/radiomaps_frozen/*
+!server/radiomaps_frozen/.gitkeep
+server/anyplace_tiler/*
+!server/anyplace_tiler/.gitkeep
+
+# Node & Bower Dependencies
+node_modules/
+bower_components/
+
+# IDE & Editor Temporary Files
+.idea/
+.bsp/
+.history/
 *.swp
 *~
+.DS_Store
+Thumbs.db
+.android-sdk/
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-/coverage/
+### Linux ###
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
 
-# Symbolication related
-app.*.symbols
 
-# Obfuscation related
-app.*.map.json
+testsprite_tests/tmp/
+testsprite_tests/tmp/config.json
 
-# Android Studio generated files
-/android/app/debug
-/android/app/profile
-/android/app/release
+# Build artifacts: APKs are rebuilt from source (clients/android-new),
+# never tracked. Previously committed binaries were untracked via
+# `git rm --cached` and must stay out.
+*.apk
+*.zip
 
-# Miscellaneous
-*.pyc
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+# Secrets / keystores (never tracked)
+*.jks
+*.keystore
+*.p12
+*.pfx
+google-services.json
+
+# Local cache (never tracked)
+.codex-cache/
+
+# Legacy docker env (untracked via `git rm --cached`; example stays tracked)
+docker/.env
+!docker/.env.example

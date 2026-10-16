@@ -17,7 +17,15 @@ import java.util.zip.GZIPInputStream
  * - Credential non-leakage in register responses
  * - Public API baseline contract
  */
-class SecurityRegressionSpec extends PlaySpecification {
+class SecurityRegressionSpec extends PlaySpecification with IsolatedFixture {
+
+  if (!sys.env.get("RUN_MONGO_INTEGRATION_TESTS").contains("true")) {
+    println("[SKIP] Mongo-backed security regression tests skipped: set RUN_MONGO_INTEGRATION_TESTS=true to run (staging gating intentional).")
+    "Mongo-backed security regression tests" should {
+      "run only against the controlled authenticated test database" in skipped(
+        "SKIPPED: Set RUN_MONGO_INTEGRATION_TESTS=true after completing the Phase 2 staging runbook.")
+    }
+  } else {
 
   def extractString(result: Future[Result]): String = {
     val bytes = contentAsBytes(result).toArray
@@ -32,8 +40,6 @@ class SecurityRegressionSpec extends PlaySpecification {
   def extractJson(result: Future[Result]): JsValue = {
     Json.parse(extractString(result))
   }
-
-  def uniqueTag(): String = System.nanoTime().toString.takeRight(10)
 
   // Build an application that applies all configured filters (security headers, CORS, etc.)
   def filteredApp: play.api.Application = {
@@ -98,27 +104,34 @@ class SecurityRegressionSpec extends PlaySpecification {
   "Admin Role Protection" should {
 
     "not allow a third registrant to gain admin role" in new WithApplication {
-      val tag = uniqueTag()
-      // Register first user (will be admin if DB is empty, else user — both acceptable)
-      val firstReq = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
-        "name" -> s"First $tag",
-        "email" -> s"first_$tag@ejust.edu.eg",
-        "username" -> s"first_$tag",
-        "password" -> "Password123!"
-      ))).get
-      status(firstReq) must equalTo(OK)
+      val tag = freshTag()
+      val firstUser = s"first_$tag"
+      val secondUser = s"second_$tag"
+      val db = app.injector.instanceOf[datasources.ProxyDataSource]
+      try {
+        // Register first user (will be admin if DB is empty, else user — both acceptable)
+        val firstReq = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
+          "name" -> s"First $tag",
+          "email" -> s"first_$tag@ejust.edu.eg",
+          "username" -> firstUser,
+          "password" -> "Password123!"
+        ))).get
+        status(firstReq) must equalTo(OK)
 
-      // Register second user — at this point at least 1 user exists, so must be "user"
-      val tag2 = (tag.toLong + 1).toString
-      val secondReq = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
-        "name" -> s"Second $tag2",
-        "email" -> s"second_$tag2@ejust.edu.eg",
-        "username" -> s"second_$tag2",
-        "password" -> "Password123!"
-      ))).get
-      status(secondReq) must equalTo(OK)
-      // The second user must always be "user", never "admin"
-      (extractJson(secondReq) \ "newUser" \ "type").asOpt[String] must beSome("user")
+        // Register second user — at this point at least 1 user exists, so must be "user"
+        val secondReq = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(Json.obj(
+          "name" -> s"Second $tag",
+          "email" -> s"second_$tag@ejust.edu.eg",
+          "username" -> secondUser,
+          "password" -> "Password123!"
+        ))).get
+        status(secondReq) must equalTo(OK)
+        // The second user must always be "user", never "admin"
+        (extractJson(secondReq) \ "newUser" \ "type").asOpt[String] must beSome("user")
+      } finally {
+        db.deleteFromKey("users", "username", firstUser)
+        db.deleteFromKey("users", "username", secondUser)
+      }
     }
 
   }
@@ -126,18 +139,24 @@ class SecurityRegressionSpec extends PlaySpecification {
   "Credential Security" should {
 
     "not include plaintext password in register response" in new WithApplication {
-      val tag = uniqueTag()
+      val tag = freshTag()
+      val username = s"security_$tag"
+      val db = app.injector.instanceOf[datasources.ProxyDataSource]
       val payload = Json.obj(
         "name" -> s"Security Test $tag",
         "email" -> s"security_$tag@ejust.edu.eg",
-        "username" -> s"security_$tag",
+        "username" -> username,
         "password" -> s"SecretPwd_$tag"
       )
-      val regReq = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(payload)).get
-      status(regReq) must equalTo(OK)
-      val body = extractString(regReq)
-      // The actual password value must not appear in the response
-      body must not contain s"SecretPwd_$tag"
+      try {
+        val regReq = route(app, FakeRequest(POST, "/api/user/register").withJsonBody(payload)).get
+        status(regReq) must equalTo(OK)
+        val body = extractString(regReq)
+        // The actual password value must not appear in the response
+        body must not contain s"SecretPwd_$tag"
+      } finally {
+        db.deleteFromKey("users", "username", username)
+      }
     }
 
     "return error for missing required registration fields" in new WithApplication {
@@ -175,5 +194,6 @@ class SecurityRegressionSpec extends PlaySpecification {
       status(req) must beOneOf(UNAUTHORIZED, BAD_REQUEST, FORBIDDEN)
     }
 
+  }
   }
 }

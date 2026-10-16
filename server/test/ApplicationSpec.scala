@@ -3,9 +3,11 @@ import play.api.test._
 import play.api.test.Helpers._
 import play.api.libs.json.{Json, JsValue}
 import play.api.mvc.Result
-import scala.concurrent.Future
+import play.api.Configuration
+import utils.AnyplaceServerAPI
 import java.io.ByteArrayInputStream
 import java.util.zip.GZIPInputStream
+import scala.concurrent.Future
 
 class ApplicationSpec extends PlaySpecification {
 
@@ -23,25 +25,40 @@ class ApplicationSpec extends PlaySpecification {
     Json.parse(extractString(result))
   }
 
-  "Application" should {
+  "Core public API" should {
 
-    "redirect non-existing GET route to viewer" in new WithApplication {
-      val badRequest = route(app, FakeRequest(GET, "/invalid-route-path")).get
-      status(badRequest) must equalTo(SEE_OTHER)
+    "redirect an unknown GET route to Viewer" in new WithApplication {
+      val response = route(app, FakeRequest(GET, "/invalid-route-path")).get
+      status(response) must equalTo(SEE_OTHER)
     }
 
-    "return HTTP 200 and version JSON on /api/version" in new WithApplication {
-      val versionReq = route(app, FakeRequest(GET, "/api/version")).get
-      status(versionReq) must equalTo(OK)
-      extractString(versionReq) must contain("version")
+    "return version JSON without authentication" in new WithApplication {
+      val response = route(app, FakeRequest(GET, "/api/version")).get
+      status(response) must equalTo(OK)
+      extractString(response) must contain("version")
     }
 
-    "return HTTP 200 and spaces array on /api/mapping/space/public" in new WithApplication {
-      val spacesReq = route(app, FakeRequest(POST, "/api/mapping/space/public").withJsonBody(Json.obj())).get
-      status(spacesReq) must equalTo(OK)
-      val json = extractJson(spacesReq)
+    "return spaces array on public endpoint" in new WithApplication {
+      val response = route(app, FakeRequest(POST, "/api/mapping/space/public").withJsonBody(Json.obj())).get
+      status(response) must equalTo(OK)
+      val json = extractJson(response)
       (json \ "spaces").asOpt[Seq[JsValue]] must beSome
     }
 
+    "reject unauthenticated space co-owner and access requests" in new WithApplication {
+      val coOwners = route(app, FakeRequest(POST, "/api/auth/mapping/space/coowners").withJsonBody(Json.obj())).get
+      val access = route(app, FakeRequest(POST, "/api/auth/mapping/space/access").withJsonBody(Json.obj())).get
+      // Both endpoints return NO_ACCESS_TOKEN (401) before any body/DB checks.
+      status(coOwners) must equalTo(UNAUTHORIZED)
+      status(access) must equalTo(UNAUTHORIZED)
+    }
+
+    "build public API URLs from public.baseUrl" in {
+      val api = new AnyplaceServerAPI(Configuration("public.baseUrl" -> "https://staging.example.edu/"))
+      api.SERVER_FULL_URL must equalTo("https://staging.example.edu")
+      api.SERVER_PORT must equalTo("443")
+      api.urlPath("api", "floortiles", "building_1", "0", "tiles_archive.zip") must
+        equalTo("https://staging.example.edu/api/floortiles/building_1/0/tiles_archive.zip")
+    }
   }
 }

@@ -3,6 +3,12 @@
 Status: **Investigation complete — D-01 through D-11 accepted; no recovery implementation has been performed.**  
 Evidence date: 2026-08-09 to 2026-08-10 (Africa/Cairo).
 
+**Update (2026-08-22):** Recovery implementation has since been executed and
+verified through Phase 6 plus the backend-track portions of Phases 8–9 on an
+Ubuntu 22.04/JDK 17 staging VM. This report is retained as the original
+investigation baseline; per-phase verification evidence lives in
+`docs/recovery/RECOVERY_AUDIT.md`.
+
 ## Executive Summary
 
 The checked-out backend is recoverable but the repository is not currently a reproducible, functioning whole-system deployment. A clean main-source compile succeeded. With explicit Java module-opening flags, the Play server started, connected to the configured MongoDB instance, and returned HTTP 200 from `/api/version` and the public Spaces endpoint. That endpoint returned no public Spaces, so data-dependent workflows could not be exercised.

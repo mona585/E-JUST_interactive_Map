@@ -166,18 +166,18 @@ class Space(hm: HashMap[String, String]) extends AbstractModel {
     try {
       val newCoOwners: util.ArrayList[String] = new util.ArrayList[String]()
       this.fields.put(SCHEMA.fOwnerId, newOwnerId)
-      if ((json \ SCHEMA.fCoOwners).toOption.isDefined) {
-        if ((json \ SCHEMA.fCoOwners).as[List[String]].length > 0) {
-          val co_owners = (json \ SCHEMA.fCoOwners).as[List[String]]
-          for (co_owner <- co_owners) {
-            newCoOwners.add(co_owner)
-          }
-          for (i <- 0 until newCoOwners.size()) {
-            if (newCoOwners.get(i) == newOwnerId) {
-              newCoOwners.remove(i)
-            }
-          }
-        }
+      // co_owners live in the member var (the constructor parses them out of
+      // the fields map); _toJsonInternal() does not carry them, so seed from
+      // here — parsing `json` would always yield an empty list and wipe them.
+      val existing: List[String] = try {
+        this.co_owners.as[List[String]]
+      } catch {
+        case _: Exception => Nil
+      }
+      for (co_owner <- existing) {
+        // The new owner must not linger in co-owners; filter while copying
+        // instead of removing by index mid-loop (skips entries, can throw).
+        if (co_owner != newOwnerId) newCoOwners.add(co_owner)
       }
       json = json.as[JsObject] + (SCHEMA.fGeometry -> Json.toJson(
         new GeoJsonPoint(java.lang.Double.parseDouble(fields.get(SCHEMA.fCoordinatesLat)),

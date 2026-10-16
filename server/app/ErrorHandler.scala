@@ -36,6 +36,7 @@
 
 import java.io.{PrintWriter, StringWriter}
 import play.api.http.HttpErrorHandler
+import play.api.libs.json.Json
 
 import scala.concurrent._
 import javax.inject.Singleton
@@ -74,7 +75,10 @@ class ErrorHandler extends HttpErrorHandler {
         LOG.E(msg)
 
         if(request.path.startsWith("/api")) { // API requests return json
-            Future.successful(RESPONSE.BAD(msg))
+            Future.successful(Status(statusCode)(Json.obj(
+              "status" -> "error",
+              "message" -> ("Client error. Error ID: " + eid),
+              "status_code" -> statusCode).toString))
         } else { // otherwise HTML
             Future.successful(Status(statusCode)(
                 errPub + "\n\n\n" + errorMsg(request)))
@@ -90,6 +94,11 @@ class ErrorHandler extends HttpErrorHandler {
         if (exception.isInstanceOf[MatchError]) {
             // CHECK if OK leave like this
             LOG.D("Skip full stacktrace?") // CHECK::NN
+            if (request.path.startsWith("/api"))
+                return Future.successful(InternalServerError(Json.obj(
+                  "status" -> "error",
+                  "message" -> ("Internal error. Error ID: " + eid),
+                  "status_code" -> 500).toString))
             return Future.successful(InternalServerError(msg))
         } else {
             LOG.E("StackTrace: " + fullStacktrace(exception))
@@ -102,7 +111,10 @@ class ErrorHandler extends HttpErrorHandler {
         //    "\nCause: " + exception.getMessage + infoGithub(eid)
 
         if(request.path.startsWith("/api")) { // return JSON
-            Future.successful(RESPONSE.BAD(msg))
+            Future.successful(InternalServerError(Json.obj(
+              "status" -> "error",
+              "message" -> ("Internal error. Error ID: " + eid),
+              "status_code" -> 500).toString))
         }  else { // return HTML
             Future.successful(InternalServerError(msg))
         }

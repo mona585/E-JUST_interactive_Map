@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "get api version returns version and metadata",
+    "description": "Test GET /api/version endpoint to verify it returns HTTP 200 with a JSON object containing application version and server metadata without exposing any secrets."
+  },
+  {
+    "id": "TC002",
+    "title": "get unknown browser route redirects to viewer",
+    "description": "Test GET request to an unknown browser route to verify it returns HTTP 303 redirect to /viewer and that the redirect is correctly followed by the client."
+  },
+  {
+    "id": "TC003",
+    "title": "post user register with valid data creates account",
+    "description": "Test POST /api/user/register with valid name, email, username, and password to verify it returns HTTP 200 with registration status and new user object without including plaintext password."
+  },
+  {
+    "id": "TC004",
+    "title": "post user login local with valid credentials returns token",
+    "description": "Test POST /api/user/login/local with valid username and password to verify it returns HTTP 200 with user object and local access token."
+  },
+  {
+    "id": "TC005",
+    "title": "post user refresh with valid access token refreshes session",
+    "description": "Test POST /api/user/refresh with a valid access_token to verify it returns HTTP 200 with refreshed user object without plaintext password."
+  },
+  {
+    "id": "TC006",
+    "title": "post mapping space public returns public spaces and buildings",
+    "description": "Test POST /api/mapping/space/public with an empty JSON object to verify it returns HTTP 200 with JSON containing spaces and buildings arrays, including valid empty results during recovery."
+  },
+  {
+    "id": "TC007",
+    "title": "post mapping space add with authorization creates space",
+    "description": "Test POST /api/mapping/space/add with valid mapping-space JSON and valid authorization token to verify it returns HTTP 200 confirming the created mapping space."
+  },
+  {
+    "id": "TC008",
+    "title": "post mapping space add without authorization returns 401",
+    "description": "Test POST /api/mapping/space/add without authorization header to verify it returns HTTP 401 indicating missing or invalid authorization."
+  },
+  {
+    "id": "TC009",
+    "title": "post navigation route with valid request returns route",
+    "description": "Test POST /api/navigation/route with valid navigation route request JSON to verify it returns HTTP 200 with navigation route JSON for client guidance."
+  },
+  {
+    "id": "TC010",
+    "title": "post navigation route with invalid request returns 400",
+    "description": "Test POST /api/navigation/route with invalid navigation request JSON to verify it returns HTTP 400 indicating invalid navigation request."
+  }
+]

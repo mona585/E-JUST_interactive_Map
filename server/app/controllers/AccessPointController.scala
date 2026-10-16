@@ -36,7 +36,8 @@ class AccessPointController @Inject()(cc: ControllerComponents,
         val APs = pds.db.getCachedAPsByBuildingFloor(buid, floor)
         // if cached return it
         if (APs != null) {
-          val res = Json.obj("accessPoints" -> (APs \ "accessPoints").as[List[JsValue]])
+          val cached = (APs \ "accessPoints").asOpt[List[JsValue]].getOrElse(return RESPONSE.ERROR_INTERNAL("Could not retrieve access points."))
+          val res = Json.obj("accessPoints" -> cached)
           return RESPONSE.gzipJsonOk(res, "Fetched precompute of accessPointsWifi")
         } else {
           try {
@@ -84,7 +85,7 @@ class AccessPointController @Inject()(cc: ControllerComponents,
               case ioe: IOException => return RESPONSE.OK(res, "Successfully retrieved all radio points.")
             }
           } catch {
-            case e: Exception => return RESPONSE.ERROR("getAPsByBuildingFloor: ", e)
+            case _: Exception => return RESPONSE.ERROR_INTERNAL("Could not retrieve access points.")
           }
         }
       }
@@ -101,15 +102,20 @@ class AccessPointController @Inject()(cc: ControllerComponents,
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
-        val accessPointsOfReq = (json \ "ids").as[List[String]]
+        val accessPointsOfReq = (json \ "ids").asOpt[List[String]].getOrElse(null)
+        if (accessPointsOfReq == null) return RESPONSE.MISSING_FIELDS(java.util.Collections.singletonList("ids"))
         try {
           val reqFile = "public/anyplace_architect/ids.json"
           val file = env.classLoader.getResourceAsStream(reqFile)
           var accessPointsOfFile: List[JsObject] = null
           if (file != null) {
-            accessPointsOfFile = Json.parse(file).as[List[JsObject]]
+            try {
+              accessPointsOfFile = Json.parse(file).asOpt[List[JsObject]].getOrElse(return RESPONSE.ERROR_INTERNAL("Could not retrieve access points."))
+            } catch {
+              case _: Exception => return RESPONSE.ERROR_INTERNAL("Could not retrieve access points.")
+            }
           } else {
-            return RESPONSE.NOT_FOUND(reqFile)
+            return RESPONSE.NOT_FOUND("Access points not found.")
           }
 
           val APsIDs: util.ArrayList[String] = new util.ArrayList[String]()
@@ -133,7 +139,7 @@ class AccessPointController @Inject()(cc: ControllerComponents,
                   var i = 0
                   inner_loop.breakable {
                     for (i <- 0 until bitsA.length) {
-                      if (bitsA(i).equalsIgnoreCase(bitsR(i))) {
+                      if (i < bitsR.length && bitsA(i).equalsIgnoreCase(bitsR(i))) {
                         sameBits += 1
                       } else {
                         inner_loop.break()
@@ -172,7 +178,7 @@ class AccessPointController @Inject()(cc: ControllerComponents,
             case _: IOException => return RESPONSE.OK(res, "Successfully retrieved IDs for Access Points.")
           }
         } catch {
-          case e: DatasourceException => return RESPONSE.ERROR(e)
+          case _: DatasourceException => return RESPONSE.ERROR_INTERNAL("Could not retrieve access points.")
         }
       }
 

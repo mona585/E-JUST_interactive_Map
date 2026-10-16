@@ -11,16 +11,24 @@ object Network {
    * @param url
    * @return
    */
-  def GET(url: String) = {
+  def GET(url: String, connectTimeoutMs: Int = 8000, readTimeoutMs: Int = 8000) = {
     val obj = new URL(url)
     val con = obj.openConnection().asInstanceOf[HttpURLConnection]
     con.setRequestMethod("GET")
-    // val responseCode = con.getResponseCode
+    con.setConnectTimeout(connectTimeoutMs)
+    con.setReadTimeout(readTimeoutMs)
+    val code = con.getResponseCode
+    if (code < 200 || code >= 300)
+      throw new java.io.IOException("GET " + url.split("\\?")(0) + " returned HTTP " + code)
     val in = new BufferedReader(new InputStreamReader(con.getInputStream))
-    val response = new StringBuffer()
-    response.append(Iterator.continually(in.readLine()).takeWhile(_ != null).mkString)
-    in.close()
-    response.toString
+    try {
+      val response = new StringBuffer()
+      response.append(Iterator.continually(in.readLine()).takeWhile(_ != null).mkString)
+      response.toString
+    } finally {
+      in.close()
+      con.disconnect()
+    }
   }
 
 }

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reconstructed 2026-10-09: R.array.AlgorithmsNames/AlgorithmsDescriptions
+     are referenced by AnyplacePrefs (4 switch cases) but no arrays file
+     existed. Display strings only; positioning logic is unaffected. -->
+<resources>
+    <string-array name="AlgorithmsNames">
+        <item>Weighted KNN</item>
+        <item>MAP</item>
+        <item>MLP</item>
+        <item>Joint MAP</item>
+    </string-array>
+    <string-array name="AlgorithmsDescriptions">
+        <item>Weighted k-nearest neighbors over Wi-Fi fingerprints.</item>
+        <item>Maximum a posteriori estimation over the radiomap.</item>
+        <item>Multilayer perceptron trained on fingerprint data.</item>
+        <item>Joint maximum a posteriori across consecutive estimates.</item>
+    </string-array>
+</resources>
