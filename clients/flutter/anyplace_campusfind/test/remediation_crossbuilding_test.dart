@@ -1,15 +1,56 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/repositories/cross_building_router.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/repositories/cross_building_router.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 
 // FORENSIC REMEDIATION REGRESSION TESTS
 // Findings: NAV-002 (exit door = candidates.first, no scoring) and
 // NAV-003 (connector-chain fallback silently substituting the entrance for
 // unresolvable/cross-floor targets).
+
+/// Offline navigation repository stub — the router contract under test never
+/// requires live route data for the exit-scoring/entrance-selection flows.
+class _FakeNavigationRepository implements NavigationRepository {
+  @override
+  Future<NavigationRouteModel> getRouteBetweenPois({
+    required String fromPuid,
+    required String toPuid,
+  }) async =>
+      NavigationRouteModel(points: []);
+
+  @override
+  Future<NavigationRouteModel> getRouteFromCoordinates({
+    required double latitude,
+    required double longitude,
+    String? floorNumber,
+    required String destinationPuid,
+  }) async =>
+      NavigationRouteModel(points: []);
+
+  @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      [];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
+}
 
 SpaceModel _space(String buid) =>
     SpaceModel(buid: buid, name: buid, latitude: 30.0, longitude: 29.0);
@@ -32,6 +73,7 @@ CrossBuildingRouter _router(Map<String, List<PoiModel>> poisByBuid) {
     loadFloorsForBuilding: (buid) async => <FloorModel>[],
     loadPois: (buid, floorNumber) async => poisByBuid[buid] ?? const [],
     loadFloorNumbers: (buid) async => ['0'],
+    navigationRepository: _FakeNavigationRepository(),
   );
 }
 
@@ -43,6 +85,7 @@ CrossBuildingRouter _floorsRouter(
         floorsByBuid[buid] ?? const <FloorModel>[],
     loadPois: (buid, floorNumber) async => const [],
     loadFloorNumbers: (buid) async => ['0', '1', '2'],
+    navigationRepository: _FakeNavigationRepository(),
   );
 }
 
@@ -184,5 +227,70 @@ void main() {
     expect(detected, isNull,
         reason:
             'UNKNOWN geometry must behave like OUTSIDE for routing safety');
+  });
+
+  // ──────────────────────────────────────────────────────────────
+  // ENTRANCE SELECTION SCORING (proximity-first regression)
+  // ──────────────────────────────────────────────────────────────
+
+  group('entrance selection scoring (proximity-first)', () {
+    test('a closer entrance loses to NO farther entrance on angle alone', () {
+      // The B7 scenario: E1–E3 cluster ~50m away vs the far entrance ~114m away.
+      // Even with a PERFECT approach angle on the far one and a TERRIBLE angle
+      // on the near one, the near entrance must have the lower (better) score.
+      final nearScore = CrossBuildingRouter.entranceScore(
+        walkingDistanceMeters: 50,
+        angleDiffDegrees: 180, // worst possible angular misalignment
+      );
+      final farScore = CrossBuildingRouter.entranceScore(
+        walkingDistanceMeters: 114,
+        angleDiffDegrees: 0, // perfect angular alignment
+      );
+
+      // Angle max contribution = 180 * 0.1 = 18m-equivalent, far below the 64m
+      // gap, so proximity wins.
+      expect(nearScore, lessThan(farScore),
+          reason:
+              'a ~50m entrance must never lose to a ~114m one because of angle');
+    });
+
+    test('proximity is the dominant criterion', () {
+      final near = CrossBuildingRouter.entranceScore(
+        walkingDistanceMeters: 60,
+        angleDiffDegrees: 90,
+      );
+      final far = CrossBuildingRouter.entranceScore(
+        walkingDistanceMeters: 100,
+        angleDiffDegrees: 0,
+      );
+      expect(near, lessThan(far),
+          reason: 'a 40m distance advantage must outweigh any angle tie-break');
+    });
+
+    test('angle only breaks near-ties, never large gaps', () {
+      // Near-tie (same distance): better angle wins (tie-breaker is useful).
+      final aligned = CrossBuildingRouter.entranceScore(
+        walkingDistanceMeters: 80,
+        angleDiffDegrees: 10,
+      );
+      final misaligned = CrossBuildingRouter.entranceScore(
+        walkingDistanceMeters: 80,
+        angleDiffDegrees: 170,
+      );
+      expect(aligned, lessThan(misaligned),
+          reason: 'at equal distance the better-facing entrance should win');
+
+      // Not-a-tie (large gap): the closer entrance must win regardless of angle.
+      final closeMisaligned = CrossBuildingRouter.entranceScore(
+        walkingDistanceMeters: 60,
+        angleDiffDegrees: 180,
+      );
+      final farAligned = CrossBuildingRouter.entranceScore(
+        walkingDistanceMeters: 110,
+        angleDiffDegrees: 0,
+      );
+      expect(closeMisaligned, lessThan(farAligned),
+          reason: 'a 50m distance gap must never be overridden by angle');
+    });
   });
 }

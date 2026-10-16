@@ -1,23 +1,21 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart' as provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
+import 'package:anyplace_campusfind/datasources/gps_location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
 import 'package:anyplace_campusfind/providers/connectivity_provider.dart';
 import 'package:anyplace_campusfind/providers/providers.dart';
-import 'package:anyplace_campusfind/screens/main_shell.dart';
-import 'package:anyplace_campusfind/screens/profile_screen.dart';
-import 'package:anyplace_campusfind/screens/search_screen.dart';
+import 'package:anyplace_campusfind/views/main_shell.dart';
+import 'package:anyplace_campusfind/views/profile_screen.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/navigation_controller.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
-import 'package:anyplace_campusfind/ui/widgets/campus_content_panel.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/navigation_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:anyplace_campusfind/widgets/campus_content_panel.dart';
 
 import 'helpers/fake_google_maps_platform.dart';
 
@@ -36,9 +34,12 @@ void main() {
   });
 
   Widget wrap() {
-    final space = _FakeSpaceProvider();
-    final location = LocationProvider();
-    final navController = NavigationController(
+    final space = _FakeSpaceViewModel();
+    final location = LocationViewModel(
+      locationService: GpsLocationService(),
+      nativePositioningService: MethodChannelNativePositioningService(),
+    );
+    final navController = NavigationViewModel(
       spaceProvider: space,
       locationProvider: location,
     );
@@ -46,30 +47,23 @@ void main() {
       container: container,
       child: provider.MultiProvider(
         providers: [
-          provider.ChangeNotifierProvider<SpaceProvider>.value(value: space),
-          provider.ChangeNotifierProvider<LocationProvider>.value(
-              value: location),
-          provider.ChangeNotifierProvider<NavigationController>.value(
-              value: navController),
+          provider.ChangeNotifierProvider<SpaceViewModel>.value(value: space),
+          provider.ChangeNotifierProvider<LocationViewModel>.value(
+            value: location,
+          ),
+          provider.ChangeNotifierProvider<NavigationViewModel>.value(
+            value: navController,
+          ),
         ],
         child: const MaterialApp(home: MainShell()),
       ),
     );
   }
 
-  Override loaderOverride(Future<BulkLoadResult> Function() loader) {
-    return bulkLoaderProvider.overrideWithValue(
-      _FakeBulkLoader(loader),
+  testWidgets('map-first shell renders immediately', (tester) async {
+    container = ProviderContainer(
+      overrides: [cacheServiceProvider.overrideWithValue(cache)],
     );
-  }
-
-  testWidgets('map-first shell renders immediately while data loads',
-      (tester) async {
-    final completer = Completer<BulkLoadResult>();
-    container = ProviderContainer(overrides: [
-      loaderOverride(() => completer.future),
-      cacheServiceProvider.overrideWithValue(cache),
-    ]);
     addTearDown(container.dispose);
 
     await tester.pumpWidget(wrap());
@@ -78,17 +72,17 @@ void main() {
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.byType(CampusContentPanel), findsOneWidget);
 
-    completer.complete(const BulkLoadResult());
     await tester.pumpAndSettle();
     expect(find.byType(CampusContentPanel), findsOneWidget);
   });
 
-  testWidgets('shows offline banner when connectivity is lost',
-      (tester) async {
-    container = ProviderContainer(overrides: [
-      isOnlineProvider.overrideWithValue(false),
-      cacheServiceProvider.overrideWithValue(cache),
-    ]);
+  testWidgets('shows offline banner when connectivity is lost', (tester) async {
+    container = ProviderContainer(
+      overrides: [
+        isOnlineProvider.overrideWithValue(false),
+        cacheServiceProvider.overrideWithValue(cache),
+      ],
+    );
     addTearDown(container.dispose);
 
     await tester.pumpWidget(wrap());
@@ -97,12 +91,12 @@ void main() {
     expect(find.text('Offline — showing cached campus data'), findsOneWidget);
   });
 
-  testWidgets('map-first shell has no bottom navigation destinations',
-      (tester) async {
-    container = ProviderContainer(overrides: [
-      loaderOverride(() async => const BulkLoadResult()),
-      cacheServiceProvider.overrideWithValue(cache),
-    ]);
+  testWidgets('map-first shell has no bottom navigation destinations', (
+    tester,
+  ) async {
+    container = ProviderContainer(
+      overrides: [cacheServiceProvider.overrideWithValue(cache)],
+    );
     addTearDown(container.dispose);
 
     await tester.pumpWidget(wrap());
@@ -114,12 +108,12 @@ void main() {
     expect(find.byType(ProfileScreen), findsNothing);
   });
 
-  testWidgets('Top search bar opens the From/To search overlay',
-      (tester) async {
-    container = ProviderContainer(overrides: [
-      loaderOverride(() async => const BulkLoadResult()),
-      cacheServiceProvider.overrideWithValue(cache),
-    ]);
+  testWidgets('Top search bar opens the From/To search overlay', (
+    tester,
+  ) async {
+    container = ProviderContainer(
+      overrides: [cacheServiceProvider.overrideWithValue(cache)],
+    );
     addTearDown(container.dispose);
 
     await tester.pumpWidget(wrap());
@@ -129,17 +123,15 @@ void main() {
     await tester.pumpAndSettle();
 
     // Phase 2: the top bar opens the From/To overlay, not the directory.
-    expect(find.byType(SearchScreen), findsNothing);
     expect(find.text('Where to?'), findsOneWidget);
     expect(find.text('From'), findsOneWidget);
     expect(find.text('My Location'), findsOneWidget);
   });
 
   testWidgets('Top bar avatar opens the Profile screen', (tester) async {
-    container = ProviderContainer(overrides: [
-      loaderOverride(() async => const BulkLoadResult()),
-      cacheServiceProvider.overrideWithValue(cache),
-    ]);
+    container = ProviderContainer(
+      overrides: [cacheServiceProvider.overrideWithValue(cache)],
+    );
     addTearDown(container.dispose);
 
     await tester.pumpWidget(wrap());
@@ -153,16 +145,7 @@ void main() {
   });
 }
 
-class _FakeBulkLoader implements BulkLoader {
-  _FakeBulkLoader(this.loader);
-
-  final Future<BulkLoadResult> Function() loader;
-
-  @override
-  Future<BulkLoadResult> load() => loader();
-}
-
-class _FakeSpaceProvider extends SpaceProvider {
+class _FakeSpaceViewModel extends SpaceViewModel {
   @override
   Future<void> loadSpaces({bool forceReload = false}) async {}
 

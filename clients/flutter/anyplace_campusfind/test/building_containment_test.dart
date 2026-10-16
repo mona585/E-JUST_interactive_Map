@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/services/building_containment.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/utils/building_containment.dart';
 
 /// Helpers: a small real-looking building box around (30.86, 29.58).
 FloorModel _floor(
@@ -39,7 +39,7 @@ FloorModel _invertedFloor() =>
     _floor('3', blLat: 30.862, blLng: 29.582, trLat: 30.860, trLng: 29.580);
 
 /// A fabricated "epsilon" fallback rectangle: ~0.02 degrees (~2.2 km) across,
-/// exactly the shape SpaceProvider fabricates when the server omits bounds.
+/// exactly the shape SpaceViewModel fabricates when the server omits bounds.
 FloorModel _epsilonFallbackFloor() =>
     _floor('4', blLat: 30.85, blLng: 29.57, trLat: 30.87, trLng: 29.59);
 

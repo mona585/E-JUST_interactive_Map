@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:anyplace_campusfind/config/api_config.dart';
-import 'package:anyplace_campusfind/data/datasources/anyplace_api_client.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 
 // ---------------------------------------------------------------------------
 // Regression tests for the floorplan download failure mode:

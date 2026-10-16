@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/theme.dart';
-import '../data/models/quick_access_item.dart';
+import '../models/quick_access_item.dart';
 import '../providers/providers.dart';
 
 /// Unified bookmark toggle for adding/removing a location to/from Quick

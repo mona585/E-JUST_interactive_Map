@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anyplace_campusfind/config/navigation_config.dart';
-import 'package:anyplace_campusfind/data/models/route_segment.dart';
-import 'package:anyplace_campusfind/ui/utils/navigation_display.dart';
+import 'package:anyplace_campusfind/models/route_segment.dart';
+import 'package:anyplace_campusfind/utils/navigation_display.dart';
 
 // ---------------------------------------------------------------------------
 // PHASE 12 — Rendering & Camera Consistency (BUG-9, BUG-10; pure rules)

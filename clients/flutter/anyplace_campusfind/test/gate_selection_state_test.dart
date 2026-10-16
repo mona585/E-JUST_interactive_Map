@@ -1,21 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/models/campus_gate.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/models/campus_asset_status.dart';
+import 'package:anyplace_campusfind/models/campus_gate.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('SpaceProvider gate state', () {
+  group('SpaceViewModel gate state', () {
     test('campusGates is empty before custom routes are loaded', () {
-      final provider = SpaceProvider();
+      final provider = SpaceViewModel();
       expect(provider.campusGates, isEmpty);
       expect(provider.hasSelectedGate, isFalse);
     });
 
     test('loadCustomRoutes loads the real 4 gates and applies policy', () async {
-      final provider = SpaceProvider();
+      final provider = SpaceViewModel();
       await provider.loadCustomRoutes();
 
       final gates = provider.campusGates;
@@ -32,7 +33,7 @@ void main() {
     });
 
     test('campusGates getter is unmodifiable', () async {
-      final provider = SpaceProvider();
+      final provider = SpaceViewModel();
       await provider.loadCustomRoutes();
       expect(
         () => provider.campusGates.clear(),
@@ -41,7 +42,7 @@ void main() {
     });
 
     test('selectGate / clearSelectedGate drive selection state', () {
-      final provider = SpaceProvider();
+      final provider = SpaceViewModel();
       final gate = CampusGate(
         id: 'G2',
         name: 'G2',
@@ -61,7 +62,7 @@ void main() {
     });
 
     test('selecting a gate clears an indoor POI selection', () {
-      final provider = SpaceProvider();
+      final provider = SpaceViewModel();
       provider.selectPoi(PoiModel(
         puid: 'p1',
         buid: 'b1',
@@ -86,7 +87,7 @@ void main() {
     });
 
     test('selecting a POI clears a gate selection', () {
-      final provider = SpaceProvider();
+      final provider = SpaceViewModel();
       provider.selectGate(CampusGate(
         id: 'G2',
         name: 'G2',
@@ -112,7 +113,7 @@ void main() {
 
     test('requestRouteToGate fails cleanly when GPS location is unavailable',
         () async {
-      final provider = SpaceProvider();
+      final provider = SpaceViewModel();
       // No location provider is set → current location is null.
       final gate = CampusGate(
         id: 'G2',
@@ -130,7 +131,7 @@ void main() {
     });
 
     test('no GPS error does not depend on gate policy', () async {
-      final provider = SpaceProvider();
+      final provider = SpaceViewModel();
       // Even a policy-disabled gate (G1) fails the same way: the missing-GPS
       // guard runs before any gate-specific logic, and routing never consults
       // the policy for manual gate destinations.

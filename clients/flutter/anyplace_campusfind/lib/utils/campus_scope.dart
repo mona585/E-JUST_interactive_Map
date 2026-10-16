@@ -1,5 +1,5 @@
 import '../config/constants.dart';
-import '../data/models/space_model.dart';
+import '../models/space_model.dart';
 
 /// E-JUST GLOBAL SCOPE (post-Phase-9 adjustment).
 ///
@@ -30,12 +30,11 @@ class CampusScope {
       cuid == null || cuid.isEmpty || cuid == AppConstants.primaryCampusCuid;
 
   /// Whether a building belongs to the active campus.
-  static bool spaceInScope(SpaceModel space) =>
-      campusIdInScope(space.cuid);
+  static bool spaceInScope(SpaceModel space) => campusIdInScope(space.cuid);
 
   // POIs and floors are never filtered here: they are only ever loaded per
   // `buid`, i.e. for buildings that are already in scope, so ownership is
-  // inherited structurally (see SpaceProvider.loadSpaces).
+  // inherited structurally (see SpaceViewModel.loadSpaces).
 
   /// Filters a fetched building list down to the active campus.
   static List<SpaceModel> filterSpaces(List<SpaceModel> spaces) =>

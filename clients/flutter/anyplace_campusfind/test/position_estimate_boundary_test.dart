@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
 
 /// Phase 2 Step 3: native<->Dart transport-boundary hardening verification.
 ///
@@ -20,7 +20,7 @@ import 'package:anyplace_campusfind/state/location_provider.dart';
 /// - PositionEstimate.fromMap is total (cannot throw for any Map input).
 /// - Non-Map platform events are filtered before parsing and residual stream
 ///   errors are contained by handleError instead of crashing the app.
-/// - Post-dispose delivery is inert (LocationProvider._isDisposed guards).
+/// - Post-dispose delivery is inert (LocationViewModel._isDisposed guards).
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -404,7 +404,7 @@ void main() {
   // ---------------------------------------------------------------------------
   // Part 3: disposal safety through the real transport pipeline
   // ---------------------------------------------------------------------------
-  group('LocationProvider disposal safety over the real pipeline', () {
+  group('LocationViewModel disposal safety over the real pipeline', () {
     const eventChannelName = 'eg.edu.ejust.anyplace_campusfind/position_stream';
     const codec = StandardMethodCodec();
 
@@ -427,7 +427,7 @@ void main() {
         return codec.encodeSuccessEnvelope(null);
       });
 
-      final provider = LocationProvider(
+      final provider = LocationViewModel(
         locationService: _NoopLocationService(),
         nativePositioningService: MethodChannelNativePositioningService(),
       );
@@ -480,7 +480,7 @@ void main() {
   });
 }
 
-/// Minimal inert GPS service for wiring [LocationProvider] without geolocator.
+/// Minimal inert GPS service for wiring [LocationViewModel] without geolocator.
 class _NoopLocationService implements LocationService {
   @override
   Future<bool> isLocationServiceEnabled() async => true;

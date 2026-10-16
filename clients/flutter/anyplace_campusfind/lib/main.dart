@@ -4,22 +4,27 @@ import 'package:provider/provider.dart' as provider;
 
 import 'config/constants.dart';
 import 'config/theme.dart';
+import 'datasources/gps_location_service.dart';
+import 'datasources/native_positioning_service.dart';
 import 'providers/providers.dart';
-import 'screens/main_shell.dart';
+import 'views/main_shell.dart';
 import 'services/cache_service.dart';
-import 'state/location_provider.dart';
-import 'state/navigation_controller.dart';
-import 'state/space_provider.dart';
+import 'viewmodels/location_view_model.dart';
+import 'viewmodels/navigation_view_model.dart';
+import 'viewmodels/space_view_model.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final locationProvider = LocationProvider();
-  final cacheService = CacheService();
-  final spaceProvider = SpaceProvider(
-    cacheService: cacheService,
+  // Composition root: concrete implementations are wired here, never inside
+  // view models.
+  final locationProvider = LocationViewModel(
+    locationService: GpsLocationService(),
+    nativePositioningService: MethodChannelNativePositioningService(),
   );
-  final navigationController = NavigationController(
+  final cacheService = CacheService();
+  final spaceProvider = SpaceViewModel(cacheService: cacheService);
+  final navigationController = NavigationViewModel(
     spaceProvider: spaceProvider,
     locationProvider: locationProvider,
   );
@@ -38,9 +43,7 @@ Future<void> main() async {
         provider.ChangeNotifierProvider.value(value: navigationController),
       ],
       child: ProviderScope(
-        overrides: [
-          cacheServiceProvider.overrideWithValue(cacheService),
-        ],
+        overrides: [cacheServiceProvider.overrideWithValue(cacheService)],
         child: const CampusFindApp(),
       ),
     ),
@@ -86,8 +89,6 @@ class _RootRouterState extends ConsumerState<RootRouter> {
           .read(cacheServiceProvider)
           .setSelectedCampusId(AppConstants.primaryCampusCuid);
     }
-    ref.read(selectedCampusIdProvider.notifier).state =
-        AppConstants.primaryCampusCuid;
     setState(() => _restored = true);
   }
 

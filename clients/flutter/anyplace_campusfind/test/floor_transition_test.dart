@@ -4,22 +4,24 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anyplace_campusfind/config/navigation_config.dart';
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floor_transition_event.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/route_segment.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/data/repositories/custom_route_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/navigation_controller.dart';
-import 'package:anyplace_campusfind/state/navigation_state_model.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floor_transition_event.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/route_segment.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/repositories/custom_route_repository.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/navigation_view_model.dart';
+import 'package:anyplace_campusfind/models/navigation_state.dart';
+import 'package:anyplace_campusfind/services/navigation_route_scope.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // ---------------------------------------------------------------------------
@@ -98,6 +100,24 @@ class _FakeNativePositioningService implements NativePositioningService {
 }
 
 class _StubNavigationRepository implements NavigationRepository {
+  @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      const <LatLng>[];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
+
   @override
   Future<NavigationRouteModel> getRouteBetweenPois({
     required String fromPuid,
@@ -321,8 +341,8 @@ class _Harness {
   final native = _FakeNativePositioningService();
   final stub = _StubNavigationRepository();
   late final _FakeSpaceScope scope;
-  late final LocationProvider provider;
-  late final NavigationController controller;
+  late final LocationViewModel provider;
+  late final NavigationViewModel controller;
 
   /// Injectable controller clock — DateTime.now() does not advance under
   /// widget-test pump().
@@ -333,11 +353,11 @@ class _Harness {
     scope.selectedSpace = _building();
     scope.selectedFloor = _floor('0');
     scope.activeNavigationRoute = _floorRoute();
-    provider = LocationProvider(
+    provider = LocationViewModel(
       locationService: gpsService,
       nativePositioningService: native,
     );
-    controller = NavigationController(
+    controller = NavigationViewModel(
       spaceProvider: scope,
       locationProvider: provider,
       navigationRepository: stub,

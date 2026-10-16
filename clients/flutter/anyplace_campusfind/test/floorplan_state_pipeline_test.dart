@@ -1,17 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/datasources/anyplace_api_client.dart';
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
+import 'package:anyplace_campusfind/models/campus_asset_status.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/repositories/floorplan_repository.dart';
+import 'package:anyplace_campusfind/repositories/poi_repository.dart';
+import 'package:anyplace_campusfind/repositories/radiomap_repository.dart';
+import 'package:anyplace_campusfind/repositories/space_repository.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
 
 // ---------------------------------------------------------------------------
 // Floorplan browsing-state pipeline regression tests.
@@ -138,8 +139,8 @@ class _ScriptedFloorplanRepository implements FloorplanRepository {
   Future<void> clearAll() async {}
 }
 
-SpaceProvider _provider(_ScriptedFloorplanRepository floorplanRepo) {
-  return SpaceProvider(
+SpaceViewModel _provider(_ScriptedFloorplanRepository floorplanRepo) {
+  return SpaceViewModel(
     repository: _FakeSpaceRepository(),
     poiRepository: _FakePoiRepository(),
     radioMapRepository: _FakeRadioMapRepository(),
@@ -148,7 +149,7 @@ SpaceProvider _provider(_ScriptedFloorplanRepository floorplanRepo) {
   );
 }
 
-Future<void> _selectBuildingAndFloor(SpaceProvider provider) async {
+Future<void> _selectBuildingAndFloor(SpaceViewModel provider) async {
   await provider.loadSpaces();
   provider.selectSpace(provider.spaces.first);
   await provider.loadFloorsForSelectedSpace();

@@ -1,27 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart' as provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/campus_gate.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
+import 'package:anyplace_campusfind/datasources/gps_location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/campus_gate.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/repositories/floorplan_repository.dart';
+import 'package:anyplace_campusfind/repositories/poi_repository.dart';
+import 'package:anyplace_campusfind/repositories/radiomap_repository.dart';
+import 'package:anyplace_campusfind/repositories/space_repository.dart';
 import 'package:anyplace_campusfind/providers/panel_provider.dart';
 import 'package:anyplace_campusfind/providers/search_provider.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/navigation_controller.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
-import 'package:anyplace_campusfind/ui/widgets/campus_content_panel.dart';
-import 'package:anyplace_campusfind/ui/widgets/gate_detail_card.dart';
-import 'package:anyplace_campusfind/ui/widgets/poi_detail_card.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/navigation_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:anyplace_campusfind/widgets/campus_content_panel.dart';
+import 'package:anyplace_campusfind/widgets/gate_detail_card.dart';
+import 'package:anyplace_campusfind/widgets/poi_detail_card.dart';
 
 SpaceModel _space(String buid, String name, String code) => SpaceModel(
       buid: buid,
@@ -131,11 +134,11 @@ class _FakeFloorplanRepo implements FloorplanRepository {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late SpaceProvider spaceProvider;
+  late SpaceViewModel spaceProvider;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    spaceProvider = SpaceProvider(
+    spaceProvider = SpaceViewModel(
       repository: _FakeSpaceRepository(),
       poiRepository: _FakePoiRepo(),
       radioMapRepository: _FakeRadioMapRepo(),
@@ -144,9 +147,12 @@ void main() {
     await spaceProvider.loadSpaces();
   });
 
-  Widget wrap({void Function(dynamic target, double zoom)? onFocus}) {
-    final location = LocationProvider();
-    final nav = NavigationController(
+  Widget wrap({void Function(LatLng target, double zoom)? onFocus}) {
+    final location = LocationViewModel(
+      locationService: GpsLocationService(),
+      nativePositioningService: MethodChannelNativePositioningService(),
+    );
+    final nav = NavigationViewModel(
       spaceProvider: spaceProvider,
       locationProvider: location,
     );
@@ -189,16 +195,16 @@ void main() {
         searchServiceProvider.overrideWithValue(searchService),
         if (onFocus != null)
           mapFocusRequesterProvider.overrideWith(
-            (ref) => (dynamic target, double zoom) => onFocus(target, zoom),
+            (ref) => (LatLng target, double zoom) => onFocus(target, zoom),
           ),
       ]),
       child: provider.MultiProvider(
         providers: [
-          provider.ChangeNotifierProvider<SpaceProvider>.value(
+          provider.ChangeNotifierProvider<SpaceViewModel>.value(
               value: spaceProvider),
-          provider.ChangeNotifierProvider<LocationProvider>.value(
+          provider.ChangeNotifierProvider<LocationViewModel>.value(
               value: location),
-          provider.ChangeNotifierProvider<NavigationController>.value(
+          provider.ChangeNotifierProvider<NavigationViewModel>.value(
               value: nav),
         ],
         child:
@@ -382,7 +388,7 @@ void main() {
 
   testWidgets('Places service exposes the real E-JUST buildings (#2)',
       (tester) async {
-    final focused = <dynamic>[];
+    final focused = <LatLng>[];
     await tester.pumpWidget(wrap(onFocus: (t, z) => focused.add(t)));
     await expandPanel(tester);
 
@@ -405,7 +411,7 @@ void main() {
 
   testWidgets('Service carousel auto-selects first and follows swipes',
       (tester) async {
-    final focusTargets = <dynamic>[];
+    final focusTargets = <LatLng>[];
     await tester.pumpWidget(wrap(onFocus: (t, z) => focusTargets.add(t)));
     await expandPanel(tester);
 

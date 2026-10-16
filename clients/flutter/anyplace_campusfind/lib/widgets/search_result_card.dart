@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/theme.dart';
-import '../data/models/quick_access_item.dart';
+import '../models/quick_access_item.dart';
 import '../providers/search_provider.dart';
 import '../widgets/quick_access_toggle_button.dart';
 

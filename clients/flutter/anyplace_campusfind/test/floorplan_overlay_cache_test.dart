@@ -6,7 +6,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:anyplace_campusfind/ui/utils/floorplan_overlay_cache.dart';
+import 'package:anyplace_campusfind/utils/floorplan_overlay_cache.dart';
 
 final LatLngBounds _bounds = LatLngBounds(
   southwest: LatLng(30.0, 32.0),

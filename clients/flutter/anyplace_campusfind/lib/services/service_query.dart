@@ -1,5 +1,5 @@
 import '../config/constants.dart';
-import '../data/models/poi_model.dart';
+import '../models/poi_model.dart';
 import '../utils/category_deriver.dart';
 import '../utils/poi_classification.dart';
 

@@ -37,7 +37,7 @@ class AppConstants {
   /// value, startup performs a ONE-TIME silent migration: Quick Access and
   /// Recent Waypoints are cleared (their buids/puids belonged to the old
   /// backend) and the disk caches are purged via
-  /// `SpaceProvider.purgeDatasetCaches()`. Quick Access then re-seeds from
+  /// `SpaceViewModel.purgeDatasetCaches()`. Quick Access then re-seeds from
   /// [kDefaultQuickAccessLocations] against the new server's real dataset.
   ///
   /// Bump this constant whenever the backend identity changes again.
@@ -128,10 +128,11 @@ class AppConstants {
   /// CAMPUS_IDS is no longer required (or consumed) — CampusFind is single-
   /// campus. Kept as an empty default so any stray `--dart-define=CAMPUS_IDS`
   /// never accidentally enables multi-campus behavior.
-  static const String _campusIdsEnv =
-      String.fromEnvironment('CAMPUS_IDS');
+  static const String _campusIdsEnv = String.fromEnvironment('CAMPUS_IDS');
 
-  static final List<String> configuredCampusIds = _parseCampusIds(_campusIdsEnv);
+  static final List<String> configuredCampusIds = _parseCampusIds(
+    _campusIdsEnv,
+  );
 
   /// Name used for the primary campus dataset. Always the primary campus.
   static const String defaultCampusName = primaryCampusName;
@@ -141,6 +142,10 @@ class AppConstants {
 
   static List<String> _parseCampusIds(String raw) {
     if (raw.isEmpty) return const [];
-    return raw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    return raw
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 }

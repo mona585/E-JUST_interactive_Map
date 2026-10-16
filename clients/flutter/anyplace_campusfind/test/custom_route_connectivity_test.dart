@@ -4,7 +4,7 @@ import 'dart:collection';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:anyplace_campusfind/data/repositories/custom_route_repository.dart';
+import 'package:anyplace_campusfind/repositories/custom_route_repository.dart';
 
 /// Integration tests against the real KMZ asset
 /// (`assets/navigation/university roads.kmz`).

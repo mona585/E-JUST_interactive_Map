@@ -3,27 +3,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/route_segment.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/data/repositories/custom_route_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/route_segment.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/repositories/custom_route_repository.dart';
+import 'package:anyplace_campusfind/repositories/floorplan_repository.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/repositories/poi_repository.dart';
+import 'package:anyplace_campusfind/repositories/radiomap_repository.dart';
+import 'package:anyplace_campusfind/repositories/space_repository.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/navigation_controller.dart';
-import 'package:anyplace_campusfind/state/navigation_state_model.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/navigation_view_model.dart';
+import 'package:anyplace_campusfind/models/navigation_state.dart';
+import 'package:anyplace_campusfind/services/navigation_route_scope.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 
 // ============================================================================
 // PHASE 0 CHARACTERIZATION SUITE
@@ -165,6 +167,24 @@ class _SeedNavigationRepository implements NavigationRepository {
   NavigationRouteModel? coordinateRoute;
 
   @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      const <LatLng>[];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
+
+  @override
   Future<NavigationRouteModel> getRouteBetweenPois({
     required String fromPuid,
     required String toPuid,
@@ -182,7 +202,7 @@ class _SeedNavigationRepository implements NavigationRepository {
 }
 
 // ---------------------------------------------------------------------------
-// BUG-1 fixture: REAL SpaceProvider + REAL LocationProvider + controller,
+// BUG-1 fixture: REAL SpaceViewModel + REAL LocationViewModel + controller,
 // seeded offline through Strategy 1 of the initial route cascade.
 // ---------------------------------------------------------------------------
 
@@ -232,9 +252,9 @@ class _Bug1Fixture {
   final poiRepo = _SeedPoiRepository();
   final navRepo = _SeedNavigationRepository();
   late final CacheService cache;
-  late final SpaceProvider spaceProvider;
-  late final LocationProvider locationProvider;
-  NavigationController? controller;
+  late final SpaceViewModel spaceProvider;
+  late final LocationViewModel locationProvider;
+  NavigationViewModel? controller;
 
   static Future<_Bug1Fixture> build() async {
     SharedPreferences.setMockInitialValues({});
@@ -258,7 +278,7 @@ class _Bug1Fixture {
     };
     f.navRepo.coordinateRoute = _serverRoute();
 
-    f.spaceProvider = SpaceProvider(
+    f.spaceProvider = SpaceViewModel(
       repository: f.seedRepo,
       poiRepository: f.poiRepo,
       radioMapRepository: _SeedRadioMapRepository(),
@@ -267,11 +287,11 @@ class _Bug1Fixture {
       nativePositioningService: _FakeNativePositioningService(),
       cacheService: f.cache,
     );
-    f.locationProvider = LocationProvider(
+    f.locationProvider = LocationViewModel(
       locationService: _FakeLocationService(),
       nativePositioningService: _FakeNativePositioningService(),
     );
-    f.spaceProvider.setLocationProvider(f.locationProvider);
+    f.spaceProvider.setLocationViewModel(f.locationProvider);
     // GPS believed and inside the destination-building radius (<100 m) so the
     // cross-building tier is skipped and Strategy 1 serves the seeded route.
     f.locationProvider.setGpsLocation(UserLocation(
@@ -297,7 +317,7 @@ class _Bug1Fixture {
   }
 
   void startActiveNavigation() {
-    controller = NavigationController(
+    controller = NavigationViewModel(
       spaceProvider: spaceProvider,
       locationProvider: locationProvider,
       navigationRepository: navRepo,
@@ -506,14 +526,14 @@ testWidgets('PHASE 2 FLIP of BUG-2: a committed reroute reaches the '
   scope.activeNavigationRoute = _outdoorRoute();
   final originalRoute = scope.activeNavigationRoute!;
 
-  final provider = LocationProvider(
+  final provider = LocationViewModel(
     locationService: _FakeLocationService(),
     nativePositioningService: _FakeNativePositioningService(),
   );
   final rerouteRepo = _SeedNavigationRepository()
     ..coordinateRoute = _replacementRoute;
 
-  final controller = NavigationController(
+  final controller = NavigationViewModel(
     spaceProvider: scope,
     locationProvider: provider,
     navigationRepository: rerouteRepo,

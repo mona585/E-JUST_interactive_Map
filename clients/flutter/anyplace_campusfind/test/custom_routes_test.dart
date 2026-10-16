@@ -2,11 +2,11 @@ import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:anyplace_campusfind/data/datasources/kmz_loader.dart';
-import 'package:anyplace_campusfind/data/models/custom_route_model.dart';
-import 'package:anyplace_campusfind/data/models/route_progress.dart';
-import 'package:anyplace_campusfind/data/repositories/custom_route_graph.dart';
-import 'package:anyplace_campusfind/data/repositories/custom_route_repository.dart';
+import 'package:anyplace_campusfind/datasources/kmz_loader.dart';
+import 'package:anyplace_campusfind/models/custom_route_model.dart';
+import 'package:anyplace_campusfind/models/route_progress.dart';
+import 'package:anyplace_campusfind/repositories/custom_route_graph.dart';
+import 'package:anyplace_campusfind/repositories/custom_route_repository.dart';
 
 void main() {
   group('KmzLoader', () {

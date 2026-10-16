@@ -4,13 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart' as provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:anyplace_campusfind/providers/bulk_load_provider.dart';
-import 'package:anyplace_campusfind/screens/main_shell.dart';
+import 'package:anyplace_campusfind/datasources/gps_location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/views/main_shell.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/navigation_controller.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
-import 'package:anyplace_campusfind/ui/widgets/campus_content_panel.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/navigation_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:anyplace_campusfind/widgets/campus_content_panel.dart';
 
 import 'helpers/fake_google_maps_platform.dart';
 
@@ -19,27 +20,31 @@ void main() {
 
   setUp(installFakeGoogleMapsPlatform);
 
-  testWidgets('App renders the map-first shell on launch',
-      (WidgetTester tester) async {
+  testWidgets('App renders the map-first shell on launch', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
-    final space = _FakeSpaceProvider();
-    final location = LocationProvider();
-    final nav = NavigationController(
+    final space = _FakeSpaceViewModel();
+    final location = LocationViewModel(
+      locationService: GpsLocationService(),
+      nativePositioningService: MethodChannelNativePositioningService(),
+    );
+    final nav = NavigationViewModel(
       spaceProvider: space,
       locationProvider: location,
     );
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          bulkLoaderProvider.overrideWithValue(_FakeBulkLoader()),
-        ],
+        overrides: const [],
         child: provider.MultiProvider(
           providers: [
-            provider.ChangeNotifierProvider<SpaceProvider>.value(value: space),
-            provider.ChangeNotifierProvider<LocationProvider>.value(
-                value: location),
-            provider.ChangeNotifierProvider<NavigationController>.value(
-                value: nav),
+            provider.ChangeNotifierProvider<SpaceViewModel>.value(value: space),
+            provider.ChangeNotifierProvider<LocationViewModel>.value(
+              value: location,
+            ),
+            provider.ChangeNotifierProvider<NavigationViewModel>.value(
+              value: nav,
+            ),
           ],
           child: const MaterialApp(home: MainShell()),
         ),
@@ -59,12 +64,7 @@ void main() {
   });
 }
 
-class _FakeBulkLoader implements BulkLoader {
-  @override
-  Future<BulkLoadResult> load() async => const BulkLoadResult();
-}
-
-class _FakeSpaceProvider extends SpaceProvider {
+class _FakeSpaceViewModel extends SpaceViewModel {
   @override
   Future<void> loadSpaces({bool forceReload = false}) async {}
 

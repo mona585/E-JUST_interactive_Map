@@ -85,7 +85,7 @@ class NavigationConfig {
   // -- Custom route matching --
 
   /// Maximum distance (m) from a custom route to consider the user "on-route".
-  /// Used by NavigationController for custom-route-aware off-route detection.
+  /// Used by NavigationViewModel for custom-route-aware off-route detection.
   static const double customRouteOnThreshold = 30.0;
 
   /// Maximum snap distance (m) when matching GPS to custom route graph.

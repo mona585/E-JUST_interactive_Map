@@ -2,12 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:anyplace_campusfind/data/datasources/gate_policy_config.dart';
-import 'package:anyplace_campusfind/data/datasources/kmz_loader.dart';
-import 'package:anyplace_campusfind/data/models/campus_gate.dart';
-import 'package:anyplace_campusfind/data/models/custom_route_model.dart';
-import 'package:anyplace_campusfind/data/repositories/campus_gate_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/custom_route_graph.dart';
+import 'package:anyplace_campusfind/datasources/gate_policy_config.dart';
+import 'package:anyplace_campusfind/datasources/kmz_loader.dart';
+import 'package:anyplace_campusfind/models/campus_gate.dart';
+import 'package:anyplace_campusfind/models/custom_route_model.dart';
+import 'package:anyplace_campusfind/repositories/campus_gate_repository.dart';
+import 'package:anyplace_campusfind/repositories/custom_route_graph.dart';
 
 const _gatesAsset = 'assets/config/university gates.kmz';
 const _roadsAsset = 'assets/navigation/university roads.kmz';
@@ -50,11 +50,13 @@ void main() {
 
   group('CampusGate model', () {
     test('built from a KML Point feature', () {
-      final gate = CampusGate.fromKmlFeature(const KmlFeature(
-        name: 'G1',
-        type: 'Point',
-        coordinates: [LatLng(30.8626633, 29.5613399)],
-      ));
+      final gate = KmzLoader.gateFromKmlFeature(
+        const KmlFeature(
+          name: 'G1',
+          type: 'Point',
+          coordinates: [LatLng(30.8626633, 29.5613399)],
+        ),
+      );
       expect(gate, isNotNull);
       expect(gate!.id, 'G1');
       expect(gate.name, 'G1');
@@ -65,19 +67,19 @@ void main() {
 
     test('non-Point / empty features are rejected', () {
       expect(
-        CampusGate.fromKmlFeature(const KmlFeature(
-          name: 'road',
-          type: 'LineString',
-          coordinates: [LatLng(30.0, 29.0)],
-        )),
+        KmzLoader.gateFromKmlFeature(
+          const KmlFeature(
+            name: 'road',
+            type: 'LineString',
+            coordinates: [LatLng(30.0, 29.0)],
+          ),
+        ),
         isNull,
       );
       expect(
-        CampusGate.fromKmlFeature(const KmlFeature(
-          name: 'empty',
-          type: 'Point',
-          coordinates: [],
-        )),
+        KmzLoader.gateFromKmlFeature(
+          const KmlFeature(name: 'empty', type: 'Point', coordinates: []),
+        ),
         isNull,
       );
     });
@@ -122,7 +124,10 @@ void main() {
 
       expect(repo.isLoaded, isTrue);
       expect(repo.gates.length, 4);
-      expect(repo.gates.map((g) => g.id), containsAll(['G1', 'G2', 'G3', 'G4']));
+      expect(
+        repo.gates.map((g) => g.id),
+        containsAll(['G1', 'G2', 'G3', 'G4']),
+      );
       // Coordinates come from the KMZ, not from any Dart literal.
       final g1 = repo.gates.firstWhere((g) => g.id == 'G1');
       expect(g1.latitude, closeTo(30.8626633, 1e-6));
@@ -199,7 +204,10 @@ void main() {
         gates: [_gate('G1', 30.1, 29.1), _gate('G2', 30.0, 29.0)],
       );
       expect(repo.preferredGate()?.id, 'G1');
-      repo.setPreferredGatePolicy(preferredGateId: 'G2', disabledGateIds: {'G1'});
+      repo.setPreferredGatePolicy(
+        preferredGateId: 'G2',
+        disabledGateIds: {'G1'},
+      );
       expect(repo.preferredGate()?.id, 'G2');
     });
   });
@@ -210,7 +218,11 @@ void main() {
       final gatesRepo = CampusGateRepository();
       await gatesRepo.load();
 
-      expect(graph.vertexCount, greaterThan(0), reason: 'roads graph must build');
+      expect(
+        graph.vertexCount,
+        greaterThan(0),
+        reason: 'roads graph must build',
+      );
       expect(gatesRepo.gates.length, 4);
 
       // Every real gate connects to the shipped campus road network (the
@@ -229,40 +241,44 @@ void main() {
       }
     });
 
-    test('real gates snap to the road network within the documented distances',
-        () async {
-      final graph = await _buildRealRoadsGraph();
-      final gatesRepo = CampusGateRepository();
-      await gatesRepo.load();
+    test(
+      'real gates snap to the road network within the documented distances',
+      () async {
+        final graph = await _buildRealRoadsGraph();
+        final gatesRepo = CampusGateRepository();
+        await gatesRepo.load();
 
-      // Regression for the gate→road snapping analysis (REQUIREMENT #8).
-      // The routing endpoint uses nearestVertex(maxDistance: 500) — the same
-      // threshold here — so G4 (202.8 m) is genuinely connected via that
-      // endpoint path while still far enough to prove the graph does NOT
-      // extend to every gate. Distances are from the shipped KMZ, so if the
-      // roads or gates data change these assertions catch it.
-      final expected = {
-        'G1': 5.1,
-        'G2': 27.7,
-        'G3': 16.1,
-        'G4': 202.8,
-      };
+        // Regression for the gate→road snapping analysis (REQUIREMENT #8).
+        // The routing endpoint uses nearestVertex(maxDistance: 500) — the same
+        // threshold here — so G4 (202.8 m) is genuinely connected via that
+        // endpoint path while still far enough to prove the graph does NOT
+        // extend to every gate. Distances are from the shipped KMZ, so if the
+        // roads or gates data change these assertions catch it.
+        final expected = {'G1': 5.1, 'G2': 27.7, 'G3': 16.1, 'G4': 202.8};
 
-      for (final entry in expected.entries) {
-        final gate = gatesRepo.gates.firstWhere((g) => g.id == entry.key);
-        final snapped = graph.nearestVertex(
-          LatLng(gate.latitude, gate.longitude),
-          maxDistance: 500.0,
-        );
-        expect(snapped, isNotNull,
-            reason: 'gate ${gate.id} must connect within 500m');
-        // Loose tolerance: geometry may drift slightly with the network
-        // connectivity fix, but magnitudes must stay stable.
-        expect(snapped!.$2, closeTo(entry.value, 3.0),
-            reason: 'nearestVertex distance for gate ${gate.id} changed '
-                '(${snapped.$2.toStringAsFixed(1)}m vs expected ${entry.value}m)');
-      }
-    });
+        for (final entry in expected.entries) {
+          final gate = gatesRepo.gates.firstWhere((g) => g.id == entry.key);
+          final snapped = graph.nearestVertex(
+            LatLng(gate.latitude, gate.longitude),
+            maxDistance: 500.0,
+          );
+          expect(
+            snapped,
+            isNotNull,
+            reason: 'gate ${gate.id} must connect within 500m',
+          );
+          // Loose tolerance: geometry may drift slightly with the network
+          // connectivity fix, but magnitudes must stay stable.
+          expect(
+            snapped!.$2,
+            closeTo(entry.value, 3.0),
+            reason:
+                'nearestVertex distance for gate ${gate.id} changed '
+                '(${snapped.$2.toStringAsFixed(1)}m vs expected ${entry.value}m)',
+          );
+        }
+      },
+    );
 
     test('preferred gate resolves against the loaded real gates', () async {
       final repo = CampusGateRepository();
@@ -277,7 +293,7 @@ void main() {
     });
 
     test('configured policy enables G2 and disables G1/G3/G4', () async {
-      // Load the REAL gate_policy.json asset, exactly as SpaceProvider does at
+      // Load the REAL gate_policy.json asset, exactly as SpaceViewModel does at
       // startup, then apply it to the loaded KMZ gates.
       final policy = await const GatePolicyConfigLoader().load();
       expect(policy.preferredGateId, 'G2');
@@ -313,8 +329,10 @@ void main() {
         expect(policy.disabledGateIds, contains(id));
       }
       // G2 is the only gate the repository would actually route to.
-      expect(repo.gates.where((g) => g.enabled).map((g) => g.id),
-          containsAll(['G2']));
+      expect(
+        repo.gates.where((g) => g.enabled).map((g) => g.id),
+        containsAll(['G2']),
+      );
       // preferredGate() never falls back to a disabled gate.
       expect(repo.preferredGate()!.id, isNot(anyOf('G1', 'G3', 'G4')));
     });
@@ -349,18 +367,19 @@ void main() {
     });
 
     test('malformed input is rejected', () {
-      expect(() => GatePolicyConfigLoader.decode('not json'),
-          throwsFormatException);
-      expect(() => GatePolicyConfigLoader.decode('[]'),
-          throwsFormatException);
       expect(
-          () => GatePolicyConfigLoader.decode(
-              '{"disabledGateIds": "G2"}'),
-          throwsFormatException);
+        () => GatePolicyConfigLoader.decode('not json'),
+        throwsFormatException,
+      );
+      expect(() => GatePolicyConfigLoader.decode('[]'), throwsFormatException);
       expect(
-          () => GatePolicyConfigLoader.decode(
-              '{"disabledGateIds": [1, 2]}'),
-          throwsFormatException);
+        () => GatePolicyConfigLoader.decode('{"disabledGateIds": "G2"}'),
+        throwsFormatException,
+      );
+      expect(
+        () => GatePolicyConfigLoader.decode('{"disabledGateIds": [1, 2]}'),
+        throwsFormatException,
+      );
     });
   });
 }

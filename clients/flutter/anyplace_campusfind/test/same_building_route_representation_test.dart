@@ -3,25 +3,27 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anyplace_campusfind/config/theme.dart';
-import 'package:anyplace_campusfind/data/datasources/anyplace_api_client.dart';
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/route_segment.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
-import 'package:anyplace_campusfind/ui/utils/navigation_display.dart';
+import 'package:anyplace_campusfind/models/campus_asset_status.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/route_segment.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/repositories/floorplan_repository.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/repositories/poi_repository.dart';
+import 'package:anyplace_campusfind/repositories/radiomap_repository.dart';
+import 'package:anyplace_campusfind/repositories/space_repository.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:anyplace_campusfind/utils/navigation_display.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // ---------------------------------------------------------------------------
 // FAILURE #2 regression — SAME-BUILDING indoor navigation.
@@ -221,6 +223,24 @@ class _RecordingNavRepo implements NavigationRepository {
   final coordCalls = <String?>[];
 
   @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      const <LatLng>[];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
+
+  @override
   Future<NavigationRouteModel> getRouteBetweenPois({
     required String fromPuid,
     required String toPuid,
@@ -270,9 +290,9 @@ class _FakeNativePositioningService implements NativePositioningService {
   Stream<PositionEstimate> get positionStream => const Stream.empty();
 }
 
-Future<SpaceProvider> _seededProvider(_RecordingNavRepo navRepo,
-    {required LocationProvider locationProvider}) async {
-  final provider = SpaceProvider(
+Future<SpaceViewModel> _seededProvider(_RecordingNavRepo navRepo,
+    {required LocationViewModel locationProvider}) async {
+  final provider = SpaceViewModel(
     repository: _FakeSpaceRepository(),
     poiRepository: _FakePoiRepository(),
     radioMapRepository: _FakeRadioMapRepository(),
@@ -280,7 +300,7 @@ Future<SpaceProvider> _seededProvider(_RecordingNavRepo navRepo,
     navigationRepository: navRepo,
     nativePositioningService: _FakeNativePositioningService(),
   );
-  provider.setLocationProvider(locationProvider);
+  provider.setLocationViewModel(locationProvider);
   locationProvider.setGpsLocation(_indoorFix());
 
   await provider.loadSpaces();
@@ -298,7 +318,7 @@ void main() {
       'segmented indoorRouting route with untouched geometry and the '
       'unified indoor style', (tester) async {
     final navRepo = _RecordingNavRepo()..servedFromCoords = _legacyIndoorRoute();
-    final locationProvider = LocationProvider(
+    final locationProvider = LocationViewModel(
       locationService: _FakeGpsService(),
       nativePositioningService: _FakeNativePositioningService(),
     );
@@ -348,7 +368,7 @@ void main() {
     final navRepo = _RecordingNavRepo()
       ..throwOnCoords = true
       ..servedBetweenPois = _legacyIndoorRoute();
-    final locationProvider = LocationProvider(
+    final locationProvider = LocationViewModel(
       locationService: _FakeGpsService(),
       nativePositioningService: _FakeNativePositioningService(),
     );

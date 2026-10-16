@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anyplace_campusfind/config/navigation_config.dart';
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/position_fix.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/position_fix.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
 
 // ---------------------------------------------------------------------------
 // PHASE 5 — Outdoor GPS Quality Pipeline (INV-8 inputs, INV-11)
@@ -56,7 +56,7 @@ class _Native implements NativePositioningService {
   Stream<PositionEstimate> get positionStream => const Stream.empty();
 }
 
-LocationProvider _provider() => LocationProvider(
+LocationViewModel _provider() => LocationViewModel(
       locationService: _GpsService(),
       nativePositioningService: _Native(),
     );

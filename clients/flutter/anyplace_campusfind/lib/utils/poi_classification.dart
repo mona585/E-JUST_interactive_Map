@@ -1,4 +1,4 @@
-import '../data/models/poi_model.dart';
+import '../models/poi_model.dart';
 
 /// Classifies POIs using the real Anyplace API classification rules.
 ///
@@ -73,7 +73,7 @@ class PoiClassification {
 
   /// Door detection via boolean flag or case-insensitive substring.
   ///
-  /// Source: `poi_marker.dart:38-41`, `SCHEMA.scala:56` (`fIsDoor`).
+  /// Source: `SCHEMA.scala:56` (`fIsDoor`).
   static bool isDoor(PoiModel poi) =>
       poi.isDoor || poi.poisType.toLowerCase().contains('door');
 

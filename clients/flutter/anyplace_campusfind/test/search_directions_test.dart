@@ -1,13 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
+import 'package:anyplace_campusfind/models/campus_asset_status.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/repositories/space_repository.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 
 SpaceModel _space(String name, String buid) => SpaceModel(
       buid: buid,
@@ -51,6 +54,24 @@ class _FakeNavigationRepository implements NavigationRepository {
   int betweenPoisCalls = 0;
 
   @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      const <LatLng>[];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
+
+  @override
   Future<NavigationRouteModel> getRouteBetweenPois({
     required String fromPuid,
     required String toPuid,
@@ -92,7 +113,7 @@ void main() {
     });
   });
 
-  group('SpaceProvider.requestRouteBetweenPois (additive wrapper)', () {
+  group('SpaceViewModel.requestRouteBetweenPois (additive wrapper)', () {
     test('wraps the existing POI-to-POI repository API and readies the store',
         () async {
       final navRepo = _FakeNavigationRepository(
@@ -117,7 +138,7 @@ void main() {
           ],
         ),
       );
-      final provider = SpaceProvider(
+      final provider = SpaceViewModel(
         repository: _FakeSpaceRepository(),
         navigationRepository: navRepo,
       );
@@ -141,7 +162,7 @@ void main() {
       final navRepo = _FakeNavigationRepository(
         const NavigationRouteModel(points: []),
       );
-      final provider = SpaceProvider(
+      final provider = SpaceViewModel(
         repository: _FakeSpaceRepository(),
         navigationRepository: navRepo,
       );

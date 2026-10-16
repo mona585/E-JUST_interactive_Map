@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anyplace_campusfind/config/navigation_config.dart';
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/position_fix.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/position_fix.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
 
 class _FakeLocationService implements LocationService {
   @override
@@ -126,11 +126,11 @@ void _confirmScope(
 
 void main() {
   late _FakeNativePositioningService native;
-  late LocationProvider provider;
+  late LocationViewModel provider;
 
   setUp(() {
     native = _FakeNativePositioningService();
-    provider = LocationProvider(
+    provider = LocationViewModel(
       locationService: _FakeLocationService(),
       nativePositioningService: native,
     );
@@ -565,12 +565,12 @@ void main() {
       // Two providers whose services record DIFFERENT residency loads -
       // standing in for different UI selection contexts.
       final nativeA = _FakeNativePositioningService();
-      final providerA = LocationProvider(
+      final providerA = LocationViewModel(
         locationService: _FakeLocationService(),
         nativePositioningService: nativeA,
       );
       final nativeB = _FakeNativePositioningService();
-      final providerB = LocationProvider(
+      final providerB = LocationViewModel(
         locationService: _FakeLocationService(),
         nativePositioningService: nativeB,
       );

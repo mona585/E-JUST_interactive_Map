@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/constants.dart';
-import '../data/models/quick_access_item.dart';
+import '../models/quick_access_item.dart';
 
 /// Lightweight local settings (campus selection, recent waypoints).
 class CacheService {
@@ -75,8 +75,9 @@ class CacheService {
   /// Deduplicated by `type + id`. New items are appended at the end.
   Future<void> toggleQuickAccessItem(QuickAccessItem item) async {
     final items = (await getQuickAccessItems()).toList();
-    final existingIndex =
-        items.indexWhere((i) => i.type == item.type && i.id == item.id);
+    final existingIndex = items.indexWhere(
+      (i) => i.type == item.type && i.id == item.id,
+    );
     if (existingIndex >= 0) {
       items.removeAt(existingIndex);
     } else {
@@ -154,7 +155,7 @@ class CacheService {
   ///    backend) and the legacy Saved-POIs source,
   ///  * writes the current [AppConstants.datasetEpoch] marker.
   ///
-  /// Disk caches are purged separately by `SpaceProvider.purgeDatasetCaches`
+  /// Disk caches are purged separately by `SpaceViewModel.purgeDatasetCaches`
   /// (called by the composition root when this returns true). Idempotent:
   /// returns false once the stored epoch matches.
   Future<bool> consumeDatasetEpochMigration() async {
@@ -162,13 +163,18 @@ class CacheService {
     final stored = prefs.getString(AppConstants.prefDatasetEpoch);
     if (stored == AppConstants.datasetEpoch) return false;
 
-    debugPrint('[CacheService] dataset epoch migration: '
-        '"$stored" → "${AppConstants.datasetEpoch}" — clearing old-backend '
-        'user data');
+    debugPrint(
+      '[CacheService] dataset epoch migration: '
+      '"$stored" → "${AppConstants.datasetEpoch}" — clearing old-backend '
+      'user data',
+    );
     await prefs.remove(AppConstants.prefQuickAccess);
     await prefs.remove(AppConstants.prefRecentWaypoints);
     await prefs.remove(AppConstants.prefSavedPois);
-    await prefs.setString(AppConstants.prefDatasetEpoch, AppConstants.datasetEpoch);
+    await prefs.setString(
+      AppConstants.prefDatasetEpoch,
+      AppConstants.datasetEpoch,
+    );
     onDataChanged?.call();
     return true;
   }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../data/models/poi_model.dart';
+import '../models/poi_model.dart';
 
 enum EntityCategory {
   professor,

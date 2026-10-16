@@ -1,24 +1,24 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/models/poi_model.dart';
-import '../data/models/space_model.dart';
-import '../state/space_provider.dart';
+import '../models/poi_model.dart';
+import '../models/space_model.dart';
+import '../viewmodels/space_view_model.dart';
 
 /// A selectable trip endpoint for the From/To search bar
 /// (UI/UX REDESIGN PHASE 2).
 class TripEndpoint {
   const TripEndpoint.myLocation()
-      : poi = null,
-        space = null,
-        isMyLocation = true;
+    : poi = null,
+      space = null,
+      isMyLocation = true;
 
   const TripEndpoint.poi(PoiModel this.poi)
-      : space = null,
-        isMyLocation = false;
+    : space = null,
+      isMyLocation = false;
 
   const TripEndpoint.space(SpaceModel this.space)
-      : poi = null,
-        isMyLocation = false;
+    : poi = null,
+      isMyLocation = false;
 
   final PoiModel? poi;
   final SpaceModel? space;
@@ -34,20 +34,23 @@ class TripEndpoint {
 /// The chosen origin. Defaults to My Location (spec: "From defaults to My
 /// Location"); changing it stores a resolved POI or resets back to My
 /// Location. Custom origins are functionally supported between two POIs via
-/// `SpaceProvider.requestRouteBetweenPois`; any other combination falls back
+/// `SpaceViewModel.requestRouteBetweenPois`; any other combination falls back
 /// to My Location with a visible notice.
-final directionOriginProvider =
-    StateProvider<TripEndpoint>((ref) => const TripEndpoint.myLocation());
+final directionOriginProvider = StateProvider<TripEndpoint>(
+  (ref) => const TripEndpoint.myLocation(),
+);
 
 /// The chosen destination (`To`). Null until the user picks a result.
-final directionDestinationProvider = StateProvider<TripEndpoint?>((ref) => null);
+final directionDestinationProvider = StateProvider<TripEndpoint?>(
+  (ref) => null,
+);
 
 /// Executes the Directions action using ONLY existing routing features.
 ///
 /// Deliberately takes plain collaborators (not BuildContext) so callers can
 /// pop the search overlay before awaiting network work.
 Future<void> executeDirections({
-  required SpaceProvider spaceProvider,
+  required SpaceViewModel spaceProvider,
   required TripEndpoint origin,
   required TripEndpoint destination,
   void Function(String message)? notice,
@@ -56,7 +59,8 @@ Future<void> executeDirections({
   if (destination.space != null) {
     if (!origin.isMyLocation) {
       notice?.call(
-          'Custom origin needs two specific places — using your location.');
+        'Custom origin needs two specific places — using your location.',
+      );
     }
     await spaceProvider.requestRouteToBuilding(destination.space!);
     return;

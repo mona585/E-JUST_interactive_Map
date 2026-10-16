@@ -3,21 +3,23 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/route_segment.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/data/repositories/custom_route_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/navigation_controller.dart';
-import 'package:anyplace_campusfind/state/navigation_state_model.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/route_segment.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/repositories/custom_route_repository.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/navigation_view_model.dart';
+import 'package:anyplace_campusfind/models/navigation_state.dart';
+import 'package:anyplace_campusfind/services/navigation_route_scope.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // ---------------------------------------------------------------------------
@@ -91,6 +93,25 @@ class _Native implements NativePositioningService {
 
 class _Repo implements NavigationRepository {
   int indoorRequests = 0;
+
+  @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      const <LatLng>[];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
+
   @override
   Future<NavigationRouteModel> getRouteBetweenPois({
     required String fromPuid,
@@ -247,12 +268,12 @@ void main() {
 
     final gpsService = _GpsService();
     final native = _Native();
-    final provider = LocationProvider(
+    final provider = LocationViewModel(
       locationService: gpsService,
       nativePositioningService: native,
     );
     final repo = _Repo();
-    final controller = NavigationController(
+    final controller = NavigationViewModel(
       spaceProvider: scope,
       locationProvider: provider,
       navigationRepository: repo,
@@ -334,11 +355,11 @@ void main() {
         for (final l in [30.9000, 30.8560])
           NavigationRoutePoint.outdoor(latitude: l, longitude: _lng)
       ]);
-    final provider = LocationProvider(
+    final provider = LocationViewModel(
       locationService: _GpsService(),
       nativePositioningService: _Native(),
     );
-    final controller = NavigationController(
+    final controller = NavigationViewModel(
       spaceProvider: scope,
       locationProvider: provider,
     );

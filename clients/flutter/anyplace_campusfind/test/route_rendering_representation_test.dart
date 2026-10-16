@@ -3,9 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:anyplace_campusfind/config/theme.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/route_segment.dart';
-import 'package:anyplace_campusfind/ui/utils/navigation_display.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/route_segment.dart';
+import 'package:anyplace_campusfind/utils/navigation_display.dart';
 
 // ---------------------------------------------------------------------------
 // PHASE-R — Route REPRESENTATION → rendering semantics.

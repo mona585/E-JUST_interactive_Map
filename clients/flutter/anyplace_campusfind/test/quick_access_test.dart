@@ -4,22 +4,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:anyplace_campusfind/config/constants.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/quick_access_item.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/quick_access_item.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/repositories/floorplan_repository.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/repositories/poi_repository.dart';
+import 'package:anyplace_campusfind/repositories/radiomap_repository.dart';
+import 'package:anyplace_campusfind/repositories/space_repository.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +30,7 @@ void main() {
   late SearchService searchService;
   late _FakeSpaceRepository fakeSpaceRepository;
   late _FakePoiRepository fakePoiRepository;
-  late SpaceProvider spaceProvider;
+  late SpaceViewModel spaceProvider;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -36,7 +38,7 @@ void main() {
     searchService = SearchService();
     fakeSpaceRepository = _FakeSpaceRepository();
     fakePoiRepository = _FakePoiRepository();
-    spaceProvider = SpaceProvider(
+    spaceProvider = SpaceViewModel(
       repository: fakeSpaceRepository,
       poiRepository: fakePoiRepository,
       radioMapRepository: _FakeRadioMapRepository(),
@@ -418,6 +420,24 @@ class _FakeFloorplanRepository implements FloorplanRepository {
 }
 
 class _FakeNavigationRepository implements NavigationRepository {
+  @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      const <LatLng>[];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
+
   @override
   Future<NavigationRouteModel> getRouteBetweenPois({
     required String fromPuid,

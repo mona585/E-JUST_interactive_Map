@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
 import 'package:anyplace_campusfind/services/service_query.dart';
 import 'package:anyplace_campusfind/utils/category_deriver.dart';
 

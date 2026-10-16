@@ -4,8 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:anyplace_campusfind/config/api_config.dart';
 import 'package:anyplace_campusfind/config/constants.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
-import 'package:anyplace_campusfind/ui/screens/map_screen.dart'
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:anyplace_campusfind/views/map_screen.dart'
     show ejustCampusBounds;
 
 void main() {
@@ -17,8 +17,8 @@ void main() {
 
     test('E-JUST fallback center replaced the Cyprus centroid', () {
       // Mean of the six live buildings on map.beout.ai.
-      expect(SpaceProvider.defaultCenter.latitude, closeTo(30.859877, 1e-6));
-      expect(SpaceProvider.defaultCenter.longitude, closeTo(29.563241, 1e-6));
+      expect(SpaceViewModel.defaultCenter.latitude, closeTo(30.859877, 1e-6));
+      expect(SpaceViewModel.defaultCenter.longitude, closeTo(29.563241, 1e-6));
     });
 
     test('campus identity constants remain E-JUST', () {

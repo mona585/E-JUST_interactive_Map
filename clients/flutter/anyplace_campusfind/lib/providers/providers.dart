@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../config/constants.dart';
 import '../services/cache_service.dart';
 
 /// Provides the in-memory + persisted cache.
@@ -18,11 +17,3 @@ void wireCacheNotifications(WidgetRef ref) {
     ref.read(cacheVersionProvider.notifier).state++;
   };
 }
-
-/// The single primary (UCY) campus is always selected.
-final selectedCampusIdProvider = StateProvider<String?>((ref) {
-  return AppConstants.primaryCampusCuid;
-});
-
-/// Currently active bottom-navigation tab.
-final shellTabProvider = StateProvider<int>((ref) => 0);

@@ -3,21 +3,24 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/data/repositories/custom_route_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/navigation_controller.dart';
-import 'package:anyplace_campusfind/state/navigation_state_model.dart';
-import 'package:anyplace_campusfind/ui/utils/navigation_display.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/repositories/custom_route_repository.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/navigation_view_model.dart';
+import 'package:anyplace_campusfind/models/navigation_state.dart';
+import 'package:anyplace_campusfind/services/navigation_route_scope.dart';
+import 'package:anyplace_campusfind/utils/navigation_display.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 
 // ---------------------------------------------------------------------------
 // PHASE 6 — Outdoor Rerouting Correctness (BUG-5, BUG-12; INV-6/INV-8)
@@ -83,6 +86,24 @@ class _RecordingRepo implements NavigationRepository {
   final destinations = <String>[];
   NavigationRouteModel? served;
   bool failAll = false;
+
+  @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      const <LatLng>[];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
 
   @override
   Future<NavigationRouteModel> getRouteBetweenPois({
@@ -190,19 +211,19 @@ class _Harness {
   final native = _Native();
   final repo = _RecordingRepo();
   late final _Scope scope;
-  late final LocationProvider provider;
-  late final NavigationController controller;
+  late final LocationViewModel provider;
+  late final NavigationViewModel controller;
 
   _Harness() {
     scope = _Scope();
     scope.selectedSpace = _building();
     scope.selectedFloor = _floor('0');
     scope.activeNavigationRoute = _route();
-    provider = LocationProvider(
+    provider = LocationViewModel(
       locationService: gpsService,
       nativePositioningService: native,
     );
-    controller = NavigationController(
+    controller = NavigationViewModel(
       spaceProvider: scope,
       locationProvider: provider,
       navigationRepository: repo,
@@ -305,7 +326,15 @@ void main() {
     expect(h.scope.activeNavigationRoute, same(original),
         reason: 'INV-6 failure semantics: old valid route persists');
     expect(h.controller.rerouteFailed, isTrue);
-    expect(navigationStatusLabel(h.controller),
+    expect(navigationStatusLabel((
+          state: h.controller.navigationState,
+          destinationName: h.controller.destinationSpace?.name,
+          pauseMessage: h.controller.pauseMessage,
+          rerouteFailed: h.controller.rerouteFailed,
+          isActive: h.controller.isActive,
+          indoorGuidanceUnavailable: h.controller.indoorGuidanceUnavailable,
+          positioningStatus: h.controller.positioningStatus,
+        )),
         'Recalculation failed \u2014 retrying soon');
 
     // Next successful cycle clears the flag.
@@ -317,7 +346,15 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(h.controller.rerouteFailed, isFalse);
-    expect(navigationStatusLabel(h.controller), isNot(contains('failed')));
+    expect(navigationStatusLabel((
+          state: h.controller.navigationState,
+          destinationName: h.controller.destinationSpace?.name,
+          pauseMessage: h.controller.pauseMessage,
+          rerouteFailed: h.controller.rerouteFailed,
+          isActive: h.controller.isActive,
+          indoorGuidanceUnavailable: h.controller.indoorGuidanceUnavailable,
+          positioningStatus: h.controller.positioningStatus,
+        )), isNot(contains('failed')));
 
     // End clears everything.
     h.controller.endNavigation();

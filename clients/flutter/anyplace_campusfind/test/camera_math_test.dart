@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/ui/screens/map_screen.dart';
+import 'package:anyplace_campusfind/views/map_screen.dart';
 
 void main() {
   group('computeRouteCamera (Route Here fit math)', () {

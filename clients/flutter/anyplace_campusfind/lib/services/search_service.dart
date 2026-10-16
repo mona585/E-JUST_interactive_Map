@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-import '../data/models/floor_model.dart';
-import '../data/models/poi_model.dart';
-import '../data/models/space_model.dart';
+import '../models/floor_model.dart';
+import '../models/poi_model.dart';
+import '../models/space_model.dart';
 import '../utils/category_deriver.dart';
 
 /// Unified search result across spaces, floors, and POIs.
@@ -60,16 +60,51 @@ class _SearchableItem {
 }
 
 /// Core search engine with progressive indexing and ranked full-text search.
-class SearchService extends ChangeNotifier {
+///
+/// Deliberately NOT a [ChangeNotifier] (service-layer rule): consumers that
+/// must react to index growth subscribe via [addIndexListener] /
+/// [removeIndexListener]; a monotonically increasing [revision] lets derived
+/// providers cheaply detect "something was indexed" without carrying a
+/// notifier around.
+class SearchService {
   final List<_SearchableItem> _items = [];
+  final List<VoidCallback> _indexListeners = [];
+  int _revision = 0;
   bool _isSyncing = false;
   int _syncedBuildings = 0;
   int _totalBuildings = 0;
+
+  /// Bumped once per index mutation; consumers use it to retrigger derived
+  /// state without a ChangeNotifier dependency.
+  int get revision => _revision;
 
   bool get isSyncing => _isSyncing;
   int get syncedBuildings => _syncedBuildings;
   int get totalBuildings => _totalBuildings;
   int get itemCount => _items.length;
+
+  void addIndexListener(VoidCallback listener) {
+    if (!_indexListeners.contains(listener)) {
+      _indexListeners.add(listener);
+    }
+  }
+
+  void removeIndexListener(VoidCallback listener) {
+    _indexListeners.remove(listener);
+  }
+
+  void _notifyIndexChanged() {
+    _revision++;
+    final snapshot = List<VoidCallback>.of(_indexListeners);
+    for (final listener in snapshot) {
+      listener();
+    }
+  }
+
+  /// Releases index listeners on teardown.
+  void dispose() {
+    _indexListeners.clear();
+  }
 
   // ---- Index methods ----
 
@@ -94,7 +129,7 @@ class SearchService extends ChangeNotifier {
         space: space,
       ));
     }
-    notifyListeners();
+    _notifyIndexChanged();
   }
 
   /// Index floors for a building. Deduplicates by buid+floorNumber.
@@ -116,7 +151,7 @@ class SearchService extends ChangeNotifier {
         floor: floor,
       ));
     }
-    notifyListeners();
+    _notifyIndexChanged();
   }
 
   /// Index POIs for a specific floor. Deduplicates by puid.
@@ -137,24 +172,24 @@ class SearchService extends ChangeNotifier {
         poi: poi,
       ));
     }
-    notifyListeners();
+    _notifyIndexChanged();
   }
 
   void markSyncStarted(int totalBuildings) {
     _isSyncing = true;
     _totalBuildings = totalBuildings;
     _syncedBuildings = 0;
-    notifyListeners();
+    _notifyIndexChanged();
   }
 
   void markSyncProgress(int synced) {
     _syncedBuildings = synced;
-    notifyListeners();
+    _notifyIndexChanged();
   }
 
   void markSyncComplete() {
     _isSyncing = false;
-    notifyListeners();
+    _notifyIndexChanged();
   }
 
   // ---- Query ----

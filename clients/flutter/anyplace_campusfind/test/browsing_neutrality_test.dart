@@ -1,25 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/floorplan_model.dart';
-import 'package:anyplace_campusfind/data/models/navigation_route_model.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/data/repositories/floorplan_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/navigation_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/poi_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/radiomap_repository.dart';
-import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/floorplan_model.dart';
+import 'package:anyplace_campusfind/models/navigation_route_model.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/repositories/floorplan_repository.dart';
+import 'package:anyplace_campusfind/repositories/navigation_repository.dart';
+import 'package:anyplace_campusfind/repositories/poi_repository.dart';
+import 'package:anyplace_campusfind/repositories/radiomap_repository.dart';
+import 'package:anyplace_campusfind/repositories/space_repository.dart';
 import 'package:anyplace_campusfind/services/cache_service.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
-import 'package:anyplace_campusfind/state/navigation_controller.dart';
-import 'package:anyplace_campusfind/state/navigation_state_model.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
+import 'package:anyplace_campusfind/viewmodels/navigation_view_model.dart';
+import 'package:anyplace_campusfind/models/navigation_state.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 
 // ---------------------------------------------------------------------------
 // PHASE 3 — Browsing/Navigation Separation (INV-4, INV-5)
@@ -124,6 +126,25 @@ class _Floorplans implements FloorplanRepository {
 
 class _NavRepo implements NavigationRepository {
   late NavigationRouteModel coordinateRoute;
+
+  @override
+  Future<List<LatLng>> getOutdoorWalkingRoute({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      const <LatLng>[];
+
+  @override
+  Future<OsrmRouteResult?> getOutdoorWalkingRouteWithMetadata({
+    required double fromLat,
+    required double fromLon,
+    required double toLat,
+    required double toLon,
+  }) async =>
+      null;
+
   @override
   Future<NavigationRouteModel> getRouteBetweenPois({
     required String fromPuid,
@@ -161,11 +182,11 @@ PoiModel _poi(String puid, String name) => PoiModel(
       longitude: _lng,
     );
 
-/// Live-session harness over the REAL SpaceProvider cascade.
+/// Live-session harness over the REAL SpaceViewModel cascade.
 class _LiveFixture {
-  late final SpaceProvider sp;
-  late final NavigationController nc;
-  late final LocationProvider lp;
+  late final SpaceViewModel sp;
+  late final NavigationViewModel nc;
+  late final LocationViewModel lp;
   late final _Spaces spaces;
 
   static Future<_LiveFixture> start() async {
@@ -205,7 +226,7 @@ class _LiveFixture {
             poisType: 'room'),
       ]);
 
-    f.sp = SpaceProvider(
+    f.sp = SpaceViewModel(
       repository: f.spaces,
       poiRepository: pois,
       radioMapRepository: _RadioMaps(),
@@ -214,12 +235,12 @@ class _LiveFixture {
       nativePositioningService: _Native(),
       cacheService: CacheService(),
     );
-    final lp = LocationProvider(
+    final lp = LocationViewModel(
       locationService: _GpsService(),
       nativePositioningService: _Native(),
     );
     f.lp = lp;
-    f.sp.setLocationProvider(lp);
+    f.sp.setLocationViewModel(lp);
     lp.setGpsLocation(UserLocation(
       latitude: 30.8650,
       longitude: _lng,
@@ -236,7 +257,7 @@ class _LiveFixture {
 
     await f.sp.requestRouteToSelectedPoi();
 
-    f.nc = NavigationController(
+    f.nc = NavigationViewModel(
       spaceProvider: f.sp,
       locationProvider: lp,
       navigationRepository: nav,

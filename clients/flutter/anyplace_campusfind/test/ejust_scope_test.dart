@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/data/repositories/space_repository.dart';
-import 'package:anyplace_campusfind/state/space_provider.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
+import 'package:anyplace_campusfind/repositories/space_repository.dart';
+import 'package:anyplace_campusfind/viewmodels/space_view_model.dart';
 import 'package:anyplace_campusfind/utils/campus_scope.dart';
 
 SpaceModel _space(String buid, String name, {String? cuid}) =>
@@ -91,9 +91,9 @@ void main() {
     });
   });
 
-  group('SpaceProvider.loadSpaces E-JUST filtering', () {
+  group('SpaceViewModel.loadSpaces E-JUST filtering', () {
     test('exposes only in-scope buildings downstream', () async {
-      final provider = SpaceProvider(
+      final provider = SpaceViewModel(
         repository: _Repo([
           _space('ej_1', 'EJUST Library', cuid: 'ejust'),
           _space('other_9', 'Foreign Hall', cuid: 'some_other_campus'),

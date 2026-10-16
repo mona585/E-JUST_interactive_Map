@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/ui/widgets/navigation_bottom_bar.dart';
+import 'package:anyplace_campusfind/widgets/navigation_bottom_bar.dart';
 
 void main() {
   testWidgets('compact navigation bar renders controls and fires callbacks',

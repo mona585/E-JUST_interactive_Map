@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anyplace_campusfind/config/api_config.dart';
 import 'package:anyplace_campusfind/config/constants.dart';
-import 'package:anyplace_campusfind/data/datasources/anyplace_api_client.dart';
+import 'package:anyplace_campusfind/datasources/anyplace_api_client.dart';
 
 void main() {
   // Guard: skip unless explicitly enabled via --dart-define=LIVE_SMOKE=true.

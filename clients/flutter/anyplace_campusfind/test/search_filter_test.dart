@@ -1,12 +1,8 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/models/floor_model.dart';
-import 'package:anyplace_campusfind/data/models/poi_model.dart';
-import 'package:anyplace_campusfind/data/models/space_model.dart';
-import 'package:anyplace_campusfind/providers/search_provider.dart';
-import 'package:anyplace_campusfind/screens/search_screen.dart';
+import 'package:anyplace_campusfind/models/floor_model.dart';
+import 'package:anyplace_campusfind/models/poi_model.dart';
+import 'package:anyplace_campusfind/models/space_model.dart';
 import 'package:anyplace_campusfind/services/search_service.dart';
 import 'package:anyplace_campusfind/utils/category_deriver.dart';
 
@@ -81,15 +77,6 @@ SearchService _seedService() {
   ]);
 
   return service;
-}
-
-Widget _buildTestWidget(SearchService service) {
-  return ProviderScope(
-    overrides: [
-      searchServiceProvider.overrideWithValue(service),
-    ],
-    child: const MaterialApp(home: SearchScreen()),
-  );
 }
 
 void main() {
@@ -310,140 +297,4 @@ void main() {
     });
   });
 
-  group('SearchScreen widget – filter sheet', () {
-    testWidgets('filter button is visible beside search field', (tester) async {
-      await tester.pumpWidget(_buildTestWidget(_seedService()));
-      await tester.pumpAndSettle();
-      expect(find.text('Filters'), findsOneWidget);
-    });
-
-    testWidgets('tapping Filters opens bottom sheet with expected content', (tester) async {
-      await tester.pumpWidget(_buildTestWidget(_seedService()));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Filters'));
-      await tester.pumpAndSettle();
-      expect(find.text('Narrow results by building and POI type.'), findsOneWidget);
-      expect(find.text('All buildings'), findsOneWidget);
-      final sheetListView = find.byType(ListView).last;
-      await tester.drag(sheetListView, const Offset(0, -200));
-      await tester.pumpAndSettle();
-      expect(find.text('All types'), findsOneWidget);
-    });
-
-    testWidgets('filter sheet shows building names (human-readable)', (tester) async {
-      await tester.pumpWidget(_buildTestWidget(_seedService()));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Filters'));
-      await tester.pumpAndSettle();
-      expect(find.text('Building B7'), findsWidgets);
-      expect(find.text('Building B3'), findsWidgets);
-      expect(find.text('Library'), findsWidgets);
-    });
-
-    testWidgets('filter sheet does not overflow on small screen', (tester) async {
-      tester.view.physicalSize = const Size(320, 568);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await tester.pumpWidget(_buildTestWidget(_seedService()));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Filters'));
-      await tester.pumpAndSettle();
-
-      final sheetListView = find.byType(ListView).last;
-      await tester.drag(sheetListView, const Offset(0, -500));
-      await tester.pumpAndSettle();
-
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('apply button closes sheet and updates results', (tester) async {
-      await tester.pumpWidget(_buildTestWidget(_seedService()));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Filters'));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Building B7').last);
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Apply Filters'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('1'), findsOneWidget);
-    });
-
-    testWidgets('clear button (X icon) resets filters', (tester) async {
-      await tester.pumpWidget(_buildTestWidget(_seedService()));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Filters'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Building B7').last);
-      await tester.tap(find.text('Apply Filters'));
-      await tester.pumpAndSettle();
-
-      expect(find.byIcon(Icons.close), findsWidgets);
-      await tester.tap(find.byIcon(Icons.close).first);
-      await tester.pumpAndSettle();
-
-      expect(find.text('1'), findsNothing);
-    });
-
-    testWidgets('search bar and filter button are side by side', (tester) async {
-      await tester.pumpWidget(_buildTestWidget(_seedService()));
-      await tester.pumpAndSettle();
-
-      final row = find.byType(Row).first;
-      expect(row, findsOneWidget);
-      final rowWidget = row.evaluate().first.widget as Row;
-      expect(rowWidget.children.length, greaterThanOrEqualTo(2));
-    });
-
-    testWidgets('search bar and filter button do not overflow on small screen', (tester) async {
-      tester.view.physicalSize = const Size(320, 568);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await tester.pumpWidget(_buildTestWidget(_seedService()));
-      await tester.pumpAndSettle();
-
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('B7 appears first after All buildings in filter sheet', (tester) async {
-      final service = SearchService();
-      service.addSpaces([
-        const SpaceModel(buid: 'buid_aaa', name: 'AAA Building', latitude: 35.1, longitude: 33.4),
-        const SpaceModel(
-          buid: 'building_b8f4e123-d58f-45b7-9942-4492b198c9e4_1786536183663',
-          name: 'B7', latitude: 35.1, longitude: 33.4,
-        ),
-        const SpaceModel(buid: 'buid_zzz', name: 'ZZZ Building', latitude: 35.1, longitude: 33.4),
-      ]);
-
-      await tester.pumpWidget(_buildTestWidget(service));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Filters'));
-      await tester.pumpAndSettle();
-
-      final allBuildingsFinder = find.text('All buildings');
-      final b7Finder = find.text('B7');
-
-      expect(allBuildingsFinder, findsOneWidget);
-      expect(b7Finder, findsOneWidget);
-
-      final allBuildingsBox = allBuildingsFinder.evaluate().first.renderObject as RenderBox;
-      final b7Box = b7Finder.evaluate().first.renderObject as RenderBox;
-      expect(b7Box.localToGlobal(Offset.zero).dy, greaterThan(allBuildingsBox.localToGlobal(Offset.zero).dy));
-
-      final aaaFinder = find.text('AAA Building');
-      expect(aaaFinder, findsOneWidget);
-      final aaaBox = aaaFinder.evaluate().first.renderObject as RenderBox;
-      expect(aaaBox.localToGlobal(Offset.zero).dy, greaterThan(b7Box.localToGlobal(Offset.zero).dy));
-    });
-  });
 }

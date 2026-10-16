@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:anyplace_campusfind/data/datasources/location_service.dart';
-import 'package:anyplace_campusfind/data/datasources/native_positioning_service.dart';
-import 'package:anyplace_campusfind/data/models/position_estimate.dart';
-import 'package:anyplace_campusfind/data/models/user_location.dart';
-import 'package:anyplace_campusfind/state/location_provider.dart';
+import 'package:anyplace_campusfind/datasources/location_service.dart';
+import 'package:anyplace_campusfind/datasources/native_positioning_service.dart';
+import 'package:anyplace_campusfind/models/position_estimate.dart';
+import 'package:anyplace_campusfind/models/user_location.dart';
+import 'package:anyplace_campusfind/viewmodels/location_view_model.dart';
 
 class _FakeLocationService implements LocationService {
   final _gpsController = StreamController<UserLocation>.broadcast();
@@ -97,7 +97,7 @@ void main() {
       (tester) async {
     final locationService = _FakeLocationService();
     final nativeService = _FakeNativePositioningService();
-    final provider = LocationProvider(
+    final provider = LocationViewModel(
       locationService: locationService,
       nativePositioningService: nativeService,
     );
@@ -119,7 +119,7 @@ void main() {
       (tester) async {
     final locationService = _FakeLocationService();
     final nativeService = _FakeNativePositioningService();
-    final provider = LocationProvider(
+    final provider = LocationViewModel(
       locationService: locationService,
       nativePositioningService: nativeService,
     );
@@ -143,7 +143,10 @@ void main() {
   testWidgets('stale timer expiry clears Wi-Fi belief and exits indoor mode',
       (tester) async {
     final nativeService = _FakeNativePositioningService();
-    final provider = LocationProvider(nativePositioningService: nativeService);
+    final provider = LocationViewModel(
+      locationService: _FakeLocationService(),
+      nativePositioningService: nativeService,
+    );
 
     nativeService.emit(_estimate());
     nativeService.emit(_estimate());
@@ -165,7 +168,10 @@ void main() {
   testWidgets('a newer estimate invalidates the pending staleness timer',
       (tester) async {
     final nativeService = _FakeNativePositioningService();
-    final provider = LocationProvider(nativePositioningService: nativeService);
+    final provider = LocationViewModel(
+      locationService: _FakeLocationService(),
+      nativePositioningService: nativeService,
+    );
 
     final first = _estimate();
     nativeService.emit(first);
