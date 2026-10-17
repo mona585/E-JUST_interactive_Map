@@ -1,0 +1,100 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as provider;
+
+import 'config/constants.dart';
+import 'config/theme.dart';
+import 'datasources/gps_location_service.dart';
+import 'providers/providers.dart';
+import 'views/main_shell.dart';
+import 'services/cache_service.dart';
+import 'viewmodels/location_view_model.dart';
+import 'viewmodels/navigation_view_model.dart';
+import 'viewmodels/space_view_model.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Composition root: concrete implementations are wired here, never inside
+  // view models.
+  final locationProvider = LocationViewModel(
+    locationService: GpsLocationService(),
+  );
+  final cacheService = CacheService();
+  final spaceProvider = SpaceViewModel(cacheService: cacheService);
+  final navigationController = NavigationViewModel(
+    spaceProvider: spaceProvider,
+    locationProvider: locationProvider,
+  );
+
+  // PHASE 3 wiring (INV-4/INV-5): browsing APIs stay navigation-neutral
+  // during live sessions; cross-tab destination opens end the run cleanly.
+  spaceProvider.isNavigationSessionLive = () => navigationController.isActive;
+  spaceProvider.terminateActiveSessionForRetarget =
+      navigationController.endNavigation;
+
+  runApp(
+    provider.MultiProvider(
+      providers: [
+        provider.ChangeNotifierProvider.value(value: locationProvider),
+        provider.ChangeNotifierProvider.value(value: spaceProvider),
+        provider.ChangeNotifierProvider.value(value: navigationController),
+      ],
+      child: ProviderScope(
+        overrides: [cacheServiceProvider.overrideWithValue(cacheService)],
+        child: const CampusFindApp(),
+      ),
+    ),
+  );
+}
+
+class CampusFindApp extends StatelessWidget {
+  const CampusFindApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: AppConstants.appName,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.system,
+      home: const RootRouter(),
+    );
+  }
+}
+
+class RootRouter extends ConsumerStatefulWidget {
+  const RootRouter({super.key});
+
+  @override
+  ConsumerState<RootRouter> createState() => _RootRouterState();
+}
+
+class _RootRouterState extends ConsumerState<RootRouter> {
+  bool _restored = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSelection();
+  }
+
+  Future<void> _restoreSelection() async {
+    final saved = await ref.read(cacheServiceProvider).getSelectedCampusId();
+    if (!mounted) return;
+    if (saved != AppConstants.primaryCampusCuid) {
+      await ref
+          .read(cacheServiceProvider)
+          .setSelectedCampusId(AppConstants.primaryCampusCuid);
+    }
+    setState(() => _restored = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_restored) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return const MainShell();
+  }
+}
