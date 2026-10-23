@@ -4,6 +4,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Anyplace Service Status ==="
 
+# Report the systemd unit state when installed (systemctl is the source of truth).
+if command -v systemctl &>/dev/null && systemctl list-unit-files anyplace.service &>/dev/null; then
+    UNIT_STATE=$(systemctl is-active anyplace 2>/dev/null || true)
+    echo " [·] systemd unit: ${UNIT_STATE:-unknown}"
+fi
+
 # Check MongoDB (honor env overrides; default loopback).
 MDB_HOST="${MONGODB_HOST:-127.0.0.1}"
 MDB_PORT="${MONGODB_PORT:-27017}"
@@ -21,7 +27,7 @@ else
     echo " [✗] Anyplace Backend: no process"
 fi
 for port in 9000 9001; do
-    if curl -fs -m 5 "http://127.0.0.1:$port/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
+    if curl -fsL -m 5 "http://127.0.0.1:$port/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
         echo " [✓] Anyplace API (Port $port): HEALTHY"
     else
         echo " [·] Anyplace API (Port $port): no health response"

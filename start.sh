@@ -15,7 +15,7 @@ if [ -d "/usr/lib/jvm/java-17-openjdk-amd64" ]; then
 fi
 
 # Java 17 reflection permissions required by Guice / CGLIB
-export JDK_JAVA_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED ${JDK_JAVA_OPTIONS:-}"
+export JDK_JAVA_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-exports=java.base/sun.net.www.protocol.file=ALL-UNNAMED ${JDK_JAVA_OPTIONS:-}"
 
 echo "=== Starting Anyplace Local Environment ==="
 

@@ -422,19 +422,25 @@ chmod +x "$ROOT_DIR/status.sh"
 cat << EOF > "$ROOT_DIR/anyplace.service"
 [Unit]
 Description=Anyplace Indoor Navigation Service
-After=network.target mongodb.service docker.service
+After=network-online.target mongod.service docker.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
 User=anyplace
 Group=anyplace
 WorkingDirectory=/opt/anyplace
-Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED"
+Environment="JDK_JAVA_OPTIONS=--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.io=ALL-UNNAMED --add-exports=java.base/sun.net.www.protocol.file=ALL-UNNAMED"
 Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
 EnvironmentFile=/etc/anyplace/anyplace.env
-ExecStart=/opt/anyplace/server/target/universal/stage/bin/anyplace -Dplay.http.secret.key=\${APPLICATION_SECRET} -Dapplication.secret=\${APPLICATION_SECRET} -Dhttp.port=9000
-Restart=on-failure
+ExecStartPre=-/bin/rm -f /opt/anyplace/RUNNING_PID
+ExecStart=/opt/anyplace/server/target/universal/stage/bin/anyplace -Dpidfile.path=/dev/null -Dplay.http.secret.key=\${APPLICATION_SECRET} -Dapplication.secret=\${APPLICATION_SECRET} -Dhttp.port=9000
+Restart=always
 RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

@@ -1,7 +1,9 @@
 [Unit]
 Description=Anyplace Indoor Navigation Service
-After=network-online.target mongod.service
+After=network-online.target mongod.service docker.service
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -15,9 +17,13 @@ Environment="JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64"
 # server/.env.example. Keep public-domain configuration out of this unit until
 # Phase 8.
 EnvironmentFile=/etc/anyplace/anyplace.env
-ExecStart=/opt/anyplace/server/target/universal/stage/bin/anyplace -Dplay.http.secret.key=${APPLICATION_SECRET} -Dapplication.secret=${APPLICATION_SECRET} -Dhttp.port=9000
-Restart=on-failure
+# A hard crash can leave a stale PID lockfile; never let it block a restart.
+ExecStartPre=-/bin/rm -f /opt/anyplace/RUNNING_PID
+ExecStart=/opt/anyplace/server/target/universal/stage/bin/anyplace -Dpidfile.path=/dev/null -Dplay.http.secret.key=${APPLICATION_SECRET} -Dapplication.secret=${APPLICATION_SECRET} -Dhttp.port=9000
+Restart=always
 RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
