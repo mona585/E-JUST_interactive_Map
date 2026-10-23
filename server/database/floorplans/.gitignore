@@ -1,0 +1,6 @@
+# Generated tile data — NEVER commit. These are regenerated on install
+# by scripts/restore-floorplans.sh from the committed source images above.
+# Only the source <buid>/fl_<n>/fl_<n> images are tracked.
+static_tiles/
+tiles_archive.zip
+*.log

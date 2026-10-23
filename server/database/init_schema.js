@@ -4,7 +4,8 @@
 // Idempotent: safe to run on every deploy (createIndex is a no-op when present).
 // ==============================================================================
 
-db = db.getSiblingDB('anyplace');
+// Respect the database selected on the mongosh command line.
+db = db.getSiblingDB(db.getName());
 
 const collections = [
   'users',

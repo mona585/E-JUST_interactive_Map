@@ -1,0 +1,17 @@
+E-JUST Anyplace mapping data snapshot
+
+This archive is the committed seed for a fresh deployment. It contains the
+campus, building, floorplan metadata, POIs, and connector edges for the
+E-JUST pilot. Floorplan source images live next to it in
+server/database/floorplans/.
+
+Restore with:
+  sudo scripts/restore-dataset.sh
+
+Notes:
+- The bundled user record is excluded by default, so no shared credentials are
+  imported and existing application users are left untouched. Register the
+  first admin through /api/user/register after deployment.
+- Pass --keep-users only for isolated lab environments.
+- The archive is restored with --drop for the mapping collections, so re-running
+  it replaces the mapping data.
