@@ -68,6 +68,7 @@ USGSOverlay.prototype.onAdd = function() {
 
     // Create an IMG element and attach it to the DIV.
     var img = document.createElement('img');
+    img.decoding = 'async';
     img.src = this.image64;
     img.style.width = '100%';
     img.style.height = '100%';
