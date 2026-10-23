@@ -62,7 +62,7 @@ class NavigationController @Inject()(cc: ControllerComponents,
   private implicit val blockingEc: ExecutionContext =
     actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
 
-  def getBuildingById: Action[AnyContent] = Action {
+  def getBuildingById: Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -87,10 +87,10 @@ class NavigationController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
-  def getPoisById: Action[AnyContent] = Action {
+  def getPoisById: Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -115,10 +115,10 @@ class NavigationController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
-  def getNavigationRoute: Action[AnyContent] = Action {
+  def getNavigationRoute: Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -166,7 +166,7 @@ class NavigationController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   /** Outdoor campus route between POIs in `cuid`. */
@@ -242,7 +242,8 @@ class NavigationController @Inject()(cc: ControllerComponents,
       }(blockingEc)
   }
 
-  def getNavigationRouteXY: Action[AnyContent] = Action {    implicit request =>
+  def getNavigationRouteXY: Action[AnyContent] = Action.async {
+    implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -325,7 +326,7 @@ class NavigationController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   private def navigateSameFloor(from: JsValue, to: JsValue): List[JsValue] = {

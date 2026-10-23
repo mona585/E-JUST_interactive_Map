@@ -2,14 +2,13 @@ package controllers
 
 import datasources.{DatasourceException, ProxyDataSource, SCHEMA}
 
-import scala.util.control.Breaks
 import models.oauth.OAuth2Request
 import play.api.libs.json._
 import play.api.mvc._
 import play.api.Environment
 import play.twirl.api.TwirlHelperImports.twirlJavaCollectionToScala
 import utils.json.VALIDATE
-import utils.{LOG, RESPONSE, Utils}
+import utils.{AccessPointIdsCache, LOG, RESPONSE, Utils}
 
 import java.io.IOException
 import java.util
@@ -106,72 +105,9 @@ class AccessPointController @Inject()(cc: ControllerComponents,
         if (accessPointsOfReq == null) return RESPONSE.MISSING_FIELDS(java.util.Collections.singletonList("ids"))
         try {
           val reqFile = "public/anyplace_architect/ids.json"
-          val file = env.classLoader.getResourceAsStream(reqFile)
-          var accessPointsOfFile: List[JsObject] = null
-          if (file != null) {
-            try {
-              accessPointsOfFile = Json.parse(file).asOpt[List[JsObject]].getOrElse(return RESPONSE.ERROR_INTERNAL("Could not retrieve access points."))
-            } catch {
-              case _: Exception => return RESPONSE.ERROR_INTERNAL("Could not retrieve access points.")
-            }
-          } else {
-            return RESPONSE.NOT_FOUND("Access points not found.")
-          }
-
-          val APsIDs: util.ArrayList[String] = new util.ArrayList[String]()
-          var found = false
-          var firstBitFound = false
-          var sameBits = 0
-          var sameBitsOfReq = 0
-          var idOfReq: String = ""
-          val loop = new Breaks
-          val inner_loop = new Breaks
-
-          for (accessPointOfReq: String <- accessPointsOfReq) {
-            idOfReq = "N/A"
-            loop.breakable {
-              for (accessPointOfFile: JsObject <- accessPointsOfFile) {
-                val bitsR = accessPointOfReq.split(":")
-                val bitsA = accessPointOfFile.value("mac").as[String].split(":")
-                if (bitsA(0).equalsIgnoreCase(bitsR(0))) {
-
-                  firstBitFound = true
-                  var i = 0
-                  inner_loop.breakable {
-                    for (i <- 0 until bitsA.length) {
-                      if (i < bitsR.length && bitsA(i).equalsIgnoreCase(bitsR(i))) {
-                        sameBits += 1
-                      } else {
-                        inner_loop.break()
-                      }
-                    }
-                  }
-                  if (sameBits >= 3) found = true
-                } else {
-                  sameBits = 0
-                  if (firstBitFound) {
-                    firstBitFound = false
-                    loop.break()
-                  }
-                }
-
-                if (sameBitsOfReq < sameBits && found) {
-                  sameBitsOfReq = sameBits
-                  idOfReq = accessPointOfFile.value("id").as[String]
-                }
-                sameBits = 0
-              }
-            } //accessPointOfFile break
-
-            APsIDs.add(idOfReq)
-            sameBitsOfReq = 0
-            found = false
-          }
-
-          if (accessPointsOfReq == null) {
-            return RESPONSE.BAD("Access Points do not exist or could not be retrieved.")
-          }
-          val res: JsValue = Json.obj("accessPoints" -> APsIDs.toList)
+          val apIdsOpt = AccessPointIdsCache.lookup(accessPointsOfReq, () => env.classLoader.getResourceAsStream(reqFile))
+          if (apIdsOpt.isEmpty) return RESPONSE.NOT_FOUND("Access points not found.")
+          val res: JsValue = Json.obj("accessPoints" -> apIdsOpt.get)
           try {
             RESPONSE.gzipJsonOk(res.toString)
           } catch {

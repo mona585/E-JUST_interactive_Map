@@ -159,6 +159,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
         try {
           val floorfile = new File(filePath)
           if (floorfile.exists()) HelperMethods.recDeleteDirFile(floorfile.getParentFile)
+          FloorplanCache.invalidate(buid, floorNum)
         } catch {
           case e: IOException => return RESPONSE.ERROR("While deleting floorplan." +
             "\nRelated data are deleted from the database.", e)

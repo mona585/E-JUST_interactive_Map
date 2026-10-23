@@ -155,12 +155,11 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           if (!file.canRead) return RESPONSE.NOT_FOUND("Floorplan not found.")
 
           try {
-            val s = Utils.encodeFileToBase64Binary(fu, filePath)
-            try {
-              RESPONSE.gzipOk(s)
-            } catch {
-              case ioe: IOException => Ok(s)
-            }
+            val cached = FloorplanCache.getOrCompute(buid, floorNum, file, fu)
+            Ok(cached.gzippedBytes).withHeaders(
+              ("Content-Encoding", "gzip"),
+              ("Content-Length", cached.gzippedBytes.length.toString)
+            ).as("text/plain")
           } catch {
             case e: IOException => return RESPONSE.BAD("Requested floorplan cannot be encoded in base64 properly: " +
               floorNum)
@@ -202,8 +201,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           try
             if (!file.exists || !file.canRead) { all_floors.add("") }
             else try {
-              val s = Utils.encodeFileToBase64Binary(fu, filePath)
-              all_floors.add(s)
+              val cached = FloorplanCache.getOrCompute(buid, floors(z), file, fu)
+              all_floors.add(cached.base64)
             } catch {
               case _: IOException =>
                 return RESPONSE.BAD("Cannot encode floorplan: " + floors(z))
@@ -291,6 +290,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         var floor_file: File = null
         try {
           floor_file = tilerHelper.storeFloorPlanToServer(buid, floorNum, floorplan.ref.file)
+          FloorplanCache.invalidate(buid, floorNum)
         } catch {
           case e: AnyPlaceException => return RESPONSE.BAD("Cannot save floorplan on the server.")
         }
@@ -383,6 +383,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         var floor_file: File = null
         try {
           floor_file = tilerHelper.storeFloorPlanToServer(buid, floorNum, floorplan.ref.path.toFile)
+          FloorplanCache.invalidate(buid, floorNum)
         } catch {
           case _: AnyPlaceException => return RESPONSE.BAD("Cannot save floorplan.")
         }
