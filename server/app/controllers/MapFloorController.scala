@@ -37,6 +37,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
           (SCHEMA.fOwnerId -> Json.toJson(owner_id))
         val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
           .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        if (!Utils.isSafePathSegment(buid)) return RESPONSE.BAD("Invalid building identifier.")
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
           if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
@@ -84,6 +85,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
           (SCHEMA.fOwnerId -> Json.toJson(owner_id))
         val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
           .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        if (!Utils.isSafePathSegment(buid)) return RESPONSE.BAD("Invalid building identifier.")
         try {
           val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
           if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
@@ -152,6 +154,8 @@ class MapFloorController @Inject()(cc: ControllerComponents,
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
         val filePath = tilerHelper.getFloorPlanFor(buid, floorNum)
+        if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         try {
           val floorfile = new File(filePath)
           if (floorfile.exists()) HelperMethods.recDeleteDirFile(floorfile.getParentFile)
@@ -176,6 +180,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
         if (checkRequirements != null) return checkRequirements
         val buid = (json \ SCHEMA.fBuid).asOpt[String].map(_.trim).filter(_.nonEmpty)
           .getOrElse(return RESPONSE.BAD("Invalid buid."))
+        if (!Utils.isSafePathSegment(buid)) return RESPONSE.BAD("Invalid building identifier.")
         try {
           val floors = pds.db.floorsByBuildingAsJson(buid)
           val res: JsValue = Json.obj("floors" -> floors.asScala)

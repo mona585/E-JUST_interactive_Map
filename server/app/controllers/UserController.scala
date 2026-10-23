@@ -4,26 +4,20 @@ import java.security.MessageDigest
 import datasources.MongodbDatasource.updateCachedModerators
 import datasources.{MongodbDatasource, ProxyDataSource, SCHEMA}
 
-import scala.concurrent.duration.Duration
 import javax.inject.{Inject, Singleton}
 import utils.json.VALIDATE
 import models.{Account, ExternalType}
 import models.ExternalType.ExternalType
 import models.oauth.OAuth2Request
-import org.mongodb.scala.MongoDatabase
-import org.mongodb.scala.model.Filters.equal
 import play.api.Configuration
 import play.api.libs.json._
 import play.api.mvc._
 import utils.JsonUtils.isNullOrEmpty
 import utils.{JsonUtils, LOG, Network, RESPONSE, Utils}
 
-import scala.concurrent.Await
-
 @Singleton
 class UserController @Inject()(cc: ControllerComponents,
                                pds: ProxyDataSource,
-                               mongoDB: MongodbDatasource,
                                userHelper: helper.User)
   extends AbstractController(cc) {
 
@@ -175,9 +169,8 @@ class UserController @Inject()(cc: ControllerComponents,
         LOG.D2("User: loginGoogle")
         val auth = new OAuth2Request(request)
         if (!auth.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
-        var json = auth.getJsonBody()
+        val json = auth.getJsonBody()
         if (isNullOrEmpty(json)) return RESPONSE.BAD(RESPONSE.ERROR_API_USAGE)
-        json = appendUserType(json)
         val external = json \ SCHEMA.fExternal
 
         if (external.toOption.isDefined && external.asOpt[String].contains("google")) {
@@ -304,64 +297,30 @@ class UserController @Inject()(cc: ControllerComponents,
       inner(request)
   }
 
-  def appendUserType(json: JsValue): JsValue = {
-    (json \ SCHEMA.fType).asOpt[String] match {
-      case Some(t) =>
-        LOG.I("appendUserType: type exists: " + t)
-        // Never trust a client-supplied type; the caller overwrites it server-side.
-        return json
-      case None => // assigned below
-    }
-    var userType: String = ""
-    if (isFirstUser) {
-      userType = "admin"
-      LOG.I("Initializing admin user.")
-    } else {
-      LOG.D4("AppendUserType: user")
-      userType = "user"
-    }
-    return json.as[JsObject] + (SCHEMA.fType -> JsString(userType))
-  }
-
   def getAccountType(json: JsValue): ExternalType = {
     if ((json \ SCHEMA.fExternal).asOpt[String].contains("google")) return ExternalType.GOOGLE
     ExternalType.LOCAL
   }
 
-  def isFirstUser: Boolean = {
-    val mdb: MongoDatabase = mongoDB.getMDB
-    val collection = mdb.getCollection(SCHEMA.cUsers)
-    val users = collection.find()
-    val awaited = Await.result(users.toFuture(), Duration(10, "seconds"))
-    val res = awaited.toList
-
-    res.isEmpty
-  }
-
   def getGoogleUser(json: JsValue): JsValue = {
-    var user: JsValue = null
     getAccountType(json) match {
       case ExternalType.GOOGLE =>
-      val mdb: MongoDatabase = mongoDB.getMDB
-        val collection = mdb.getCollection(SCHEMA.cUsers)
         val ownerId = (json \ SCHEMA.fOwnerId).asOpt[String].filter(_.nonEmpty).orNull
         if (ownerId == null) {
           LOG.E("getGoogleUser: missing owner_id.")
           return null
         }
-        val userLookUp = collection.find(equal(SCHEMA.fOwnerId, ownerId))
-        val awaited = Await.result(userLookUp.toFuture(), Duration(10, "seconds"))
-        val res = awaited.toList
-        if (res.size == 1) {
-          user = mongoDB.convertJson(res.head)
-        } else if (res.size > 1) {
+        val users = pds.db.getUserFromOwnerId(ownerId)
+        if (users == null) return null
+        if (users.size > 1) {
           LOG.E("User exists. More than one user with id: " + ownerId)
           return null
         }
-      case _ => LOG.E("Not a Google User.")
+        users.head
+      case _ =>
+        LOG.E("Not a Google User.")
+        null
     }
-
-    user
   }
 
   /**

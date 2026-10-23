@@ -27,6 +27,11 @@ class CampusContractSpec extends PlaySpecification with IsolatedFixture {
     Json.parse(extractString(result))
   }
 
+  if (!MongoTestSupport.enabled) {
+    "Mongo-backed campus contract" should {
+      "run only against the controlled test database" in skipped(MongoTestSupport.skipMessage)
+    }
+  } else {
 
   "Campus pilot liveness" should {
 
@@ -55,8 +60,70 @@ class CampusContractSpec extends PlaySpecification with IsolatedFixture {
       val response = route(app, FakeRequest(POST, "/api/mapping/space/public")
         .withJsonBody(Json.obj())).get
       status(response) must equalTo(OK)
+      contentType(response) must beSome("application/json")
       val json = extractJson(response)
       (json \ "spaces").asOpt[Seq[JsValue]] must beSome
+    }
+
+    "return campus spaces in buids order and skip deleted buildings" in new WithApplication {
+      val tag = freshTag()
+      val cuid = s"cuid_order_$tag"
+      val first = s"buid_order_first_$tag"
+      val second = s"buid_order_second_$tag"
+      val missing = s"buid_order_missing_$tag"
+      seed("campuses", Json.obj("cuid" -> cuid, "name" -> "Order Campus",
+        "buids" -> Json.arr(second, first, missing)))
+      seed("spaces", Json.obj("buid" -> first, "name" -> "First", "is_published" -> "true"))
+      seed("spaces", Json.obj("buid" -> second, "name" -> "Second", "is_published" -> "true"))
+      try {
+        val response = route(app, FakeRequest(POST, "/api/mapping/campus/get")
+          .withJsonBody(Json.obj("cuid" -> cuid))).get
+        status(response) must equalTo(OK)
+        val spaces = (extractJson(response) \ "spaces").as[Seq[JsValue]]
+        spaces.flatMap(space => (space \ "buid").asOpt[String]) must equalTo(Seq(second, first))
+      } finally {
+        db.deleteFromKey("spaces", "buid", first)
+        db.deleteFromKey("spaces", "buid", second)
+        db.deleteFromKey("campuses", "cuid", cuid)
+      }
+    }
+  }
+
+  "Campus POI search" should {
+
+    "return each greeklish match once across multi-word queries" in new WithApplication {
+      val tag = freshTag()
+      val cuid = s"cuid_search_$tag"
+      val buid = s"buid_search_$tag"
+      val matchPuid = s"puid_search_match_$tag"
+      val otherPuid = s"puid_search_other_$tag"
+      seed("campuses", Json.obj("cuid" -> cuid, "name" -> "Search Campus",
+        "description" -> "t", "greeklish" -> "false", "buids" -> Json.arr(buid)))
+      seed("pois", Json.obj("puid" -> matchPuid, "buid" -> buid, "floor_number" -> "0",
+        "name" -> "Καφετερια", "description" -> "Coffee place",
+        "coordinates_lat" -> "35.0", "coordinates_lon" -> "33.0", "pois_type" -> "Room"))
+      seed("pois", Json.obj("puid" -> otherPuid, "buid" -> buid, "floor_number" -> "0",
+        "name" -> "Library", "description" -> "Quiet study",
+        "coordinates_lat" -> "35.1", "coordinates_lon" -> "33.1", "pois_type" -> "Room"))
+      try {
+        val byCampus = route(app, FakeRequest(POST, "/api/mapping/pois/search")
+          .withJsonBody(Json.obj("cuid" -> cuid, "letters" -> "kafeteria coffee",
+            "greeklish" -> "true"))).get
+        status(byCampus) must equalTo(OK)
+        val campusPois = (extractJson(byCampus) \ "pois").asOpt[Seq[JsValue]].get
+        campusPois.count(p => (p \ "puid").asOpt[String].contains(matchPuid)) must equalTo(1)
+        campusPois.exists(p => (p \ "puid").asOpt[String].contains(otherPuid)) must beFalse
+
+        val byBuilding = route(app, FakeRequest(POST, "/api/mapping/pois/search")
+          .withJsonBody(Json.obj("buid" -> buid, "letters" -> "kafeteria coffee"))).get
+        status(byBuilding) must equalTo(OK)
+        val buildingPois = (extractJson(byBuilding) \ "pois").asOpt[Seq[JsValue]].get
+        buildingPois.count(p => (p \ "puid").asOpt[String].contains(matchPuid)) must equalTo(1)
+      } finally {
+        db.deleteFromKey("pois", "puid", matchPuid)
+        db.deleteFromKey("pois", "puid", otherPuid)
+        db.deleteFromKey("campuses", "cuid", cuid)
+      }
     }
   }
 
@@ -529,11 +596,26 @@ class CampusContractSpec extends PlaySpecification with IsolatedFixture {
       }
     }
 
-    "reject traversal identifiers on tile endpoints" in new WithApplication {      val evil = route(app, FakeRequest(POST, "/api/floortiles/zip/../..//0")
+    "reject traversal identifiers on tile endpoints" in new WithApplication {
+      val evil = route(app, FakeRequest(POST, "/api/floortiles/zip/../..//0")
         .withJsonBody(Json.obj())).get
       status(evil) must beOneOf(NOT_FOUND, BAD_REQUEST)
       val evilTiles = route(app, FakeRequest(GET, "/api/floortiles/buid_eng/0/..%2F..%2Fetc%2Fhostname")).get
       status(evilTiles) must beOneOf(NOT_FOUND, BAD_REQUEST)
+    }
+
+    "reject traversal identifiers on radiomap endpoints" in new WithApplication {
+      val byFloor = route(app, FakeRequest(POST, "/api/radiomap/space")
+        .withJsonBody(Json.obj("buid" -> "../../etc", "floor" -> "0"))).get
+      status(byFloor) must equalTo(BAD_REQUEST)
+
+      val byFloors = route(app, FakeRequest(POST, "/api/radiomap/floors")
+        .withJsonBody(Json.obj("buid" -> "../../etc", "floors" -> "0"))).get
+      status(byFloors) must equalTo(BAD_REQUEST)
+
+      val badFloor = route(app, FakeRequest(POST, "/api/radiomap/floors")
+        .withJsonBody(Json.obj("buid" -> "buid_safe", "floors" -> "0 ../../etc"))).get
+      status(badFloor) must equalTo(BAD_REQUEST)
     }
   }
 
@@ -611,6 +693,14 @@ class CampusContractSpec extends PlaySpecification with IsolatedFixture {
       val response = route(app, FakeRequest(POST, "/api/mapping/pois/search")
         .withJsonBody(Json.obj())).get
       status(response) must equalTo(BAD_REQUEST)
+    }
+
+    "400 oversized POI searches before running greeklish expansion" in new WithApplication {
+      for (letters <- Seq("a" * 129, (1 to 9).map(_ => "a").mkString(" "))) {
+        val response = route(app, FakeRequest(POST, "/api/mapping/pois/search")
+          .withJsonBody(Json.obj("buid" -> "x", "letters" -> letters))).get
+        status(response) must equalTo(BAD_REQUEST)
+      }
     }
 
     "never 500 malformed access-point ids" in new WithApplication {
@@ -911,5 +1001,6 @@ class CampusContractSpec extends PlaySpecification with IsolatedFixture {
         db.deleteFromKey("campuses", "cuid", cuid)
       }
     }
+  }
   }
 }

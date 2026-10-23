@@ -12,21 +12,30 @@ class FileUtils @Inject()(cc: ControllerComponents,
   extends AbstractController(cc) {
   val RADIO_MAPS_FROZEN_DIR = conf.get[String]("radioMapFrozenDir")
 
+  private def requireSafeSegment(value: String, label: String): String = {
+    if (!Utils.isSafePathSegment(value))
+      throw new IllegalArgumentException("Invalid " + label + " identifier.")
+    value
+  }
+
   def getDirFrozenFloor(buid: String, floor_number: String): File = {
-    return new File(RADIO_MAPS_FROZEN_DIR + api.sep + buid + api.sep + floor_number)
+    requireSafeSegment(buid, "building")
+    requireSafeSegment(floor_number, "floor")
+    val dir = new File(RADIO_MAPS_FROZEN_DIR + api.sep + buid + api.sep + floor_number)
+    if (!Utils.isWithinRoot(RADIO_MAPS_FROZEN_DIR, dir.getPath))
+      throw new IllegalArgumentException("Invalid building or floor identifier.")
+    dir
   }
 
   def getRadiomapFile(buid: String, floor_number: String): File = {
-    return new File(RADIO_MAPS_FROZEN_DIR + api.sep + buid + api.sep +
-      floor_number + api.sep + "indoor-radiomap.txt")
+    new File(getDirFrozenFloor(buid, floor_number), "indoor-radiomap.txt")
   }
   def getMeanFile(buid: String, floor_number: String): File = {
-    return new File(RADIO_MAPS_FROZEN_DIR + api.sep + buid + api.sep +
-      floor_number + api.sep + "indoor-radiomap-mean.txt")
+    new File(getDirFrozenFloor(buid, floor_number), "indoor-radiomap-mean.txt")
   }
 
   def getRadioMapFileName(buid: String, floor_number: String): File = {
-    return new File(getDirFrozenFloor(buid, floor_number).toString + api.sep + "indoor-radiomap.txt")
+    new File(getDirFrozenFloor(buid, floor_number), "indoor-radiomap.txt")
   }
 
   def getFilePos(fileName: String): Int = {

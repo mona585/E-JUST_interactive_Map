@@ -101,6 +101,18 @@ class ValidateSpec extends Specification {
       helper.validateGoogleTokenInfo(good - "expires_in", Some("test-client-id")) must beNull
     }
 
+    "reject an absolute expiry in the past" in {
+      helper.validateGoogleTokenInfo(
+        good + ("exp" -> Json.toJson(1L)), Some("test-client-id")) must beNull
+    }
+
+    "accept a future absolute expiry when expires_in is absent" in {
+      val future = System.currentTimeMillis() / 1000L + 3600L
+      helper.validateGoogleTokenInfo(
+        good - "expires_in" + ("exp" -> Json.toJson(future)),
+        Some("test-client-id")) must equalTo("google-123")
+    }
+
     "reject a subject-less token" in {
       helper.validateGoogleTokenInfo(good - "sub", Some("test-client-id")) must beNull
     }

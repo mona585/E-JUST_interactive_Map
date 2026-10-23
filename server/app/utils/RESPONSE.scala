@@ -75,49 +75,49 @@ object RESPONSE {
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(400))
-                Results.BadRequest(res.toString)
+                Results.BadRequest(res).as("application/json")
 
             case Response.OK =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("success")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(200))
-                Results.Ok(res.toString)
+                Results.Ok(res).as("application/json")
 
             case Response.FORBIDDEN =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(403))
-                Results.Forbidden(res.toString)
+                Results.Forbidden(res).as("application/json")
 
             case Response.UNAUTHORIZED_ACCESS =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(401))
-                Results.Unauthorized(res.toString)
+                Results.Unauthorized(res).as("application/json")
 
             case Response.INTERNAL_SERVER_ERROR =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(500))
-                Results.InternalServerError(res.toString)
+                Results.InternalServerError(res).as("application/json")
 
             case Response.NOT_FOUND =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString(message)) +
                   ("status_code" -> JsNumber(404))
-                Results.NotFound(res.toString)
+                Results.NotFound(res).as("application/json")
 
             case _ =>
                 val res: JsObject = obj.as[JsObject] +
                   ("status" -> JsString("error")) +
                   ("message" -> JsString("Unknown Action")) +
                   ("status_code" -> JsNumber(403))
-                Results.BadRequest(res.toString)
+                Results.BadRequest(res).as("application/json")
         }
     }
 
@@ -153,15 +153,14 @@ object RESPONSE {
     def BAD_CANNOT_READ_FLOORPLAN(floorNum: String): Result = BAD_CANNOT_READ("Floorplan", floorNum)
     def BAD_FLOORPLAN_ZOOM_LEVEL(z: String): Result = BAD("Minimum zoom level is "+ MIN_ZOOM_UPLOAD +". Provided: " + z)
 
-    private def prettyException(e: Exception): String = s"500: ${e.getClass}: ${e.getMessage}"
-
     def ERROR(e: Exception): Result = {
-        CreateResultResponse(Response.INTERNAL_SERVER_ERROR, null, prettyException(e))
+        LOG.E("RESPONSE.ERROR", e)
+        CreateResultResponse(Response.INTERNAL_SERVER_ERROR, null, "Internal server error.")
     }
 
     def ERROR(tag: String, e: Exception): Result = {
-        val msg = tag+": "+prettyException(e)
-        CreateResultResponse(Response.INTERNAL_SERVER_ERROR, null, msg)
+        LOG.E(tag, e)
+        CreateResultResponse(Response.INTERNAL_SERVER_ERROR, null, "Internal server error.")
     }
 
     def ERROR_INTERNAL(msg: String): Result =
@@ -193,8 +192,7 @@ object RESPONSE {
     def gzipJsonOk(body: String): Result = {
         val gzipv = Utils.gzip(body)
         Ok(gzipv.toByteArray).withHeaders(("Content-Encoding", "gzip"),
-            ("Content-Length", gzipv.size.toString),
-            ("Content-Type", "application/json"))
+            ("Content-Length", gzipv.size.toString)).as("application/json")
     }
 
     def gzipOk(body: String): Result = {

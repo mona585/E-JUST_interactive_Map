@@ -25,7 +25,15 @@ class ApplicationSpec extends PlaySpecification {
     Json.parse(extractString(result))
   }
 
+  if (!MongoTestSupport.enabled) {
+    "Mongo-backed application API" should {
+      "run only against the controlled test database" in skipped(MongoTestSupport.skipMessage)
+    }
+  }
+
   "Core public API" should {
+
+    if (MongoTestSupport.enabled) {
 
     "redirect an unknown GET route to Viewer" in new WithApplication {
       val response = route(app, FakeRequest(GET, "/invalid-route-path")).get
@@ -41,6 +49,7 @@ class ApplicationSpec extends PlaySpecification {
     "return spaces array on public endpoint" in new WithApplication {
       val response = route(app, FakeRequest(POST, "/api/mapping/space/public").withJsonBody(Json.obj())).get
       status(response) must equalTo(OK)
+      contentType(response) must beSome("application/json")
       val json = extractJson(response)
       (json \ "spaces").asOpt[Seq[JsValue]] must beSome
     }
@@ -51,6 +60,8 @@ class ApplicationSpec extends PlaySpecification {
       // Both endpoints return NO_ACCESS_TOKEN (401) before any body/DB checks.
       status(coOwners) must equalTo(UNAUTHORIZED)
       status(access) must equalTo(UNAUTHORIZED)
+    }
+
     }
 
     "build public API URLs from public.baseUrl" in {

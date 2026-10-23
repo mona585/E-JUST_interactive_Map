@@ -164,10 +164,10 @@ object VALIDATE {
       } else if (k == fFloor || k == fFloorA || k == fFloorB) {
         val r = floor(json, k)
         if (r != null) errors.add(r)
-      } else if (k == fTimestampY || k == fTimestampX || k == fTimestampY) {
+      } else if (k == fTimestamp || k == fTimestampX || k == fTimestampY) {
         val r = timestamp(json, k)
         if (r != null) errors.add(r)
-      } else if (k == fY || k == fX || k == fY) {
+      } else if (k == fX || k == fY) {
         val r = xyz(json, k)
         if (r != null) errors.add(r)
       } else if (k == "lat1" || k == "lat2" || k == "lon1" || k == "lon2" || k == fCoordinatesLat || k == fCoordinatesLon) {

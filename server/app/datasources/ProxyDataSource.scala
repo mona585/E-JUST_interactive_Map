@@ -142,6 +142,11 @@ class ProxyDataSource @Inject() (conf: Configuration) extends IDatasource {
     activeDB.poisByBuildingAsJson(buid)
   }
 
+  override def getSpacesByBuids(buids: List[String]): List[JsValue] = {
+    checkHasActiveDB()
+    activeDB.getSpacesByBuids(buids)
+  }
+
   override def poiByBuidFloorPuid(buid: String, floor_number: String, puid: String): Boolean = {
     checkHasActiveDB()
     activeDB.poiByBuidFloorPuid(buid, floor_number, puid)
@@ -150,6 +155,11 @@ class ProxyDataSource @Inject() (conf: Configuration) extends IDatasource {
   override def poisByBuildingAsMap(buid: String): java.util.List[HashMap[String, String]] = {
     checkHasActiveDB()
     activeDB.poisByBuildingAsMap(buid)
+  }
+
+  override def poisByBuildingIdsAsMap(buids: List[String]): java.util.List[HashMap[String, String]] = {
+    checkHasActiveDB()
+    activeDB.poisByBuildingIdsAsMap(buids)
   }
 
   override def floorsByBuildingAsJson(buid: String): java.util.List[JsValue] = {

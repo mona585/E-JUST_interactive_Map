@@ -94,8 +94,10 @@ trait IDatasource {
   def poisByBuildingFloorAsJson(buid: String, floor_number: String): List[JsValue]
   def poisByBuildingFloorAsMap(buid: String, floor_number: String): java.util.List[HashMap[String, String]]
   def poisByBuildingAsJson(buid: String): java.util.List[JsValue]
+  def getSpacesByBuids(buids: List[String]): List[JsValue]
   def poiByBuidFloorPuid(buid: String, floor_number: String, puid: String): Boolean
   def poisByBuildingAsMap(buid: String): java.util.List[HashMap[String, String]]
+  def poisByBuildingIdsAsMap(buids: List[String]): java.util.List[HashMap[String, String]]
   def floorsByBuildingAsJson(buid: String): java.util.List[JsValue]
   def connectionsByBuildingAsJson(buid: String): List[JsValue]
   def connectionsByBuildingAsMap(buid: String): java.util.List[HashMap[String, String]]

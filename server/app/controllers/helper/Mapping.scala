@@ -48,7 +48,7 @@ import play.api.libs.json.{JsValue, Json}
 import play.api.mvc.Result
 import modules.radiomapserver.RadioMap.{RBF_ENABLED, RadioMap}
 import utils.Utils.{MD5, generateRandomRssLogFileName}
-import utils.{RESPONSE, AnyplaceServerAPI, FileUtils, GeoPoint, LOG}
+import utils.{RESPONSE, AnyplaceServerAPI, FileUtils, GeoPoint, LOG, Utils}
 import javax.inject.Singleton
 
 @Singleton
@@ -63,15 +63,13 @@ class Mapping @Inject() (api: AnyplaceServerAPI, conf: Configuration, fu: FileUt
    */
   def updateFrozenRadioMap(buid: String, floor_number: String): String = {
     val cls = "updateFrozenRadioMap: "
-    if (!Floor.checkFloorNumberFormat(floor_number)) {
+    if (!Floor.checkFloorNumberFormat(floor_number) ||
+      !Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floor_number)) {
       return null
     }
     LOG.D1(cls + buid + ":" + floor_number)
 
-    val radioMapsFrozenDir = conf.get[String]("radioMapFrozenDir")
-
-    val rmapDir = new File(radioMapsFrozenDir + api.sep + buid + api.sep +
-      floor_number)
+    val rmapDir = fu.getDirFrozenFloor(buid, floor_number)
 
     if (!rmapDir.exists() && !rmapDir.mkdirs()) {
       return cls + "failed to create: " + rmapDir.toString

@@ -42,7 +42,7 @@ import java.util.{Date, UUID}
 import javax.crypto._
 import javax.crypto.spec.{IvParameterSpec, PBEKeySpec, SecretKeySpec}
 import java.text.SimpleDateFormat
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File, UnsupportedEncodingException}
+import java.io.{ByteArrayOutputStream, File, UnsupportedEncodingException}
 import org.apache.commons.codec.binary.Base64
 import play.api.libs.json.{JsObject, JsValue}
 
@@ -254,20 +254,10 @@ object Utils {
 
     def gzip(input: String): ByteArrayOutputStream = {
         val inputBytes = input.getBytes("UTF-8")
-        val inputStream = new ByteArrayInputStream(inputBytes)
-        val stringOutputStream = new ByteArrayOutputStream((inputBytes.length * 0.75).toInt max 1024)
-        val gzipOutputStream = new GZIPOutputStream(stringOutputStream)
-        val buf = Array.ofDim[Byte](8192)
-        try {
-          var len = inputStream.read(buf)
-          while (len > 0) {
-            gzipOutputStream.write(buf, 0, len)
-            len = inputStream.read(buf)
-          }
-        } finally {
-          try { inputStream.close() } catch { case _: Exception => }
-          try { gzipOutputStream.close() } catch { case _: Exception => }
-        }
+        val stringOutputStream = new ByteArrayOutputStream((inputBytes.length * 0.5).toInt max 1024)
+        val gzipOutputStream = new GZIPOutputStream(stringOutputStream, 8192)
+        try gzipOutputStream.write(inputBytes)
+        finally gzipOutputStream.close()
         stringOutputStream
     }
 

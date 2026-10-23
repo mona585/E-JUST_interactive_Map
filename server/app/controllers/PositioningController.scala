@@ -139,6 +139,8 @@ class PositioningController @Inject()(cc: ControllerComponents,
         if (storedSpace == null) return RESPONSE.NOT_FOUND("Space not found.")
         val rmapFile = new File(radioMapsFrozenDir + api.sep + buid + api.sep +
           floor + api.sep + "indoor-radiomap-mean.txt")
+        if (!Utils.isWithinRoot(radioMapsFrozenDir, rmapFile.getPath))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         if (!rmapFile.exists()) {  // Regenerate the radiomap files
           mapHelper.updateFrozenRadioMap(buid, floor)
         }

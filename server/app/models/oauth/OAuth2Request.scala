@@ -83,17 +83,11 @@ class OAuth2Request(request: Request[AnyContent], enableCORS: Boolean) {
     true
   }
 
-  def hasFormEncodedBody(): Boolean = this.mJsonBody != null
+  def hasFormEncodedBody(): Boolean = this.mFormBody != null
 
   def getFormEncodedBody(): Map[String, Seq[String]] = this.mFormBody
 
-  def getMultipartFormData() = {
-    try {
-      this.mRequest.body.asMultipartFormData.get
-    } catch {
-      case _: NoSuchElementException => null
-    }
-  }
+  def getMultipartFormData() = this.mRequest.body.asMultipartFormData.orNull
 
   def getHeader(header: String): String = {
     if (header == null || header.trim().isEmpty) {
@@ -103,10 +97,17 @@ class OAuth2Request(request: Request[AnyContent], enableCORS: Boolean) {
   }
 
   def getParameter(property: String): String = {
+    if (property == null || property.trim.isEmpty) {
+      throw new IllegalArgumentException("Empty parameter names not allowed.")
+    }
     if (hasJsonBody()) {
-      return (this.mJsonBody \ property).toString
+      return (this.mJsonBody \ property).toOption.map {
+        case play.api.libs.json.JsString(value) => value
+        case play.api.libs.json.JsNull => null
+        case value => value.toString
+      }.orNull
     } else if (hasFormEncodedBody()) {
-      return this.mFormBody(property).head
+      return this.mFormBody.get(property).flatMap(_.headOption).orNull
     }
     null
   }

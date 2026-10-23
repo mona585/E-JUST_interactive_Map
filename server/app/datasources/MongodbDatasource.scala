@@ -40,6 +40,7 @@ import java.io.{FileOutputStream, IOException, PrintWriter}
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util
+import java.util.regex.Pattern
 
 import datasources.MongodbDatasource.{admins, generateAccessToken, mdb, moderators, mongoClient}
 import datasources.SCHEMA._
@@ -48,10 +49,12 @@ import javax.inject.{Inject, Singleton}
 import models.RadioMapRaw.unrollFingerprint
 import models.{Connection, Poi, RadioMapRaw}
 import org.mongodb.scala._
-import org.mongodb.scala.bson.{BsonDocument, conversions}
+import org.mongodb.scala.bson.BsonDocument
+import org.bson.conversions.Bson
 import org.mongodb.scala.model.Aggregates
 import org.mongodb.scala.model.Aggregates.project
 import org.mongodb.scala.model.Filters._
+import org.mongodb.scala.model.Projections.{exclude, include}
 import org.mongodb.scala.model.Sorts.{ascending, orderBy}
 import play.api.Configuration
 import play.api.libs.json.{JsNumber, JsObject, JsString, JsValue, Json}
@@ -60,10 +63,13 @@ import utils.JsonUtils.cleanupMongoJson
 import utils.{GeoJsonPoint, GeoPoint, JsonUtils, LOG}
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.jdk.CollectionConverters.MapHasAsScala
-import scala.util.control.Breaks
+import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala, SeqHasAsJava}
+
+private[datasources] object DbAwait {
+  def result[T](future: scala.concurrent.Future[T], timeout: Duration): T =
+    scala.concurrent.blocking(scala.concurrent.Await.result(future, timeout))
+}
 
 object MongodbDatasource {
   val __SCHEMA: Int = 0
@@ -131,7 +137,7 @@ object MongodbDatasource {
     mdb = mongoClient.getDatabase(database)
     LOG.I(TAG, "connected to database.")
     val collections = mdb.listCollectionNames()
-    val awaited = Await.result(collections.toFuture(), DB_TIMEOUT)
+    val awaited = DbAwait.result(collections.toFuture(), DB_TIMEOUT)
     val _ = awaited.toList
     updateCachedModerators()
 
@@ -182,7 +188,7 @@ object MongodbDatasource {
   def queryUsers(query: BsonDocument): List[String] = {
     val collection = mdb.getCollection(SCHEMA.cUsers)
     val adm = collection.find(query)
-    val awaited = Await.result(adm.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(adm.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val ret = new util.ArrayList[String]
     for (user <- res) {
@@ -196,6 +202,12 @@ object MongodbDatasource {
 
 @Singleton
 class MongodbDatasource @Inject() () extends IDatasource {
+  private val MAX_GREEKLISH_VARIANTS = 512
+  private val poiProjection = exclude(SCHEMA.fOwnerId, SCHEMA.fGeometry, SCHEMA.fId, SCHEMA.fSchema)
+  private val spaceProjection = exclude(SCHEMA.fGeometry, SCHEMA.fOwnerId, SCHEMA.fCoOwners, SCHEMA.fId, SCHEMA.fSchema)
+  private val campusSpaceProjection = exclude(SCHEMA.fGeometry, SCHEMA.fOwnerId, SCHEMA.fCoOwners,
+    SCHEMA.fId, SCHEMA.fSchema, SCHEMA.fType)
+
   def getMDB: MongoDatabase = mdb
 
   def convertJson(list: List[Document]): List[JsValue] = {
@@ -207,217 +219,102 @@ class MongodbDatasource @Inject() () extends IDatasource {
     jsList.toList
   }
 
-  def convertJson(doc: Document) = cleanupMongoJson(Json.parse(doc.toJson()))
+  def convertJson(doc: Document) = JsonUtils.mongoDocumentToJson(doc.toBsonDocument())
   def disconnect() = mongoClient.close()
-
-  var wordsELOT = new java.util.ArrayList[java.util.ArrayList[String]]
-  var allPoisSide = new java.util.HashMap[String, java.util.List[JsValue]]()
-  var allPoisbycuid = new java.util.HashMap[String, java.util.List[JsValue]]()
-  var lastletters = ""
 
   override def poisByBuildingIDAsJson(buid: String): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cPOIS)
     val query = BsonDocument(SCHEMA.fBuid -> buid)
-    val pois = collection.find(query)
-    val awaited = Await.result(pois.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-    val poisArray = new java.util.ArrayList[JsValue]()
-    for (poi <- listJson)
-      poisArray.add(poi.as[JsObject] - SCHEMA.fOwnerId - SCHEMA.fGeometry - SCHEMA.fId - SCHEMA.fSchema)
-    poisArray.toList
+    val pois = collection.find(query).projection(poiProjection)
+    val awaited = DbAwait.result(pois.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    cleanPois(awaited.toList)
+  }
+
+  private def cleanPois(docs: List[Document]): List[JsValue] = {
+    convertJson(docs)
   }
 
   override def poisByBuildingAsJson2(cuid: String, letters: String): List[JsValue] = {
-    var pois: java.util.List[JsValue] = null
-    val pois2 = new java.util.ArrayList[JsValue]
-    pois = allPoisbycuid.get(cuid)
-    if (pois == null) {
-      val buids = getBuildingSet(cuid)
-      val tempPois = new java.util.ArrayList[JsValue]
-      for (buid <- (buids(0) \ SCHEMA.fBuids).as[List[String]]) {
-        for (poi <- poisByBuildingAsJson(buid)) {
-          if (poi != null) {
-            tempPois.add(poi)
-          }
-        }
-      }
-      pois = tempPois
-    }
-    val words = letters.split(" ")
-    var flag = false
-    for (json <- pois) {
-      flag = true
-      for (w <- words if flag) {
-        var name = ""
-        var description = ""
-        if ((json \ SCHEMA.fName).toOption.isDefined)
-          name = (json \ SCHEMA.fName).as[String].toLowerCase
-        if ((json \ SCHEMA.fDescription).toOption.isDefined)
-          description = (json \ SCHEMA.fDescription).as[String].toLowerCase
-        if (!(name.contains(w.toLowerCase) || description.contains(w.toLowerCase)))
-          flag = false
-      }
-      if (flag) pois2.add(json)
-    }
-    pois2.toList
+    poisForCampus(cuid, letters, greeklish = false, requireAll = true)
   }
 
   override def poisByBuildingAsJson2GR(cuid: String, letters: String): List[JsValue] = {
-    var pois = allPoisbycuid.get(cuid)
-    if (pois == null) {
-      val buids = getBuildingSet(cuid)
-      val tempPois = new java.util.ArrayList[JsValue]
-      for (buid <- (buids(0) \ SCHEMA.fBuids).as[List[String]]) {
-        for (poi <- poisByBuildingAsJson(buid)) {
-          if (poi != null) {
-            tempPois.add(poi)
-          }
-        }
-      }
-      pois = tempPois
-    }
-    val pois2 = new java.util.ArrayList[JsValue]
-    val words = letters.split(" ")
-    var flag = false
-    var flag2 = false
-    var flag3 = false
-
-    if (letters.compareTo(lastletters) != 0) {
-      lastletters = letters
-      wordsELOT = new java.util.ArrayList[java.util.ArrayList[String]]
-      var j = 0
-      for (word <- words) {
-        wordsELOT.add(greeklishTogreekList(word.toLowerCase))
-      }
-    }
-    for (json <- pois) {
-      flag = true
-      flag2 = true
-      flag3 = true
-      var j = 0
-      // create a Breaks object as follows
-      val loop = new Breaks
-      val ex_loop = new Breaks
-      ex_loop.breakable {
-        for (w <- words) {
-          var name = ""
-          var description = ""
-          if ((json \ SCHEMA.fName).toOption.isDefined)
-            name = (json \ SCHEMA.fName).as[String].toLowerCase
-          if ((json \ SCHEMA.fDescription).toOption.isDefined)
-            description = (json \ SCHEMA.fDescription).as[String].toLowerCase
-          if (!(name.contains(w.toLowerCase) || description.contains(w.toLowerCase))) flag = false
-          val greeklish = greeklishTogreek(w.toLowerCase)
-          if (!(name.contains(greeklish) || description.contains(greeklish))) flag2 = false
-          if (wordsELOT.size != 0) {
-            var wordsELOT2 = new java.util.ArrayList[String]
-            wordsELOT2 = wordsELOT.get({
-              j += 1
-              j - 1
-            })
-            if (wordsELOT2.size == 0) flag3 = false
-            else {
-              loop.breakable {
-                for (greeklishELOT <- wordsELOT2) {
-                  if (!(name.contains(greeklishELOT) || description.contains(greeklishELOT))) flag3 = false
-                  else {
-                    flag3 = true
-                    loop.break()
-                  }
-                }
-              }
-            }
-          }
-          else flag3 = false
-          if (!flag3 && !flag && !flag2) ex_loop.break()
-          if (flag || flag2 || flag3) pois2.add(json)
-        }
-      }
-    }
-
-    pois2.toList
+    poisForCampus(cuid, letters, greeklish = true, requireAll = false)
   }
 
   override def getBuildingSet(cuid: String): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cCampuses)
     val query: BsonDocument = BsonDocument(SCHEMA.fCampusCuid -> cuid)
     val campus = collection.find(query)
-    val awaited = Await.result(campus.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(campus.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     convertJson(res)
   }
 
   override def poisByBuildingAsJson3(buid: String, letters: String): List[JsValue] = {
-    LOG.I("poisByBuildingAsJson3")
-    var pois: java.util.List[JsValue] = null
-    val pois2 = new java.util.ArrayList[JsValue]
-    if (allPoisSide.get(buid) != null)
-      pois = allPoisSide.get(buid)
-    else
-      pois = poisByBuildingAsJson(buid)
+    poisByBuildingFiltered(buid, letters, greeklish = true, requireAll = false)
+  }
 
-    val words = letters.split(" ")
+  private def getCampusBuildingIds(cuid: String): List[String] = {
+    val collection = mdb.getCollection(SCHEMA.cCampuses)
+    val query: BsonDocument = BsonDocument(SCHEMA.fCampusCuid -> cuid)
+    val campus = collection.find(query).projection(include(SCHEMA.fBuids))
+    val awaited = DbAwait.result(campus.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    convertJson(awaited.toList).headOption
+      .flatMap(c => (c \ SCHEMA.fBuids).asOpt[List[String]])
+      .getOrElse(Nil)
+  }
 
-    var flag = false
-    var flag2 = false
-    var flag3 = false
+  private def poisForCampus(cuid: String, letters: String, greeklish: Boolean, requireAll: Boolean): List[JsValue] = {
+    poisByBuildingIdsFiltered(getCampusBuildingIds(cuid), letters, greeklish, requireAll)
+  }
 
-    if (letters.compareTo(lastletters) != 0) {
-      lastletters = letters
-      wordsELOT = new java.util.ArrayList[java.util.ArrayList[String]]
-      var j = 0
-      for (word <- words) {
-        wordsELOT.add(greeklishTogreekList(word.toLowerCase))
-      }
+  private def poisByBuildingIdsAsJson(buids: Seq[String]): List[JsValue] = {
+    if (buids.isEmpty) return Nil
+    val collection = mdb.getCollection(SCHEMA.cPOIS)
+    val query = in(SCHEMA.fBuid, buids.distinct: _*)
+    val pois = collection.find(query).projection(poiProjection)
+    val awaited = DbAwait.result(pois.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    cleanPois(awaited.toList)
+  }
+
+  private def poisByBuildingIdsFiltered(buids: Seq[String], letters: String, greeklish: Boolean,
+                                        requireAll: Boolean): List[JsValue] = {
+    if (buids.isEmpty) return Nil
+    val collection = mdb.getCollection(SCHEMA.cPOIS)
+    val query = poiSearchFilter(in(SCHEMA.fBuid, buids: _*), letters, greeklish, requireAll)
+    val pois = collection.find(query).projection(poiProjection)
+    val awaited = DbAwait.result(pois.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    cleanPois(awaited.toList)
+  }
+
+  private def poisByBuildingFiltered(buid: String, letters: String, greeklish: Boolean,
+                                     requireAll: Boolean): List[JsValue] = {
+    val collection = mdb.getCollection(SCHEMA.cPOIS)
+    val query = poiSearchFilter(equal(SCHEMA.fBuid, buid), letters, greeklish, requireAll)
+    val pois = collection.find(query).projection(poiProjection)
+    val awaited = DbAwait.result(pois.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    cleanPois(awaited.toList)
+  }
+
+  private def poiSearchFilter(base: Bson, letters: String, greeklish: Boolean, requireAll: Boolean): Bson = {
+    val terms = searchTerms(letters, greeklish)
+    if (terms.isEmpty) return base
+    val termFilters = terms.map { variants =>
+      val pattern = variants.map(Pattern.quote).mkString("(?:", "|", ")")
+      or(regex(SCHEMA.fName, pattern, "i"), regex(SCHEMA.fDescription, pattern, "i"))
     }
-    for (json <- pois) {
-      flag = true
-      flag2 = true
-      flag3 = true
-      var j = 0
-      // create a Breaks object as follows
-      val loop = new Breaks
+    if (requireAll) and((base +: termFilters): _*) else and(base, or(termFilters: _*))
+  }
 
-      val ex_loop = new Breaks
-      ex_loop.breakable {
-        for (w <- words) {
-          var name = ""
-          var description = ""
-          if ((json \ SCHEMA.fName).toOption.isDefined)
-            name = (json \ SCHEMA.fName).as[String].toLowerCase
-          if ((json \ SCHEMA.fDescription).toOption.isDefined)
-            description = (json \ SCHEMA.fDescription).as[String].toLowerCase
-          if (!(name.contains(w.toLowerCase) || description.contains(w.toLowerCase))) flag = false
-          val greeklish = greeklishTogreek(w.toLowerCase)
-          if (!(name.contains(greeklish) || description.contains(greeklish))) flag2 = false
-          if (wordsELOT.size != 0) {
-            var wordsELOT2 = new java.util.ArrayList[String]
-            wordsELOT2 = wordsELOT.get({
-              j += 1
-              j - 1
-            })
-            if (wordsELOT2.size == 0) flag3 = false
-            else {
-              loop.breakable {
-                for (greeklishELOT <- wordsELOT2) {
-                  if (!(name.contains(greeklishELOT) || description.contains(greeklishELOT))) flag3 = false
-                  else {
-                    flag3 = true
-                    loop.break()
-                  }
-                }
-              }
-            }
-          }
-          else flag3 = false
-          if (!flag3 && !flag && !flag2) ex_loop.break()
-          if (flag || flag2 || flag3) pois2.add(json)
-        }
-      }
+  private def searchTerms(letters: String, greeklish: Boolean): Seq[Seq[String]] = {
+    val words = letters.trim.split("\\s+").toSeq.filter(_.nonEmpty)
+    if (!greeklish) words.map(word => Seq(word.toLowerCase))
+    else words.map { raw =>
+      val lower = raw.toLowerCase
+      (Seq(lower, greeklishTogreek(lower)) ++ greeklishTogreekList(lower).asScala)
+        .filter(_.nonEmpty).distinct.take(MAX_GREEKLISH_VARIANTS)
     }
-
-    pois2.toList
   }
 
   def greeklishTogreekList(greeklish: String) = {
@@ -528,6 +425,11 @@ class MongodbDatasource @Inject() () extends IDatasource {
       for (k <- 0 until size) {
         words.remove(0)
       }
+      if (words.size > MAX_GREEKLISH_VARIANTS) {
+        val capped = new util.ArrayList[String](words.subList(0, MAX_GREEKLISH_VARIANTS))
+        words.clear()
+        words.addAll(capped)
+      }
     }
     words
   }
@@ -636,7 +538,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val document = finalJson.toString()
     val collection = mdb.getCollection(col)
     val addJson = collection.insertOne(Document.apply(document))
-    val awaited = Await.result(addJson.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(addJson.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited
 
     res.getInsertedId != null
@@ -646,7 +548,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(col)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor, SCHEMA.fX -> x, SCHEMA.fY -> y, SCHEMA.fHeading -> heading)
     val fingerprintLookUp = collection.find(query)
-    val awaited = Await.result(fingerprintLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprintLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     if (res.size > 0)
       return true
@@ -679,7 +581,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
   private def isFirstUser(): Boolean = {
     val collection = mdb.getCollection(SCHEMA.cUsers)
     val userLookUp = collection.find().first()
-    val awaited = Await.result(userLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(userLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited
 
     if (res == null) return true
@@ -707,7 +609,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
   override def getFromKey(col: String, key: String, value: String): JsValue = {
     val collection = mdb.getCollection(col)
     val buildingLookUp = collection.find(equal(key, value)).first()
-    val awaited = Await.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.asInstanceOf[Document]
     if (res != null)
       convertJson(res)
@@ -717,21 +619,15 @@ class MongodbDatasource @Inject() () extends IDatasource {
 
   override def poisByBuildingAsJson(buid: String): java.util.List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cPOIS)
-    val poisLookUp = collection.find(equal(SCHEMA.fBuid, buid))
-    val awaited = Await.result(poisLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-    val pois = new java.util.ArrayList[JsValue]()
-    for (floor <- listJson) {
-      pois.add(floor.as[JsObject] - SCHEMA.fOwnerId - SCHEMA.fGeometry - SCHEMA.fId - SCHEMA.fSchema)
-    }
-    pois
+    val poisLookUp = collection.find(equal(SCHEMA.fBuid, buid)).projection(poiProjection)
+    val awaited = DbAwait.result(poisLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    convertJson(awaited.toList).asJava
   }
 
   override def floorsByBuildingAsJson(buid: String): java.util.List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cFloorplans)
     val floorLookUp = collection.find(equal(SCHEMA.fBuid, buid))
-    val awaited = Await.result(floorLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(floorLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val listJson = convertJson(res)
     val floors = new java.util.ArrayList[JsValue]()
@@ -761,21 +657,16 @@ class MongodbDatasource @Inject() () extends IDatasource {
   override def poisByBuildingFloorAsJson(buid: String, floor_number: String): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cPOIS)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloorNumber -> floor_number)
-    val pois = collection.find(query)
-    val awaited = Await.result(pois.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-    val poisArray = new java.util.ArrayList[JsValue]()
-    for (poi <- listJson)
-      poisArray.add(poi.as[JsObject] - SCHEMA.fOwnerId - SCHEMA.fGeometry - SCHEMA.fId - SCHEMA.fSchema)
-    poisArray.toList
+    val pois = collection.find(query).projection(poiProjection)
+    val awaited = DbAwait.result(pois.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    cleanPois(awaited.toList)
   }
 
   override def poiByBuidFloorPuid(buid: String, floor_number: String, puid: String): Boolean = {
     val collection = mdb.getCollection(SCHEMA.cPOIS)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloorNumber -> floor_number, SCHEMA.fPuid -> puid)
     val poisLookUp = collection.find(query)
-    val awaited = Await.result(poisLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(poisLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     if (res.size > 0)
       return true
@@ -786,6 +677,14 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val pois = poisByBuildingAsJson(buid)
     val result = new java.util.ArrayList[java.util.HashMap[String, String]]()
     for (poi <- pois) {
+      result.add(JsonUtils.getHashMapStrStr(poi))
+    }
+    result
+  }
+
+  override def poisByBuildingIdsAsMap(buids: List[String]): java.util.List[java.util.HashMap[String, String]] = {
+    val result = new java.util.ArrayList[java.util.HashMap[String, String]]()
+    for (poi <- poisByBuildingIdsAsJson(buids)) {
       result.add(JsonUtils.getHashMapStrStr(poi))
     }
     result
@@ -815,7 +714,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
       SCHEMA.fBuidB -> BsonDocument("$in" -> distinct),
       SCHEMA.fEdgeType -> BsonDocument("$in" -> List(
         Connection.EDGE_TYPE_OUTDOOR, Connection.EDGE_TYPE_STAIR, Connection.EDGE_TYPE_ELEVATOR)))
-    val awaited = Await.result(collection.find(query).toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(collection.find(query).toFuture(), MongodbDatasource.DB_TIMEOUT)
     for (edge <- convertJson(awaited.toList)) {
       conns.add(JsonUtils.getHashMapStrStr(edge))
     }
@@ -826,7 +725,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cEdges)
     val query = BsonDocument(SCHEMA.fBuid -> buid)
     val edges = collection.find(query)
-    val awaited = Await.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     convertJson(res)
   }
@@ -835,7 +734,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cEdges)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloorA -> floor_number, SCHEMA.fFloorB -> floor_number)
     val edges = collection.find(query)
-    val awaited = Await.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val listJson = convertJson(res)
     val edgesArray = new java.util.ArrayList[JsValue]()
@@ -848,7 +747,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cEdges)
     val query = BsonDocument(SCHEMA.fBuid -> buid)
     val edges = collection.find(query)
-    val awaited = Await.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val listJson = convertJson(res)
     val edgesArray = new java.util.ArrayList[JsValue]()
@@ -875,7 +774,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     var query = BsonDocument(SCHEMA.fBuid -> buid)
     var collection = mdb.getCollection(SCHEMA.cSpaces)
     val objects = collection.deleteOne(query)
-    val awaited = Await.result(objects.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(objects.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited
     val bool = res.wasAcknowledged()
 
@@ -883,7 +782,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     query = BsonDocument(SCHEMA.fBuids -> buid)
     collection = mdb.getCollection(SCHEMA.cCampuses)
     val campuses = collection.find(query)
-    var await = Await.result(campuses.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    var await = DbAwait.result(campuses.toFuture(), MongodbDatasource.DB_TIMEOUT)
     var re = await.toList
     val camp = convertJson(re)
     for (c <- camp) {
@@ -902,7 +801,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     query = BsonDocument(SCHEMA.fBuid -> buid)
     collection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     val deleted = collection.deleteMany(query)
-    val delAwaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val delAwaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val delRes = delAwaited
     val bool1 = delRes.wasAcknowledged()
     LOG.D("fingerprints with buid " + buid + " " + delRes.toString)
@@ -922,7 +821,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val query = BsonDocument(key -> value)
     val update = BsonDocument(document)
     val replaceJson = collection.replaceOne(query, update)
-    val awaited = Await.result(replaceJson.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(replaceJson.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited
     if (res.getModifiedCount == 0)
       false
@@ -939,7 +838,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     // queryBuidA deletes edges that start from building buid (containing edges that have buid_b == buid_a)
     val queryBuidA = BsonDocument(SCHEMA.fBuidA -> buid, SCHEMA.fFloorA -> floor_number)
     var deleted = collection.deleteMany(queryBuidA)
-    var awaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    var awaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
     var res = awaited
     val bool1 = res.wasAcknowledged()
     LOG.D("edges from buid_a: " + buid + " " + res.toString)
@@ -947,7 +846,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     // queryBuidB deletes edges that point to building buid
     val queryBuidB = BsonDocument(SCHEMA.fBuidB -> buid, SCHEMA.fFloorB -> floor_number)
     deleted = collection.deleteMany(queryBuidB)
-    awaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    awaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
     res = awaited
     val bool2 = res.wasAcknowledged()
     LOG.D("edges to buid_b: " + buid + " " + res.toString)
@@ -956,7 +855,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val queryFloor = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloorNumber -> floor_number)
     collection = mdb.getCollection(SCHEMA.cPOIS)
     deleted = collection.deleteMany(queryFloor)
-    awaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    awaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
     res = awaited
     val bool3 = res.wasAcknowledged()
     LOG.D("pois in building with buid: " + buid + " " + res.toString)
@@ -965,7 +864,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val queryCached = BsonDocument(SCHEMA.fBuid -> buid)
     collection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     deleted = collection.deleteMany(queryCached)
-    awaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    awaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
     res = awaited
     val bool4 = res.wasAcknowledged()
     LOG.D("fingerprints with buid " + buid + " " + res.toString)
@@ -974,7 +873,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     // this query will delete the floor it self
     collection = mdb.getCollection(SCHEMA.cFloorplans)
     deleted = collection.deleteMany(queryFloor)
-    awaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    awaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
     res = awaited
     val bool6 = res.wasAcknowledged()
     LOG.D("floorplan with buid " + buid + " " + res.toString)
@@ -1008,7 +907,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(col)
     val query = BsonDocument(key -> value)
     val deleted = collection.deleteOne(query)
-    val awaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited
     res.wasAcknowledged()
   }
@@ -1023,7 +922,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
       project(
         Document(SCHEMA.fLocation -> "$location", "count" -> "$count")
       )))
-    val awaited = Await.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     var foundHeatmaps = convertJson(res)
     if (foundHeatmaps.size == 0) { // cache-collection could be empty
@@ -1049,7 +948,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
       project(
         Document(SCHEMA.fLocation -> "$location", "sum" -> "$sum", "count" -> "$count")
       )))
-    val awaited = Await.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
 
     var foundHeatmaps = convertJson(res)
@@ -1079,7 +978,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
       project(
         Document(SCHEMA.fLocation -> "$location", "sum" -> "$sum", "count" -> "$count", "average" -> "$average")
       )))
-    val awaited = Await.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
 
     var foundHeatmaps = convertJson(res)
@@ -1109,7 +1008,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
       project(
         Document(SCHEMA.fLocation -> "$location", "sum" -> "$sum", "count" -> "$count", "average" -> "$average")
       )))
-    val awaited = Await.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     var foundHeatmaps = convertJson(res)
     // in case there are 0 heatmaps try to generate them
@@ -1139,7 +1038,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     // TODO: Get count from collection and building
     val radioPoints = collection.find(and(lt(SCHEMA.fTimestamp, timestampY), gt(SCHEMA.fTimestamp, timestampX),
       equal(SCHEMA.fBuid, buid), equal(SCHEMA.fFloor, floor)))
-    val awaited = Await.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val heatmaps = new util.ArrayList[JsValue]()
     for (heatmap <- convertJson(res)) {
@@ -1157,7 +1056,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cHeatmapWifiTimestamp1)
     val radioPoints = collection.find(and(lt(SCHEMA.fTimestamp, timestampY), gt(SCHEMA.fTimestamp, timestampX),
       equal(SCHEMA.fBuid, buid), equal(SCHEMA.fFloor, floor)))
-    val awaited = Await.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val heatmaps = new util.ArrayList[JsValue]()
     for (heatmap <- convertJson(res)) {
@@ -1176,7 +1075,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cHeatmapWifiTimestamp2)
     val radioPoints = collection.find(and(lt(SCHEMA.fTimestamp, timestampY), gt(SCHEMA.fTimestamp, timestampX),
       equal(SCHEMA.fBuid, buid), equal(SCHEMA.fFloor, floor)))
-    val awaited = Await.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val heatmaps = new util.ArrayList[JsValue]()
     for (heatmap <- convertJson(res)) {
@@ -1209,7 +1108,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
         Aggregates.filter(query),
         project(Document(SCHEMA.fLocation -> "$location", "sum" -> "$sum", "count" -> "$count", "average" -> "$average")
         )))
-      val awaited = Await.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+      val awaited = DbAwait.result(radioPoints.toFuture(), MongodbDatasource.DB_TIMEOUT)
       val res = awaited.toList
       return convertJson(res)
     }
@@ -1221,7 +1120,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     val query: BsonDocument = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor)
     val fingerprintsLookup = collection.find(query)
-    val awaited = Await.result(fingerprintsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprintsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
 
     res.nonEmpty
@@ -1241,7 +1140,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     val query: BsonDocument = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor)
     val fingerprintsLookup = collection.find(query)
-    val awaited = Await.result(fingerprintsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprintsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val fingerprints = convertJson(res)
     if (fingerprints.size == 0) {
@@ -1304,7 +1203,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
         "location.coordinates" -> location.toList, SCHEMA.fTimestamp -> (fingerprint \ SCHEMA.fTimestamp).as[String])
     }
     val heatmapLookup = heatmap.find(query).first()
-    val awaited = Await.result(heatmapLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(heatmapLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.asInstanceOf[Document]
     if (res != null)
       return convertJson(res)
@@ -1325,7 +1224,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     }
     val update = BsonDocument(newHeatmap.toString())
     val heatmapReplace = heatmap.replaceOne(query, update)
-    val awaited = Await.result(heatmapReplace.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(heatmapReplace.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited
     if (res.getModifiedCount == 0)
       false
@@ -1411,7 +1310,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor)
     val fingerprints = collection.find(query)
-    val awaited = Await.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val listJson = convertJson(res)
     val hm = new util.HashMap[JsValue, Array[Double]]()
@@ -1454,7 +1353,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cAccessPointsWifi)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor)
     val accessPointsLookup = collection.find(query)
-    val awaited = Await.result(accessPointsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(accessPointsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     if (res.size == 0)
       return null
@@ -1470,7 +1369,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
       geoWithinBox(SCHEMA.fGeometry, lat1.toDouble, lon1.toDouble, lat2.toDouble, lon2.toDouble),
       equal(SCHEMA.fBuid, buid),
       equal(SCHEMA.fFloor, floor)))
-    val awaited = Await.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val listJson = convertJson(res)
     val newList = new util.ArrayList[JsValue]()
@@ -1487,7 +1386,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     val fingerprints = collection.find(and(geoWithinBox(SCHEMA.fGeometry, lat1.toDouble, lon1.toDouble,
       lat2.toDouble, lon2.toDouble), and(gt(SCHEMA.fTimestamp, timestampX), lt(SCHEMA.fTimestamp, timestampY))))
-    val awaited = Await.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val listJson = convertJson(res)
     val newList = new util.ArrayList[JsValue]()
@@ -1505,7 +1404,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
       and(gt(SCHEMA.fTimestamp, "0"), lt(SCHEMA.fTimestamp, "999999999999999")),
       and(equal(SCHEMA.fBuid, buid)), equal(SCHEMA.fFloor, floor))
     ).sort(orderBy(ascending(SCHEMA.fTimestamp)))
-    val awaited = Await.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val listJson = convertJson(res)
     val points = new util.ArrayList[JsValue]()
@@ -1519,18 +1418,20 @@ class MongodbDatasource @Inject() () extends IDatasource {
   override def getAllBuildings(): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cSpaces)
     val query = BsonDocument(SCHEMA.fIsPublished -> "true")
-    val buildings = collection.find(query)
-    val awaited = Await.result(buildings.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val buildings = collection.find(query).projection(spaceProjection)
+    val awaited = DbAwait.result(buildings.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     LOG.D3(s"Res on complete Length:${res.length}")
-    val listJson = convertJson(res)
-    var newJson: JsValue = null
-    val newList = new util.ArrayList[JsValue]()
-    for (x <- listJson) {
-      newJson = x.as[JsObject] - SCHEMA.fGeometry - SCHEMA.fOwnerId - SCHEMA.fCoOwners - SCHEMA.fId - SCHEMA.fSchema
-      newList.add(newJson)
-    }
-    newList.toList
+    convertJson(res)
+  }
+
+  override def getSpacesByBuids(buids: List[String]): List[JsValue] = {
+    if (buids.isEmpty) return Nil
+    val collection = mdb.getCollection(SCHEMA.cSpaces)
+    val query = in(SCHEMA.fBuid, buids.distinct: _*)
+    val spaces = collection.find(query).projection(campusSpaceProjection)
+    val awaited = DbAwait.result(spaces.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    convertJson(awaited.toList)
   }
 
   override def getSpaceAccessible(oid: String): List[JsValue] = {
@@ -1539,52 +1440,27 @@ class MongodbDatasource @Inject() () extends IDatasource {
     LOG.D4("getSpaceAccessible: mods: " + moderators.toString())
     LOG.D4("getSpaceAccessible: admins: " + admins.toString())
     if (admins.contains(oid) || moderators.contains(oid)) {
-      buildingLookUp = collection.find()
+      buildingLookUp = collection.find().projection(spaceProjection)
     } else {
       buildingLookUp = collection.find(or(equal(SCHEMA.fOwnerId, oid),
-        equal(SCHEMA.fCoOwners, oid)))
+        equal(SCHEMA.fCoOwners, oid))).projection(spaceProjection)
     }
-    val awaited = Await.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-
-    val buildings = new java.util.ArrayList[JsValue]()
-    for (building <- listJson) {
-      buildings.add(building.as[JsObject] - SCHEMA.fCoOwners - SCHEMA.fGeometry
-        - SCHEMA.fOwnerId - SCHEMA.fId - SCHEMA.fSchema)
-    }
-    buildings.toList
+    val awaited = DbAwait.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    convertJson(awaited.toList)
   }
 
   override def getAllSpaceOwned(oid: String): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cSpaces)
-    val buildingLookUp = collection.find(equal(SCHEMA.fOwnerId, oid))
-    val awaited = Await.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-    val buildings = new java.util.ArrayList[JsValue]()
-    for (building <- listJson) {
-      buildings.add(building.as[JsObject] - SCHEMA.fCoOwners - SCHEMA.fGeometry
-        - SCHEMA.fOwnerId - SCHEMA.fId - SCHEMA.fSchema)
-    }
-    buildings.toList
+    val buildingLookUp = collection.find(equal(SCHEMA.fOwnerId, oid)).projection(spaceProjection)
+    val awaited = DbAwait.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    convertJson(awaited.toList)
   }
 
   override def getAllBuildingsByBucode(bucode: String): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cSpaces)
-    val buildingLookUp = collection.find(equal(SCHEMA.fBuCode, bucode))
-    val awaited = Await.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-    val buildings = new java.util.ArrayList[JsValue]()
-    for (building <- listJson) {
-      try {
-        buildings.add(building.as[JsObject] - SCHEMA.fCoOwners - SCHEMA.fGeometry - SCHEMA.fOwnerId - SCHEMA.fId - SCHEMA.fSchema)
-      } catch {
-        case e: IOException =>
-      }
-    }
-    buildings.toList
+    val buildingLookUp = collection.find(equal(SCHEMA.fBuCode, bucode)).projection(spaceProjection)
+    val awaited = DbAwait.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    convertJson(awaited.toList)
   }
 
   override def getAllBuildingsNearMe(lat: Double, lng: Double, range: Int, owner_id: String): List[JsValue] = {
@@ -1593,20 +1469,11 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val buildingLookUp = collection.find(and(geoWithinBox(SCHEMA.fGeometry, bbox(0).dlat, bbox(0).dlon, bbox(1).dlat,
       bbox(1).dlon),
       or(equal(SCHEMA.fIsPublished, "true"),
-        and(equal(SCHEMA.fIsPublished, "false"), equal(SCHEMA.fOwnerId, owner_id)))))
-    val awaited = Await.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+        and(equal(SCHEMA.fIsPublished, "false"), equal(SCHEMA.fOwnerId, owner_id))))).projection(spaceProjection)
+    val awaited = DbAwait.result(buildingLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     LOG.D("getAllBuildingsNearMe: fetched " + res.size + " building(s) within a range of: " + range)
-    val listJson = convertJson(res)
-    val buildings = new java.util.ArrayList[JsValue]()
-    for (building <- listJson) {
-      try {
-        buildings.add(building.as[JsObject] - SCHEMA.fCoOwners - SCHEMA.fGeometry - SCHEMA.fOwnerId - SCHEMA.fId)
-      } catch {
-        case e: IOException =>
-      }
-    }
-    buildings.toList
+    convertJson(res)
   }
 
   override def dumpRssLogEntriesSpatial(outFile: FileOutputStream, bbox: Array[GeoPoint], floor_number: String): Long = {
@@ -1618,7 +1485,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     val fingerprints = collection.find(geoWithinBox(SCHEMA.fGeometry, bbox(0).dlat, bbox(0).dlon, bbox(1).dlat,
       bbox(1).dlon)).limit(queryLimit)
-    val awaited = Await.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprints.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val listJson = convertJson(res)
     for (rss <- listJson) {
@@ -1645,7 +1512,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cFloorplans)
     val query = BsonDocument(SCHEMA.fFloorNumber -> floor_number)
     val floorLookUp = collection.find(query)
-    val awaited = Await.result(floorLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(floorLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val floorplans = convertJson(res)
     var unique = 0
@@ -1676,7 +1543,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor_number)
     val fingerprintLookUp = collection.find(query)
-    val awaited = Await.result(fingerprintLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(fingerprintLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     val rssLog = convertJson(res)
     // splitting Measurements[MAC, rss] to buid, floor, .., MAC, rss, ... (old form)
@@ -1703,7 +1570,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
   override def getAllAccounts(): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cUsers)
     val users = collection.find()
-    val awaited = Await.result(users.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(users.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     LOG.D3(s"Res on complete Length:${res.length}")
     val usersList = convertJson(res)
@@ -1723,10 +1590,10 @@ class MongodbDatasource @Inject() () extends IDatasource {
     var totalFetched = 0
 
     for (strongestMAC <- strongestMACs) {
-      val query: conversions.Bson = and(geoWithinBox(SCHEMA.fGeometry, bbox(0).dlat, bbox(0).dlon, bbox(1).dlat, bbox(1).dlon),
+      val query: Bson = and(geoWithinBox(SCHEMA.fGeometry, bbox(0).dlat, bbox(0).dlon, bbox(1).dlat, bbox(1).dlon),
         equal(SCHEMA.fStrongestWifi, strongestMAC))
       val fingerprintLookup = collection.find(query)
-      val awaited = Await.result(fingerprintLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+      val awaited = DbAwait.result(fingerprintLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
       val res = awaited.toList
       val listJson = convertJson(res)
       LOG.D2("size = " + listJson.size)
@@ -1766,7 +1633,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cCampuses)
     val query: BsonDocument = BsonDocument(SCHEMA.fOwnerId -> owner_id)
     val campus = collection.find(query)
-    val awaited = Await.result(campus.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(campus.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     convertJson(res)
   }
@@ -1778,19 +1645,19 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val fiCollection = mdb.getCollection(SCHEMA.cFingerprintsWifi)
     val tempQuery: BsonDocument = BsonDocument(SCHEMA.fBuid -> "building_e0982a5f-fa50-4200-bab7-99ef2dce7285_1623673422061")
     val buildingsLookup = bCollection.find(tempQuery)
-    val awaitedB = Await.result(buildingsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaitedB = DbAwait.result(buildingsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val resB = awaitedB.toList
     val buildings = convertJson(resB)
 
     for (building <- buildings) {
       val floorsLookup = flCollection.find(equal(SCHEMA.fBuid, (building \ SCHEMA.fBuid).as[String]))
-      val awaitedFl = Await.result(floorsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+      val awaitedFl = DbAwait.result(floorsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
       val resFl = awaitedFl.toList
       val floors = convertJson(resFl)
       for (floor <- floors) {
         val query: BsonDocument = BsonDocument(SCHEMA.fBuid -> (building \ SCHEMA.fBuid).as[String], SCHEMA.fFloor -> (floor \ SCHEMA.fFloorNumber).as[String])
         val fingerprintsLookup = fiCollection.find(query)
-        val awaitedFi = Await.result(fingerprintsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+        val awaitedFi = DbAwait.result(fingerprintsLookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
         val resFi = awaitedFi.toList
         val fingerprints = convertJson(resFi)
         for (fingerprint <- fingerprints) {
@@ -1834,7 +1701,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     for (colName <- collections) {
       val collection = mdb.getCollection(colName)
       val deleted = collection.deleteMany(query)
-      val awaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+      val awaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
       val res = awaited.wasAcknowledged()
       ret = ret && res
     }
@@ -1854,7 +1721,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
       SCHEMA.fHeading -> (fingerprint \ SCHEMA.fHeading).as[String],
       SCHEMA.fTimestamp -> (fingerprint \ fTimestamp).as[String])
     val deleted = collection.deleteMany(query)
-    val awaited = Await.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(deleted.toFuture(), MongodbDatasource.DB_TIMEOUT)
 
     awaited.wasAcknowledged()
   }
@@ -1871,7 +1738,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(col)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloor -> floor)
     val heatmapLookUp = collection.find(query).first()
-    val awaited = Await.result(heatmapLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(heatmapLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.asInstanceOf[Document]
     if (res == null)
       onRequestCreateHeatmaps(buid, floor, level, true)
@@ -1881,7 +1748,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(col)
     val query = BsonDocument(SCHEMA.fUsername -> username, SCHEMA.fPassword -> password)
     val userLookUp = collection.find(query)
-    val awaited = Await.result(userLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(userLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     if (convertJson(res).isEmpty)
       return null
@@ -1893,7 +1760,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cUsers)
     val query = BsonDocument(SCHEMA.fAccessToken -> accessToken)
     val userLookUp = collection.find(query)
-    val awaited = Await.result(userLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(userLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     if (convertJson(res).isEmpty)
       return null
@@ -1905,7 +1772,7 @@ class MongodbDatasource @Inject() () extends IDatasource {
     val collection = mdb.getCollection(SCHEMA.cUsers)
     val query = BsonDocument(SCHEMA.fOwnerId -> ownerId)
     val userLookUp = collection.find(query)
-    val awaited = Await.result(userLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(userLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
     val res = awaited.toList
     if (convertJson(res).isEmpty)
       return null

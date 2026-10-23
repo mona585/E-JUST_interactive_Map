@@ -39,16 +39,28 @@ package utils
 import java.util
 import java.util.{Collections, HashMap}
 
-import com.google.gson.Gson
 import datasources.SCHEMA
-import play.api.libs.json.{JsArray, JsNumber, JsObject, JsValue, Json}
+import org.bson.{BsonDocument, BsonType, BsonValue}
+import play.api.libs.json.{JsArray, JsBoolean, JsNull, JsNumber, JsObject, JsString, JsValue, Json}
+
+import scala.jdk.CollectionConverters._
 
 object JsonUtils {
 
 
   def getHashMapStrStr(json: JsValue): HashMap[String, String] = {
-    val gson: Gson = new Gson()
-    gson.fromJson(json.toString(), (new HashMap[String, String]()).getClass)
+    val result = new HashMap[String, String]()
+    json.asOpt[JsObject].foreach(_.fields.foreach { case (key, value) =>
+      val converted = value match {
+        case JsString(string) => string
+        case JsNumber(number) => number.toString
+        case JsBoolean(boolean) => boolean.toString
+        case JsNull => null
+        case other => Json.stringify(other)
+      }
+      result.put(key, converted)
+    })
+    result
   }
 
   def hasProperties(json: JsValue, keys: String*): util.List[String] = {
@@ -106,6 +118,32 @@ object JsonUtils {
 
   def cleanupMongoJson(json: JsValue): JsValue = {
     return json.as[JsObject] - SCHEMA.fId - SCHEMA.fSchema
+  }
+
+  def mongoDocumentToJson(document: BsonDocument): JsObject = {
+    JsObject(document.entrySet().asScala.collect {
+      case entry if entry.getKey != SCHEMA.fId && entry.getKey != SCHEMA.fSchema =>
+        entry.getKey -> bsonToJson(entry.getValue)
+    }.toSeq)
+  }
+
+  def bsonToJson(value: BsonValue): JsValue = {
+    if (value == null) return JsNull
+    value.getBsonType match {
+      case BsonType.NULL => JsNull
+      case BsonType.BOOLEAN => JsBoolean(value.asBoolean().getValue)
+      case BsonType.STRING => JsString(value.asString().getValue)
+      case BsonType.INT32 => JsNumber(value.asInt32().getValue)
+      case BsonType.INT64 => JsNumber(BigDecimal(value.asInt64().getValue))
+      case BsonType.DOUBLE => JsNumber(BigDecimal(value.asDouble().getValue))
+      case BsonType.DECIMAL128 => JsNumber(value.asDecimal128().getValue.bigDecimalValue())
+      case BsonType.OBJECT_ID => Json.obj("$oid" -> value.asObjectId().getValue.toHexString)
+      case BsonType.ARRAY => JsArray(value.asArray().getValues.asScala.map(bsonToJson).toSeq)
+      case BsonType.DOCUMENT => JsObject(value.asDocument().entrySet().asScala.map { entry =>
+        entry.getKey -> bsonToJson(entry.getValue)
+      }.toSeq)
+      case _ => Json.parse(new BsonDocument("v", value).toJson()).as[JsObject].value("v")
+    }
   }
 
 }

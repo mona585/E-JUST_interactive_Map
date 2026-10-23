@@ -18,6 +18,9 @@ class MapPoiController @Inject()(cc: ControllerComponents,
                                            user: helper.User)
   extends AbstractController(cc) {
 
+  private val MAX_SEARCH_QUERY_LENGTH = 128
+  private val MAX_SEARCH_WORDS = 8
+
   def add(): Action[AnyContent] = Action {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
@@ -262,6 +265,10 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         val letters = request.getQueryString("letters")
           .orElse((json \ "letters").asOpt[String]).orNull
         if (letters == null) return RESPONSE.MISSING_FIELDS(java.util.Collections.singletonList("letters"))
+        val trimmedLetters = letters.trim
+        if (trimmedLetters.length > MAX_SEARCH_QUERY_LENGTH ||
+          trimmedLetters.split("\\s+").count(_.nonEmpty) > MAX_SEARCH_WORDS)
+          return RESPONSE.BAD("Search query is too long.")
         val buid = request.getQueryString(SCHEMA.fBuid)
           .orElse((json \ SCHEMA.fBuid).asOpt[String]).getOrElse("")
         val greeklish = request.getQueryString(SCHEMA.fGreeklish)

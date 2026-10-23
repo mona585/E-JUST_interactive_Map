@@ -17,7 +17,7 @@ Follow the nearest `.editorconfig`: UTF-8, LF line endings, two-space indentatio
 
 ## Testing Guidelines
 
-Backend tests use Specs2 with Play test helpers. Put focused specs in `server/test/` and name them `*Spec.scala` (for example, `UserControllerSpec.scala`). Cover success and failure cases for changed API routes, then run `./sbt test`. There is no repository-wide coverage gate; add tests with behavior changes instead of lowering existing assertions.
+Backend tests use Specs2 with Play test helpers. Put focused specs in `server/test/` and name them `*Spec.scala` (for example, `UserControllerSpec.scala`). Cover success and failure cases for changed API routes, then run `./sbt test`. Use JDK 11 for the current Play/sbt stack (`JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 ./sbt test`). Mongo-backed specs skip unless `RUN_MONGO_INTEGRATION_TESTS=true` and `MONGODB_TEST_*` are set; `.github/workflows/server.yml` runs both unit and Mongo integration jobs. There is no repository-wide coverage gate; add tests with behavior changes instead of lowering existing assertions.
 
 ## Commit & Pull Request Guidelines
 

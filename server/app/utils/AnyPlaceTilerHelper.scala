@@ -27,35 +27,30 @@ class AnyPlaceTilerHelper @Inject()(cc: ControllerComponents,
         conf.get[String]("floorPlansRootDir") + File.separatorChar
     }
 
+    private def requireSafeSegment(value: String, label: String): String = {
+        if (!Utils.isSafePathSegment(value))
+            throw new IllegalArgumentException("Invalid " + label + " identifier.")
+        value
+    }
+
     def getRootFloorPlansDirFor(buid: String): String = {
-        getRootFloorPlansDir() + buid + File.separatorChar
+        getRootFloorPlansDir() + requireSafeSegment(buid, "building") + File.separatorChar
     }
 
     def getRootFloorPlansDirFor(buid: String, floor: String): String = {
-        if (buid.trim().isEmpty || floor.trim().isEmpty) {
-            return null
-        }
-        getRootFloorPlansDirFor(buid) + "fl_" + floor + File.separatorChar
+        getRootFloorPlansDir() + requireSafeSegment(buid, "building") + File.separatorChar +
+          "fl_" + requireSafeSegment(floor, "floor") + File.separatorChar
     }
 
     def getFloorPlanFor(buid: String, floor: String): String = {
-        if (buid.trim().isEmpty || floor.trim().isEmpty) {
-            return null
-        }
         getRootFloorPlansDirFor(buid, floor) + "fl_" + floor
     }
 
     def getFloorTilesDirFor(buid: String, floor: String): String = {
-        if (buid.trim().isEmpty || floor.trim().isEmpty) {
-            return null
-        }
         getRootFloorPlansDirFor(buid, floor) + FLOOR_TILES_DIR
     }
 
     def getFloorTilesZipFor(buid: String, floor: String): String = {
-        if (buid.trim().isEmpty || floor.trim().isEmpty) {
-            return null
-        }
         getRootFloorPlansDirFor(buid, floor) + FLOOR_TILES_DIR +
           FLOOR_TILES_ZIP_NAME
     }
@@ -78,6 +73,8 @@ class AnyPlaceTilerHelper @Inject()(cc: ControllerComponents,
     def storeFloorPlanToServer(buid: String, floor_number: String, file: File): File = {
         LOG.D2("storeFloorPlanToServer")
         val dirS = getRootFloorPlansDirFor(buid, floor_number)
+        if (!Utils.isWithinRoot(getRootFloorPlansDir(), dirS))
+            throw new IllegalArgumentException("Invalid building or floor identifier.")
         val dir = new File(dirS)
 
         LOG.D3("storeFloorPlanToServer: dir: " + dir.getAbsolutePath)

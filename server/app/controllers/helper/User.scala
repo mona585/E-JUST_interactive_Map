@@ -100,13 +100,19 @@ class User @Inject()(pds: ProxyDataSource,
       LOG.W("verifyGoogleUser: untrusted issuer")
       return null
     }
-    val remaining: Option[Long] =
+    val expiresIn: Option[Long] =
       (json \ "expires_in").asOpt[String].flatMap(s => try { Some(s.toLong) } catch { case _: NumberFormatException => None })
         .orElse((json \ "expires_in").asOpt[Long])
-        .orElse((json \ "exp").asOpt[Long])
+    val absoluteExpiry: Option[Long] = (json \ "exp").asOpt[Long]
+    val nowSeconds: Long = System.currentTimeMillis() / 1000L
     // Absent expiry is a reject, not a pass: timeless tokens replay forever.
-    if (remaining.isEmpty || remaining.exists(_ <= 0)) {
-      LOG.W("verifyGoogleUser: missing or expired token")
+    // expires_in is relative; exp is an absolute Unix timestamp.
+    if (expiresIn.isEmpty && absoluteExpiry.isEmpty) {
+      LOG.W("verifyGoogleUser: missing expiry")
+      return null
+    }
+    if (expiresIn.exists(_ <= 0) || absoluteExpiry.exists(_ <= nowSeconds)) {
+      LOG.W("verifyGoogleUser: expired token")
       return null
     }
     val uid = (json \ "user_id").asOpt[String].orElse((json \ "sub").asOpt[String])

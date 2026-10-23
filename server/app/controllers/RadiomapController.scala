@@ -17,7 +17,7 @@ import java.util
 import java.util.ArrayList
 import javax.inject.{Inject, Singleton}
 import scala.concurrent.Future
-import scala.jdk.CollectionConverters.CollectionHasAsScala
+import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala}
 
 @Singleton
 class RadiomapController @Inject()(cc: ControllerComponents,
@@ -52,6 +52,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
         val buid = (json \ SCHEMA.fBuid).as[String]
         val floorNum = (json \ SCHEMA.fFloor).as[String]
+        if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floorNum))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val lat1 = (json \ "lat1").as[String]
         val lon1 = (json \ "lon1").as[String]
         val lat2 = (json \ "lat2").as[String]
@@ -103,6 +105,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         if (owner_id == null) return RESPONSE.UNAUTHORIZED_USER
         val buid = (json \ SCHEMA.fBuid).as[String]
         val floorNum = (json \ SCHEMA.fFloor).as[String]
+        if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floorNum))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val lat1 = (json \ "lat1").as[String]
         val lon1 = (json \ "lon1").as[String]
         val lat2 = (json \ "lat2").as[String]
@@ -251,6 +255,11 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         if (newBuildingsFloors == null) {
           return RESPONSE.BAD("Uploaded a corrupted rss-log file.")
         } else {
+          if (newBuildingsFloors.asScala.exists { case (buid, floors) =>
+            !Utils.isSafePathSegment(buid) || floors.asScala.exists(!Utils.isSafePathSegment(_))
+          }) {
+            return RESPONSE.BAD("Invalid building or floor identifier in rss-log.")
+          }
           try {
             for (buid <- newBuildingsFloors.keySet.asScala) {
               val storedSpace = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, buid)
@@ -356,6 +365,9 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         if (!Floor.checkFloorNumberFormat(floor_number)) {
           return RESPONSE.BAD("Floor number cannot contain whitespace!")
         }
+        if (!Utils.isSafePathSegment(buid) || !Utils.isSafePathSegment(floor_number)) {
+          return RESPONSE.BAD("Invalid building or floor identifier.")
+        }
         val rmapDir = fu.getDirFrozenFloor(buid, floor_number)
         val radiomapFile = fu.getRadiomapFile(buid, floor_number)
         val meanFile = fu.getMeanFile(buid, floor_number)
@@ -451,6 +463,8 @@ class RadiomapController @Inject()(cc: ControllerComponents,
         val floorNumbers = (json \ SCHEMA.fFloors).as[String]
         val buid = (json \ SCHEMA.fBuid).as[String]
         val floors = floorNumbers.split(" ")
+        if (!Utils.isSafePathSegment(buid) || !floors.forall(Utils.isSafePathSegment))
+          return RESPONSE.BAD("Invalid building or floor identifier.")
         val radiomap_mean_filename = new java.util.ArrayList[String]()
         val rss_log_files = new java.util.ArrayList[String]()
 

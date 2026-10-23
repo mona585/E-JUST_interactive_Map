@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# Use system sbt if available, otherwise fall back to bundled sbt-dist
+# Use system sbt if available, otherwise use the bundled launcher jar directly.
+# The bundled shell script expects java9-rt-export.jar, which is absent from this
+# distribution; invoking sbt-launch.jar avoids that incomplete wrapper.
 if command -v sbt >/dev/null 2>&1; then
     exec sbt "$@"
-elif [ -f "./sbt-dist/bin/sbt" ]; then
-    exec ./sbt-dist/bin/sbt "$@"
+elif [ -f "./sbt-dist/bin/sbt-launch.jar" ]; then
+    if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+        JAVA_BIN="$JAVA_HOME/bin/java"
+    else
+        JAVA_BIN="java"
+    fi
+    exec "$JAVA_BIN" ${JAVA_OPTS:-} ${SBT_OPTS:-} -jar ./sbt-dist/bin/sbt-launch.jar "$@"
 else
     echo "Error: sbt not found. Run ./build --server to auto-install it." >&2
     exit 1

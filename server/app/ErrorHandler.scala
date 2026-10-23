@@ -68,8 +68,8 @@ class ErrorHandler extends HttpErrorHandler {
         }
 
         val eid = Utils.genErrorUniqueID()
-        val errInt = "404: ID: " + eid
-        val errPub =  "Client Error: 404: Error ID: " + eid
+        val errInt = statusCode.toString + ": ID: " + eid
+        val errPub = "Client Error: " + statusCode.toString + ": Error ID: " + eid
         val msg = errInt + " " + errorMsg(request)
 
         LOG.E(msg)
@@ -78,10 +78,10 @@ class ErrorHandler extends HttpErrorHandler {
             Future.successful(Status(statusCode)(Json.obj(
               "status" -> "error",
               "message" -> ("Client error. Error ID: " + eid),
-              "status_code" -> statusCode).toString))
+              "status_code" -> statusCode)).as("application/json"))
         } else { // otherwise HTML
             Future.successful(Status(statusCode)(
-                errPub + "\n\n\n" + errorMsg(request)))
+                errPub + "\n\n\n" + errorMsg(request)).as("text/plain; charset=utf-8"))
         }
     }
 
@@ -91,15 +91,16 @@ class ErrorHandler extends HttpErrorHandler {
         val msg : String = errInt + " " + errorMsg(request) + "\n" + exception.getClass + ": " + exception.getMessage
         LOG.E(msg)
 
+        val publicMsg = "Internal Server Error. Error ID: " + eid
+
         if (exception.isInstanceOf[MatchError]) {
-            // CHECK if OK leave like this
             LOG.D("Skip full stacktrace?") // CHECK::NN
             if (request.path.startsWith("/api"))
                 return Future.successful(InternalServerError(Json.obj(
                   "status" -> "error",
                   "message" -> ("Internal error. Error ID: " + eid),
-                  "status_code" -> 500).toString))
-            return Future.successful(InternalServerError(msg))
+                  "status_code" -> 500)).as("application/json"))
+            return Future.successful(InternalServerError(publicMsg).as("text/plain; charset=utf-8"))
         } else {
             LOG.E("StackTrace: " + fullStacktrace(exception))
         }
@@ -114,9 +115,9 @@ class ErrorHandler extends HttpErrorHandler {
             Future.successful(InternalServerError(Json.obj(
               "status" -> "error",
               "message" -> ("Internal error. Error ID: " + eid),
-              "status_code" -> 500).toString))
+              "status_code" -> 500)).as("application/json"))
         }  else { // return HTML
-            Future.successful(InternalServerError(msg))
+            Future.successful(InternalServerError(publicMsg).as("text/plain; charset=utf-8"))
         }
     }
 }

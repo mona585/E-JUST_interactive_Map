@@ -16,10 +16,6 @@
 
 package datasources
 
-import java.util.concurrent.TimeUnit
-
-import scala.concurrent.Await
-import scala.concurrent.duration.Duration
 import org.mongodb.scala._
 import utils.LOG
 
@@ -37,8 +33,8 @@ object Helpers {
     val observable: Observable[C]
     val converter: C => String
 
-    def results(): Seq[C] = Await.result(observable.toFuture(), Duration(10, TimeUnit.SECONDS))
-    def headResult(): C = Await.result(observable.head(), Duration(10, TimeUnit.SECONDS))
+    def results(): Seq[C] = DbAwait.result(observable.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    def headResult(): C = DbAwait.result(observable.head(), MongodbDatasource.DB_TIMEOUT)
 
     def printResults(initial: String = ""): Unit = {
       LOG.I("PrintResults: ")

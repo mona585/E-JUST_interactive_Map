@@ -32,9 +32,7 @@ class CampusNavigationService @Inject() (pds: ProxyDataSource) {
     val toPuid = (toPoi \ SCHEMA.fPuid).asOpt[String].orNull
     if (fromPuid == null || toPuid == null) return points
     val graph = new Dijkstra.Graph()
-    for (buid <- buids) {
-      for (poi <- pds.db.poisByBuildingAsMap(buid).asScala) graph.addPoi(poi)
-    }
+    for (poi <- pds.db.poisByBuildingIdsAsMap(buids).asScala) graph.addPoi(poi)
     val edges = pds.db.connectionsByCampusAsMap(buids).asScala.filterNot { e =>
       stepFree && "stair".equalsIgnoreCase(e.get(SCHEMA.fEdgeType))
     }

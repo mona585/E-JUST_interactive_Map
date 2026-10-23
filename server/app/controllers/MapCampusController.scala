@@ -10,9 +10,7 @@ import utils._
 import utils.json.VALIDATE
 
 import java.io._
-import java.util
 import javax.inject.{Inject, Singleton}
-import scala.jdk.CollectionConverters.CollectionHasAsScala
 @Singleton
 class MapCampusController @Inject()(cc: ControllerComponents,
                                    pds: ProxyDataSource,
@@ -44,30 +42,17 @@ class MapCampusController @Inject()(cc: ControllerComponents,
             return RESPONSE.ERROR_INTERNAL("Duplicate campus.")
           }
 
-          val buids = new util.ArrayList[String]
-          for (c <- campus) {
-            val cBuildings = (c \ SCHEMA.fBuids).asOpt[List[String]].getOrElse(Nil)
-            for (cb <- cBuildings) {
-              buids.add(cb)
-            }
-          }
-
-          val spaces = new util.ArrayList[JsValue]
-          for (b <- buids.asScala) {
-            val space = try {
-              pds.db.getFromKey(SCHEMA.cSpaces, SCHEMA.fBuid, b)
-            } catch {
-              case _: Exception => null
-            }
-            if (space != null) // some spaces are deleted but still exist in buids[] of a campus
-              space.asOpt[JsObject].foreach { s =>
-                spaces.add(s - SCHEMA.fId - SCHEMA.fSchema - SCHEMA.fCoOwners - SCHEMA.fGeometry - SCHEMA.fType - SCHEMA.fOwnerId)
-              }
-          }
+          val buids = campus
+            .flatMap(c => (c \ SCHEMA.fBuids).asOpt[List[String]].getOrElse(Nil))
+            .distinct
+          val spacesByBuid = pds.db.getSpacesByBuids(buids).flatMap { space =>
+            (space \ SCHEMA.fBuid).asOpt[String].map(_ -> space)
+          }.toMap
+          val spaces = buids.flatMap(spacesByBuid.get)
 
           val res = campus.head.asOpt[JsObject].getOrElse(return RESPONSE.ERROR_INTERNAL("Invalid campus data.")) -
             SCHEMA.fBuids - SCHEMA.fOwnerId - SCHEMA.fId - SCHEMA.fSchema - SCHEMA.fCampusCuid - SCHEMA.fDescription +
-            (SCHEMA.cSpaces -> Json.toJson(spaces.asScala))
+            (SCHEMA.cSpaces -> JsArray(spaces))
           try
             RESPONSE.gzipJsonOk(res.toString)
           catch {

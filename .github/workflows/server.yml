@@ -1,0 +1,57 @@
+name: server
+
+on:
+  push:
+    branches: [develop, main, Ahmed-remote-launch]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: sbt
+      - name: Run server tests
+        working-directory: server
+        run: ./sbt test
+
+  integration:
+    name: Mongo integration tests
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: sbt
+      - name: Run server tests against MongoDB
+        working-directory: server
+        env:
+          RUN_MONGO_INTEGRATION_TESTS: "true"
+          MONGODB_TEST_HOST: 127.0.0.1
+          MONGODB_TEST_PORT: "27017"
+          MONGODB_TEST_DATABASE: anyplace_test
+          MONGODB_TEST_USERNAME: ""
+          MONGODB_TEST_PASSWORD: ""
+        run: ./sbt test

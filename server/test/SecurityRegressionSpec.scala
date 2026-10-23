@@ -189,7 +189,7 @@ class SecurityRegressionSpec extends PlaySpecification with IsolatedFixture {
         "name" -> "Test Building",
         "description" -> "Unauthorized creation attempt"
       )
-      val req = route(app, FakeRequest(POST, "/api/mapping/space/add").withJsonBody(payload)).get
+      val req = route(app, FakeRequest(POST, "/api/auth/mapping/space/add").withJsonBody(payload)).get
       // Should be unauthorized (401) or bad request without valid token
       status(req) must beOneOf(UNAUTHORIZED, BAD_REQUEST, FORBIDDEN)
     }
