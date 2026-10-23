@@ -460,17 +460,29 @@ app.factory('requestInterceptor', [function () {
     ];
     var requestInterceptor = {
         request: function (config) {
-            if (config.url !== undefined) {
-                var loggedIn = (app.user != null)
-                if (config.url.startsWith(API.url+"/auth/")) {
-                    if (!loggedIn) LOG.E("ERROR: user not logged in and requested: " + config.url)
-                    if (loggedIn) config.headers.access_token = app.user.access_token;
-                } else if (loggedIn) {
+            if (config && config.url) {
+                config.headers = config.headers || {};
+                var needsToken = config.url.indexOf("/auth/") !== -1;
+                if (!needsToken) {
                     for (var i = 0; i < MUTATING_URLS.length; i++) {
                         if (config.url.startsWith(API.url + MUTATING_URLS[i])) {
-                            config.headers.access_token = app.user.access_token;
+                            needsToken = true;
                             break;
                         }
+                    }
+                }
+                if (needsToken) {
+                    // app.user may not be hydrated yet on a fresh page load;
+                    // fall back to the persisted cookie token.
+                    var token = (app.user && app.user.access_token) ? app.user.access_token : null;
+                    if (!token && typeof document !== "undefined" && document.cookie) {
+                        var match = document.cookie.match(/(?:^|;\s*)localAccessToken=([^;]+)/);
+                        if (match) { token = match[1]; }
+                    }
+                    if (token) {
+                        config.headers.access_token = token;
+                    } else if (config.url.indexOf("/auth/") !== -1) {
+                        LOG.E("ERROR: user not logged in and requested: " + config.url);
                     }
                 }
             }

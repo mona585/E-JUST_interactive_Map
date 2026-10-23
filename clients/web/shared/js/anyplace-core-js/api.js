@@ -132,9 +132,6 @@ API.Mapping.CONNECTION_DELETE_URL = API.url + API.Mapping.CONNECTION_DELETE;
 API.Mapping.CONNECTION_ALL_FLOOR = "/mapping/connection/floor/all";
 API.Mapping.CONNECTION_ALL_FLOOR_URL = API.url + API.Mapping.CONNECTION_ALL_FLOOR;
 
-API.Mapping.LOGIN_GOOGLE = "/user/login/google";
-API.Mapping.LOGIN_GOOGLE_URL = API.url + API.Mapping.LOGIN_GOOGLE;
-
 API.Mapping.LOGIN_LOCAL = "/user/login";
 API.Mapping.LOGIN_LOCAL_URL = API.url + API.Mapping.LOGIN_LOCAL;
 
@@ -159,6 +156,25 @@ app.factory('AnyplaceAPIService', ['$http', '$q', 'formDataObject', function ($h
 
     $http.defaults.useXDomain = true;
     delete $http.defaults.headers.common['X-Requested-With'];
+
+    // Some responses may arrive without a JSON content type (for example from
+    // older proxies); parse JSON-looking strings so callers always get objects.
+    if ($http.defaults.transformResponse) {
+        $http.defaults.transformResponse.push(function (data) {
+            if (typeof data === 'string') {
+                var trimmed = data.trim();
+                if ((trimmed.charAt(0) === '{' && trimmed.charAt(trimmed.length - 1) === '}') ||
+                    (trimmed.charAt(0) === '[' && trimmed.charAt(trimmed.length - 1) === ']')) {
+                    try {
+                        return JSON.parse(trimmed);
+                    } catch (e) {
+                        return data;
+                    }
+                }
+            }
+            return data;
+        });
+    }
 
     var apiService = {};
 
@@ -746,20 +762,6 @@ app.factory('AnyplaceAPIService', ['$http', '$q', 'formDataObject', function ($h
         return $http({
             method: "POST",
             url: API.Mapping.CONNECTION_ALL_FLOOR_URL,
-            data: json_req
-        }).success(function (data, status) {
-            return data;
-        }).error(function (data, status) {
-            return data;
-        });
-    };
-
-    apiService.loginGoogle = function (json_req) {
-        LOG.D4("loginGoogle")
-        LOG.D4("Google sign-in request received")
-        return $http({
-            method: "POST",
-            url: API.Mapping.LOGIN_GOOGLE_URL,
             data: json_req
         }).success(function (data, status) {
             return data;

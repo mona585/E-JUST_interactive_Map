@@ -50,6 +50,9 @@ trait IDatasource {
 
   def login(collection: String, username: String, password: String): List[JsValue]
 
+  /** Case-insensitive lookup by username or email for local login. */
+  def getUserByIdentifier(identifier: String): JsValue
+
   /**
    * Given an access_token it returns the user account.
    * Used only for local accounts.

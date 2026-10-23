@@ -107,7 +107,11 @@ app.controller('FloorController', ['$scope', '$compile', 'AnyplaceService', 'GMa
         var promise = AnyplaceAPIService.allBuildingFloors(jsonReq);
         promise.then(
             function (resp) {
-                $scope.xFloors = resp.data.floors;
+                var data = resp.data;
+                if (typeof data === "string") {
+                    try { data = JSON.parse(data); } catch (e) { }
+                }
+                $scope.xFloors = (data && data.floors) ? data.floors : [];
                 $scope.xFloors = $scope.xFloors.sort(function (a, b) {
                     return parseInt(a.floor_number) - parseInt(b.floor_number)
                 });

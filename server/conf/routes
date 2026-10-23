@@ -21,6 +21,7 @@ GET         /developers/                                                        
 GET         /developers                                                             controllers.WebAppController.AddTrailingSlash()
 
 # ARCHITECT:
+GET         /architect/index.html                                                    controllers.WebAppController.serveArchitect(file="index.html")
 GET         /architect/*file                                                        controllers.Assets.at(path="/public/anyplace_architect", file)
 GET         /architect/                                                             controllers.WebAppController.serveArchitect(file="index.html")
 GET         /architect                                                              controllers.WebAppController.AddTrailingSlash()

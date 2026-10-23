@@ -39,7 +39,8 @@ class UserController @Inject()(cc: ControllerComponents,
         val username = (json \ SCHEMA.fUsername).asOpt[String].map(_.trim)
           .filter(_.matches("^[A-Za-z0-9._-]{3,32}$"))
           .getOrElse(return RESPONSE.BAD("Invalid username."))
-        val password = (json \ SCHEMA.fPassword).asOpt[String].getOrElse(return RESPONSE.BAD("Invalid password."))
+        val password = (json \ SCHEMA.fPassword).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.BAD("Invalid password."))
         val external = "anyplace"
         var accType = "user"
 
@@ -78,10 +79,15 @@ class UserController @Inject()(cc: ControllerComponents,
         val checkRequirements = VALIDATE.checkRequirements(json, SCHEMA.fUsername, SCHEMA.fPassword)
         if (checkRequirements != null) return checkRequirements
         LOG.D4("local login request received")
-        val username = (json \ SCHEMA.fUsername).asOpt[String].getOrElse(return RESPONSE.UNAUTHORIZED("Incorrect username or password."))
-        val password = (json \ SCHEMA.fPassword).asOpt[String].getOrElse(return RESPONSE.UNAUTHORIZED("Incorrect username or password."))
-        // Per-user PBKDF2 salts: fetch by username, then verify in code.
-        val storedDoc = pds.db.getFromKeyAsJson(SCHEMA.cUsers, SCHEMA.fUsername, username)
+        val username = (json \ SCHEMA.fUsername).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.UNAUTHORIZED("Incorrect username or password."))
+        val password = (json \ SCHEMA.fPassword).asOpt[String].map(_.trim).filter(_.nonEmpty)
+          .getOrElse(return RESPONSE.UNAUTHORIZED("Incorrect username or password."))
+        // Per-user PBKDF2 salts: fetch by username, then verify in code. Fall
+        // back to a case-insensitive username or email match for password
+        // managers and users who sign in with their email address.
+        val exactDoc = pds.db.getFromKeyAsJson(SCHEMA.cUsers, SCHEMA.fUsername, username)
+        val storedDoc = if (exactDoc != null) exactDoc else pds.db.getUserByIdentifier(username)
         if (storedDoc == null) return RESPONSE.UNAUTHORIZED("Incorrect username or password.")
         val storedHash = (storedDoc \ SCHEMA.fPassword).asOpt[String].orNull
         if (!userHelper.verifyPassword(password, storedHash)) return RESPONSE.UNAUTHORIZED("Incorrect username or password.")

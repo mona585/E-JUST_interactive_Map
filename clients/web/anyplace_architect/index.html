@@ -9,11 +9,6 @@
     <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
     <meta charset="utf-8">
 
-    <meta name="google-signin-scope" content="profile email">
-    <meta name="google-signin-client_id"
-          content="587500723971-si8s4qqat9v5efgemnebihpi3qe9onlp.apps.googleusercontent.com">
-
-    <script src="https://apis.google.com/js/platform.js" async defer></script>
     <link href="bower_components/jquery-ui/themes/base/all.css" rel="stylesheet" type="text/css"/>
     <script src="bower_components/jquery/dist/jquery.min.js"></script>
     <script src="bower_components/jquery-ui/jquery-ui.min.js"></script>
@@ -55,7 +50,7 @@
     <script type="text/javascript" src="bower_components/angular-bootstrap/ui-bootstrap-tpls.min.js"></script>
     <script type="text/javascript" src="bower_components/angular-loading-bar/src/loading-bar.js"></script>
     <link rel="stylesheet" href="bower_components/angular-loading-bar/src/loading-bar.css">
-    <script type="text/javascript" src="build/js/anyplace.js"></script>
+    <script type="text/javascript" src="build/js/anyplace.js?v=20261024a"></script>
     <link rel="stylesheet" type="text/css" href="build/css/anyplace.min.css"/>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
     <!--<script src="/bower_components/angular-cookies/angular-cookies.js"></script>-->
@@ -96,27 +91,6 @@
         <!-- BUGFIX: architect used to initialize 3 times -->
         <span ng-controller="BuildingController as buildingCtrl">
         <div id="sign-in-box" ng-hide="isAuthenticated || !showFullControls">
-            <div id="google-border" class="rborder">
-                <span class="button-style">
-                <button onclick="showHideFun('singInOptions');" class="menu-btn">
-                    Google
-                </button>
-            </span>
-
-                <div id="singInOptions" class="mdl">
-                    <span id="signinButton" style="display: block; text-align: center"; class="sub-btn button-style">
-                        <div
-                                class="g-signin2"
-                                data-onsuccess="onSignIn"
-                                data-onfailure="onSignInFailure"
-                                data-width="wide"
-                                data-height="tall"
-                                data-accesstype="offline">
-                        </div>
-                    </span>
-                </div>
-            </div>
-
             <div id="anyplace-border" class="rborder">
                 <span class="button-style">
                     <button onclick="showHideFun('registerOptions')"; class="menu-btn">
@@ -139,36 +113,36 @@
                 </div>
 
                 <div id="id01" class="modal">
-                    <form class="mdl-content anmt">
+                    <form class="mdl-content anmt" onsubmit="return false;">
                         <div class="imgcontainer">
                             <span onclick="document.getElementById('id01').style.display='none'" class="cls" title="Close Modal">&times;</span>
                         </div>
 
                         <div class="cntnr">
                             <label for="uname"><b>Username</b></label>
-                            <input ng-model="user.username" type="text" placeholder="Enter Username" name="uname" maxlength="32" required>
+                            <input ng-model="user.username" type="text" placeholder="Enter Username" id="uname" name="uname" maxlength="32" ng-keyup="$event.keyCode == 13 && loginWithLocalAccount()" required>
 
                             <label for="sPsw"><b>Password</b></label>
-                            <input ng-model="user.password" type="password" placeholder="Enter Password" id="sPsw" maxlength="32" required>
+                            <input ng-model="user.password" type="password" placeholder="Enter Password" id="sPsw" maxlength="32" ng-keyup="$event.keyCode == 13 && loginWithLocalAccount()" required>
                             <label>
                                 <input type="checkbox" onclick="showPassword('sPsw')"> Show password
                             </label>
 
-                            <button type="submit"; class="lgn-btn" ng-click="loginWithLocalAccount()">Login</button>
+                            <button type="button" class="lgn-btn" ng-click="loginWithLocalAccount()">Login</button>
                             <!--                            <label>-->
                             <!--                                <input type="checkbox" checked="checked" name="remember"> Remember me-->
                             <!--                            </label>-->
                         </div>
 
                         <div class="cntnr" style="background-color:#f1f1f1">
-                            <button type="btn" onclick="document.getElementById('id01').style.display='none'" class="cancelbtn lgn-btn">Cancel</button>
+                            <button type="button" onclick="document.getElementById('id01').style.display='none'" class="cancelbtn lgn-btn">Cancel</button>
                             <!--                  &lt;!&ndash;  <span class="psw">Forgot <a href="#">password?</a></span>-->
                         </div>
                     </form>
                 </div>
 
                 <div id="id02" class="modal">
-                    <form class="mdl-content anmt">
+                    <form class="mdl-content anmt" onsubmit="return false;">
                         <div class="imgcontainer">
                             <span onclick="document.getElementById('id02').style.display='none'" class="cls" title="Close Modal">&times;</span>
                         </div>
@@ -181,18 +155,18 @@
                             <input ng-model="user.email" type="email" placeholder="Enter Email" name="mail" maxlength="128" required>
 
                             <label for="uname"><b>Username</b></label>
-                            <input ng-model="user.username" type="text" placeholder="Enter Username" name="uname" maxlength="32" required>
+                            <input ng-model="user.username" type="text" placeholder="Enter Username" id="uname" name="uname" maxlength="32" ng-keyup="$event.keyCode == 13 && loginWithLocalAccount()" required>
 
                             <label for="psw"><b>Password</b></label>
-                            <input ng-model="user.password" type="password" placeholder="Enter Password" id="rPsw" maxlength="32" required>
+                            <input ng-model="user.password" type="password" placeholder="Enter Password" id="rPsw" maxlength="32" ng-keyup="$event.keyCode == 13 && registerLocalAccount()" required>
                             <label>
                                 <input type="checkbox" onclick="showPassword('rPsw')"> Show password
                             </label>
 
-                            <button type="submit"; class="lgn-btn" ng-click="registerLocalAccount()">Register</button>
+                            <button type="button" class="lgn-btn" ng-click="registerLocalAccount()">Register</button>
                         </div>
                         <div class="cntnr" style="background-color:#f1f1f1">
-                            <button type="btn" onclick="document.getElementById('id02').style.display='none'" class="cancelbtn lgn-btn">Cancel</button>
+                            <button type="button" onclick="document.getElementById('id02').style.display='none'" class="cancelbtn lgn-btn">Cancel</button>
                         </div>
                     </form>
                 </div>
@@ -1308,7 +1282,7 @@
 </div>
 
 
-<script type="text/javascript" src="build/js/anyplace.js"></script>
+<script type="text/javascript" src="build/js/anyplace.js?v=20261024a"></script>
 
 <script type="text/javascript" src="bower_components/FileSaver/FileSaver.min.js"></script>
 <script type="text/javascript" src="bower_components/jszip/dist/jszip.min.js"></script>

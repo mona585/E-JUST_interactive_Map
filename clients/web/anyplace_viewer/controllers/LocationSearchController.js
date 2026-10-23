@@ -235,9 +235,11 @@ app.controller('LocationSearchController', ['$scope', '$compile', 'GMapService',
             function (resp) {
                 // on success
                 var data = resp.data;
-                //var bs = JSON.parse( data.buildings );
-                $scope.myBuildings = data.spaces;
-                $scope.greeklish = data.greeklish;
+                if (typeof data === "string") {
+                    try { data = JSON.parse(data); } catch (e) { }
+                }
+                $scope.myBuildings = (data && data.spaces) ? data.spaces : [];
+                $scope.greeklish = data ? data.greeklish : undefined;
 
                 var infowindow = new google.maps.InfoWindow({
                     content: '-',

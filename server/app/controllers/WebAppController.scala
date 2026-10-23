@@ -100,7 +100,13 @@ class WebAppController @Inject()(cc: ControllerComponents,
     }
     val file = env.classLoader.getResourceAsStream(reqFile)
     if (file != null)
-      Ok(scala.io.Source.fromInputStream(file, "UTF-8").mkString).as("text/html")
+      Ok(scala.io.Source.fromInputStream(file, "UTF-8").mkString)
+        .as("text/html")
+        .withHeaders(
+          "Cache-Control" -> "no-cache, no-store, must-revalidate",
+          "Pragma" -> "no-cache",
+          "Expires" -> "0"
+        )
     else
       NotFound
   }

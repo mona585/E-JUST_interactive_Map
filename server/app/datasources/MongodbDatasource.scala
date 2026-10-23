@@ -1744,6 +1744,17 @@ class MongodbDatasource @Inject() () extends IDatasource {
       onRequestCreateHeatmaps(buid, floor, level, true)
   }
 
+  override def getUserByIdentifier(identifier: String): JsValue = {
+    if (identifier == null || identifier.trim.isEmpty) return null
+    val collection = mdb.getCollection(SCHEMA.cUsers)
+    val pattern = ("(?i)^" + Pattern.quote(identifier.trim) + "$").r
+    val query = or(regex(SCHEMA.fUsername, pattern), regex(SCHEMA.fEmail, pattern))
+    val lookup = collection.find(query).first()
+    val awaited = DbAwait.result(lookup.toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val res = awaited.asInstanceOf[Document]
+    if (res == null) null else convertJson(res)
+  }
+
   override def login(col: String, username: String, password: String): List[JsValue] = {
     val collection = mdb.getCollection(col)
     val query = BsonDocument(SCHEMA.fUsername -> username, SCHEMA.fPassword -> password)

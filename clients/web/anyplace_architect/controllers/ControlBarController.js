@@ -58,10 +58,6 @@ app.controller('ControlBarController',
     $scope.setAuthenticated = function (bool) { $scope.isAuthenticated = bool; };
     $scope.toggleFullControls = function () { $scope.showFullControls = !$scope.showFullControls; };
 
-    // not called
-    // var apiClientLoaded = function () { gapi.client.plus.people.get({userId: 'me'}).execute(handleEmailResponse); };
-    // var handleEmailResponse = function (resp) { $scope.personLookUp(resp, googleAuth); };
-
     $scope.copyApiKey = function () {
         LOG.W("Copying api key")
         var copyTextarea = document.querySelector('#auth-api-key');
@@ -71,88 +67,16 @@ app.controller('ControlBarController',
         _info($scope, "API key copied!");
     }
 
-    $scope.showGoogleID = function () {
-        if (!$scope.user.google) { return; }
-        AnyplaceService.addAlert('success', 'Google ID is: ' + $scope.user.id);
-    };
-
     $scope.showGoogleAuth = function () { // INFO this is anyplace access token
         if (!$scope.user.access_token) { return; }
         AnyplaceService.addAlert('success', 'access_token: ' + $scope.user.access_token);
-    };
-
-    $scope.onSignIn = function (googleUser) {
-        if ($scope.getCookie("reloadedAfterLogin") === "") {
-            $scope.setCookie("reloadedAfterLogin", "true", 365);
-            LOG.D2("onSignIn: reloading")
-            location.reload();
-        }
-
-        $scope.setAuthenticated(true);
-        $scope.user = $scope.emptyUser
-        $scope.user.google = {}
-        var googleAuth = gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse();
-        LOG.D4("user.google.auth")
-        LOG.D4(googleAuth)
-        $scope.googleUserLookup(googleUser, googleAuth);
-    };
-
-    $scope.onSignInFailure = function () { LOG.E('Signin failed'); };
-
-    window.onSignIn = $scope.onSignIn;
-    window.onSignInFailure = $scope.onSignInFailure;
-
-    $scope.googleUserLookup = function (googleUser, googleAuth) {
-        // Get data from Google Response
-        try {
-            $scope.user.google = googleUser.getBasicProfile();
-        } catch (error) {
-            LOG.E("LOGIN error: "+ error);
-            return;
-        }
-
-        LOG.D4("googlePersonLookup")
-        LOG.D4(googleUser)
-        LOG.D4(googleAuth)
-
-        $scope.user.google.auth = googleAuth;
-        $scope.user.google.access_token = googleAuth.id_token; // google access_token
-        $scope.user.image = $scope.user.google.getImageUrl(); // BUG
-        $scope.user.google._id = $scope.user.google.getId(); // BUG
-        $scope.user.name = $scope.user.google.getName();
-        $scope.user.accountType = "google"
-
-        // google id
-        $scope.user.google.id = $scope.user.google._id + '_' + $scope.user.accountType;
-        var promise = AnyplaceAPIService.loginGoogle({
-            name: $scope.user.name,
-            external: "google",
-            access_token: $scope.user.google.access_token,
-        });
-
-        promise.then(function (resp) {
-                var data =resp.data.user;
-                $scope.user.type = data.type;
-                // anyplace access token
-                $scope.user.access_token = data.access_token; // anyplace token
-                $scope.user.id =  data.owner_id; // anyplace id
-                app.user=$scope.user;
-                if ($scope.user && $scope.user.id) { $scope.$broadcast('loggedIn', []); }
-            },
-            function (resp) {
-                LOG.D3(resp)
-                ShowError($scope, resp)
-                $scope.setAuthenticated(false);
-                $scope.user = $scope.emptyUser
-            }
-        );
     };
 
     $scope.refreshLocalLogin = function () {
         LOG.D3("refreshLocalLogin");
         var jsonReq = {};
         var cookieAccessToken = $scope.getCookie("localAccessToken");
-        if (cookieAccessToken === "") { return; }
+        if (!cookieAccessToken || cookieAccessToken === "") { return; }
 
         jsonReq.access_token = cookieAccessToken;
         LOG.D2("Refreshing local login.");
@@ -161,8 +85,16 @@ app.controller('ControlBarController',
         promise.then(
             function (resp) { // on success
                 var data = resp.data;
-                LOG.D4("refreshLocalLogin")
-                LOG.D4(resp)
+                if (typeof data === "string") {
+                    try { data = JSON.parse(data); } catch (e) { }
+                }
+                if (!data || !data.user) {
+                    $scope.deleteCookie("localAccessToken");
+                    return;
+                }
+                LOG.D4("refreshLocalLogin");
+                LOG.D4(resp);
+                if (!$scope.user) { $scope.user = {}; }
                 $scope.user.username = data.user.username;
                 $scope.user.name = data.user.name;
                 $scope.user.email = data.user.email;
@@ -176,22 +108,60 @@ app.controller('ControlBarController',
                 if ($scope.user && $scope.user.id) { $scope.$broadcast('loggedIn', []); }
             },
             function (resp) {
-                ShowError($scope, resp,"Login refresh failed.", true)
+                // Silently clear expired or invalid cookie on background refresh
                 $scope.deleteCookie("localAccessToken");
             }
         );
     };
 
     $scope.loginWithLocalAccount = function () {
-        var jsonReq = {};
-        LOG.D3("loginWithLocalAccount");
-        jsonReq.username = $scope.user.username;
-        jsonReq.password = $scope.user.password;
+        var unameEl = document.getElementById('uname');
+        var pswEl = document.getElementById('sPsw');
+
+        var uVal = "";
+        var pVal = "";
+
+        // First check DOM inputs directly to capture browser autofill/password manager values
+        if (unameEl && unameEl.value && unameEl.value.trim().length > 0) {
+            uVal = unameEl.value.trim();
+        } else if ($scope.user && $scope.user.username && $scope.user.username.trim().length > 0) {
+            uVal = $scope.user.username.trim();
+        }
+
+        if (pswEl && pswEl.value && pswEl.value.trim().length > 0) {
+            pVal = pswEl.value.trim();
+        } else if ($scope.user && $scope.user.password && $scope.user.password.trim().length > 0) {
+            pVal = $scope.user.password.trim();
+        }
+
+        if (!uVal || !pVal) {
+            _warn($scope, "Please enter both username and password.");
+            return;
+        }
+
+        if (!$scope.user) { $scope.user = {}; }
+        $scope.user.username = uVal;
+        $scope.user.password = pVal;
+
+        var jsonReq = {
+            username: uVal,
+            password: pVal
+        };
+
+        LOG.D3("loginWithLocalAccount: " + uVal);
 
         var promise = AnyplaceAPIService.loginLocalAccount(jsonReq);
         promise.then(
             function (resp) { // on success
                 var data = resp.data;
+                if (typeof data === "string") {
+                    try { data = JSON.parse(data); } catch (e) { }
+                }
+                if (!data || !data.user) {
+                    var errTxt = (data && data.message) ? data.message : "Login failed: Invalid response";
+                    _err($scope, errTxt);
+                    return;
+                }
                 LOG.D4(resp);
                 $scope.user.username = data.user.username;
                 $scope.user.name = data.user.name;
@@ -200,18 +170,41 @@ app.controller('ControlBarController',
                 $scope.user.accountType = "local";
                 $scope.user.type = data.user.type;
                 $scope.user.access_token = data.user.access_token;
-                app.user=$scope.user;
+                app.user = $scope.user;
                 $scope.setAuthenticated(true);
 
-                // setting local user cookie (to enable login refresh)
-                if ($scope.getCookie("localAccessToken") === "") {
-                    $scope.setCookie("localAccessToken", $scope.user.access_token, 30);
-                }
+                // Always persist fresh access token
+                $scope.setCookie("localAccessToken", $scope.user.access_token, 30);
+
+                // Hide login modal and menu
+                var modal = document.getElementById('id01');
+                if (modal) { modal.style.display = 'none'; }
+                var regOpts = document.getElementById('registerOptions');
+                if (regOpts) { regOpts.style.display = 'none'; }
 
                 if ($scope.user && $scope.user.id) { $scope.$broadcast('loggedIn', []); }
+                _suc($scope, "Welcome back, " + ($scope.user.name || $scope.user.username) + "!");
             },
             function (resp) {
-                ShowError($scope, resp,"Login failed", true)
+                var serverMsg = "";
+                if (resp && resp.data) {
+                    var d = resp.data;
+                    if (typeof d === "string") {
+                        try { d = JSON.parse(d); } catch (e) { }
+                    }
+                    if (d && typeof d === "object") {
+                        if (d.message) {
+                            serverMsg = d.message;
+                        } else if (Array.isArray(d.error_messages) && d.error_messages.length > 0) {
+                            serverMsg = d.error_messages.join(", ");
+                        }
+                    }
+                }
+                if (!serverMsg && resp && resp.status === 0) {
+                    serverMsg = "Network connection error.";
+                }
+                var displayMsg = serverMsg ? "Login failed: " + serverMsg : "Login failed. Please check your credentials.";
+                _err($scope, displayMsg);
                 $scope.deleteCookie("localAccessToken");
             }
         );
@@ -219,32 +212,42 @@ app.controller('ControlBarController',
 
     $scope.registerLocalAccount = function () {
         var jsonReq = {};
-        jsonReq.name = $scope.user.name;
-        jsonReq.email = $scope.user.email;
-        jsonReq.username = $scope.user.username;
-        jsonReq.password = $scope.user.password;
+        jsonReq.name = ($scope.user && $scope.user.name) ? $scope.user.name : "";
+        jsonReq.email = ($scope.user && $scope.user.email) ? $scope.user.email : "";
+        jsonReq.username = ($scope.user && $scope.user.username) ? $scope.user.username : "";
+        jsonReq.password = ($scope.user && $scope.user.password) ? $scope.user.password : "";
+
+        var rPswEl = document.getElementById('rPsw');
+        if (rPswEl && rPswEl.value && rPswEl.value.trim().length > 0) {
+            jsonReq.password = rPswEl.value.trim();
+        }
 
         var promise = AnyplaceAPIService.registerLocalAccount(jsonReq);
         promise.then(function (resp) {  // on success
                 var data = resp.data;
-                _suc($scope, "Successfully registered!");
+                var modal = document.getElementById('id02');
+                if (modal) { modal.style.display = 'none'; }
+                _suc($scope, "Successfully registered! Please log in.");
             },
             function (resp) {
-                ShowError($scope, resp,"Something went wrong at registration.", true)
+                var msg = "Something went wrong at registration.";
+                if (resp && resp.data) {
+                    var d = resp.data;
+                    if (typeof d === "string") { try { d = JSON.parse(d); } catch (e) { } }
+                    if (d && d.message) { msg = d.message; }
+                }
+                _err($scope, msg);
             }
         );
     };
 
     $scope.signOut = function () {
-        var auth2 = gapi.auth2.getAuthInstance();
-        auth2.signOut().then(function () { LOG.D('User signed out.'); });
         $scope.isAuthenticated = false;
 
         $scope.$broadcast('loggedOff', []);
         $scope.user={};
         clearFingerprintCoverage();
         clearFingerprintHeatmap();
-        $scope.deleteCookie("reloadedAfterLogin");
         $scope.deleteCookie("localAccessToken");
     };
 
@@ -318,11 +321,12 @@ app.controller('ControlBarController',
         var d = new Date();
         d.setTime(d.getTime() + (exdays * 24 * 60 * 60 * 1000));
         var expires = "expires=" + d.toUTCString();
-        document.cookie = cname + "=" + cvalue + "; " + expires;
+        document.cookie = cname + "=" + cvalue + "; " + expires + "; path=/; SameSite=Lax";
     };
 
     $scope.deleteCookie = function (cname) {
-        document.cookie = cname+"=;expires=" + new Date(0).toUTCString()
+        document.cookie = cname + "=; expires=" + new Date(0).toUTCString() + "; path=/; SameSite=Lax";
+        document.cookie = cname + "=; expires=" + new Date(0).toUTCString() + ";";
     };
 
     $scope.tab = 1;

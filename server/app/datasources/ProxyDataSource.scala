@@ -380,6 +380,10 @@ class ProxyDataSource @Inject() (conf: Configuration) extends IDatasource {
     activeDB.cacheHeatmapByTime(col, buid, floor, level)
   }
 
+  override def getUserByIdentifier(identifier: String): JsValue = {
+    activeDB.getUserByIdentifier(identifier)
+  }
+
   override def login(collection: String, username: String, password: String): List[JsValue] = {
     checkHasActiveDB()
     activeDB.login(collection, username, password)

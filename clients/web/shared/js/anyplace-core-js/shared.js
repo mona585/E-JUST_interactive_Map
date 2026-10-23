@@ -120,14 +120,27 @@ var _msg_autohide = function (scope, msg, msgType, timeout) {
 
 
 function _ShowAlert(scope, func, response, defaultMsg, showDefaultMessage) {
-  var data = response.data;
+  var data = response ? response.data : null;
   var msg = defaultMsg;
-  if (data != null && data["message"] != null) {
-    if(showDefaultMessage) {
-      msg += ": " + data["message"];
-    } else {
-      msg = data["message"];
+  if (typeof data === "string") {
+    try { data = JSON.parse(data); } catch (e) { }
+  }
+  var serverMsg = null;
+  if (data != null && typeof data === "object") {
+    if (data["message"] != null && String(data["message"]).trim().length > 0) {
+      serverMsg = data["message"];
+    } else if (Array.isArray(data["error_messages"]) && data["error_messages"].length > 0) {
+      serverMsg = data["error_messages"].join(", ");
     }
+  }
+  if (serverMsg) {
+    if (showDefaultMessage) {
+      msg += ": " + serverMsg;
+    } else {
+      msg = serverMsg;
+    }
+  } else if (response && response.status === 0) {
+    msg += " (Network error: server unreachable)";
   }
   func(scope, msg);
 }

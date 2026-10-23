@@ -107,7 +107,10 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
         promise.then(
             function (resp) {
                 var data = resp.data;
-                $scope.myallPois = data.pois;
+                if (typeof data === "string") {
+                    try { data = JSON.parse(data); } catch (e) { }
+                }
+                $scope.myallPois = (data && data.pois) ? data.pois : [];
             },
             function (resp) {
                 if (letters=="") {
@@ -391,8 +394,10 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
         promise.then(
             function (resp) {
                 var data = resp.data;
-
-                $scope.myPois = data.pois;
+                if (typeof data === "string") {
+                    try { data = JSON.parse(data); } catch (e) { }
+                }
+                $scope.myPois = (data && data.pois) ? data.pois : [];
 
                 var sz = $scope.myPois.length;
                 for (var i = sz - 1; i >= 0; i--) {
@@ -438,7 +443,10 @@ app.controller('PoiController', ['$scope', '$compile', 'GMapService', 'AnyplaceS
         promise.then(
             function (resp) {
                 var data = resp.data;
-                var listPois = data.pois;
+                if (typeof data === "string") {
+                    try { data = JSON.parse(data); } catch (e) { }
+                }
+                var listPois = (data && data.pois) ? data.pois : [];
                 _clearPoiRoutePolyline();
                 for (var i = 0; i < listPois.length; i++) {
                     if (listPois[i].lat && listPois[i].lon && listPois[i].floor_number) {
