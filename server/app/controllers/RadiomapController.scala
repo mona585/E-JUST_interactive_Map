@@ -37,7 +37,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
    */
   def delete(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -90,7 +90,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
 
   def deleteTimestamp(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -152,7 +152,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
    */
   def byTime(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -199,7 +199,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
   def deleteBoundingBox(): Action[AnyContent] = Action {
     implicit request =>
 
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -230,7 +230,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
    */
   def upload(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -303,7 +303,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
    */
   def getFloor(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -321,7 +321,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
 
   def getByFloorBoundingBox(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -351,7 +351,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
    */
   def getByFloor(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -451,7 +451,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
    */
   def getByFloorsAll(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
 
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) { return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE) }
@@ -558,7 +558,7 @@ class RadiomapController @Inject()(cc: ControllerComponents,
 
   def get(radio_folder: String, fileName: String): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)

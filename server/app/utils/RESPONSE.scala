@@ -38,6 +38,7 @@ package utils
 import controllers.FloorplanSettings.MIN_ZOOM_UPLOAD
 
 import java.util
+import play.api.http.HeaderNames
 import play.api.libs.json.Json
 import play.api.libs.json.{JsNumber, JsObject, JsString, JsValue}
 import play.api.mvc.Results.Ok
@@ -184,15 +185,17 @@ object RESPONSE {
             missing.get(0)))
     }
 
-    def gzipJsonOk(json: JsValue, message: String): Result = {
+    def gzipJsonOk(json: JsValue, message: String)(implicit request: RequestHeader): Result = {
         val tempJson = json.as[JsObject] + ("message" -> JsString(message))
         gzipJsonOk(tempJson.toString())
     }
 
-    def gzipJsonOk(body: String): Result = {
-        // Gzip only when it actually saves bytes; tiny JSON payloads (login,
-        // errors, health) are smaller and cheaper to send uncompressed.
-        if (body.length < 1024) {
+    def gzipJsonOk(body: String)(implicit request: RequestHeader): Result = {
+        // Gzip only when it actually saves bytes and the client advertised
+        // support; tiny JSON payloads (login, errors, health) stay plain.
+        val acceptsGzip = request.headers.get(HeaderNames.ACCEPT_ENCODING)
+            .exists(_.toLowerCase.contains("gzip"))
+        if (body.length < 1024 || !acceptsGzip) {
             Ok(body).as("application/json")
         } else {
             val gzipv = Utils.gzip(body)

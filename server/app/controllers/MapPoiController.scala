@@ -29,7 +29,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
 
   def add(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
 
         val apiKey = anyReq.getAccessToken()
@@ -76,7 +76,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
 
   def update(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -145,7 +145,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
 
   def delete(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -195,7 +195,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
 
   def byFloor(): Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -226,7 +226,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
 
   def bySpace(): Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -261,7 +261,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
    */
   def search: Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         LOG.D2("POI: search")
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody())
@@ -318,7 +318,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
    */
   def byConnectors: Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody())
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)

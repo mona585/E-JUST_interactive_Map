@@ -1,6 +1,8 @@
 import org.specs2.matcher.MatchResult
 import org.specs2.mutable.Specification
+import play.api.http.HeaderNames
 import play.api.libs.json.Json
+import play.api.test.FakeRequest
 import play.api.test.Helpers._
 import utils.RESPONSE
 
@@ -69,19 +71,30 @@ class ResponseSpec extends Specification {
     }
 
     "emit application/json for gzipped responses" in {
+      implicit val request = FakeRequest().withHeaders(HeaderNames.ACCEPT_ENCODING -> "gzip")
       val result = RESPONSE.gzipJsonOk("""{"ok":true}""")
       result.body.contentType must
         beSome.which(_.toLowerCase.startsWith("application/json"))
     }
 
     "leave small JSON bodies uncompressed" in {
+      implicit val request = FakeRequest().withHeaders(HeaderNames.ACCEPT_ENCODING -> "gzip")
       val result = RESPONSE.gzipJsonOk("""{"ok":true}""")
       result.header.headers.get("Content-Encoding") must beNone
     }
 
     "compress large JSON bodies" in {
+      implicit val request = FakeRequest().withHeaders(HeaderNames.ACCEPT_ENCODING -> "gzip")
       val result = RESPONSE.gzipJsonOk("""{"items":[""" + ("x" * 2048) + """]}""")
       result.header.headers.get("Content-Encoding") must beSome("gzip")
+    }
+
+    "skip compression when the client does not accept gzip" in {
+      implicit val request = FakeRequest()
+      val result = RESPONSE.gzipJsonOk("""{"items":[""" + ("x" * 2048) + """]}""")
+      result.header.headers.get("Content-Encoding") must beNone
+      result.body.contentType must
+        beSome.which(_.toLowerCase.startsWith("application/json"))
     }
   }
 }

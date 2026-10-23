@@ -22,7 +22,7 @@ class MapCampusController @Inject()(cc: ControllerComponents,
    */
   def get: Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -73,7 +73,7 @@ class MapCampusController @Inject()(cc: ControllerComponents,
    */
   def add: Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -128,7 +128,7 @@ class MapCampusController @Inject()(cc: ControllerComponents,
    */
   def update: Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -208,7 +208,7 @@ class MapCampusController @Inject()(cc: ControllerComponents,
 
   def byOwner: Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -244,7 +244,7 @@ class MapCampusController @Inject()(cc: ControllerComponents,
    */
   def delete: Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()

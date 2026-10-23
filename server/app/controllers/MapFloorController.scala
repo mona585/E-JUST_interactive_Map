@@ -27,7 +27,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
 
   def add(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -76,7 +76,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
   @deprecated("NotInUse")
   def floorUpdate(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -126,7 +126,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
 
   def delete(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -178,7 +178,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
 
   def all(): Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()

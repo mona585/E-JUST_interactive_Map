@@ -64,7 +64,7 @@ class NavigationController @Inject()(cc: ControllerComponents,
 
   def getBuildingById: Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -92,7 +92,7 @@ class NavigationController @Inject()(cc: ControllerComponents,
 
   def getPoisById: Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -120,7 +120,7 @@ class NavigationController @Inject()(cc: ControllerComponents,
 
   def getNavigationRoute: Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -244,7 +244,7 @@ class NavigationController @Inject()(cc: ControllerComponents,
 
   def getNavigationRouteXY: Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()

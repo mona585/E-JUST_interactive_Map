@@ -34,7 +34,7 @@ class HeatmapController @Inject()(cc: ControllerComponents,
 
   def floorWifiAVG1(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -64,7 +64,7 @@ class HeatmapController @Inject()(cc: ControllerComponents,
 
   def floorWifiAVG2(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -99,7 +99,7 @@ class HeatmapController @Inject()(cc: ControllerComponents,
    */
   def floorWifiAVG3(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -133,7 +133,7 @@ class HeatmapController @Inject()(cc: ControllerComponents,
    */
   def floorWifiAVG3tiles(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -177,7 +177,7 @@ class HeatmapController @Inject()(cc: ControllerComponents,
 
   def floorWifiTimestampAVG1(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -208,7 +208,7 @@ class HeatmapController @Inject()(cc: ControllerComponents,
 
   def floorWifiTimestampAVG2(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -244,7 +244,7 @@ class HeatmapController @Inject()(cc: ControllerComponents,
    */
   def floorWifiTimestampAVG3(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -281,7 +281,7 @@ class HeatmapController @Inject()(cc: ControllerComponents,
    */
   def floorWifiTimestampTiles(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()

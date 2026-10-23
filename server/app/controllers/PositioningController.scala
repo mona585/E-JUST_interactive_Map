@@ -62,7 +62,7 @@ class PositioningController @Inject()(cc: ControllerComponents,
 
   def predictFloorAlgo1(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         LOG.D2("Positioning: predictFloorAlgo1:")
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) {
@@ -109,7 +109,7 @@ class PositioningController @Inject()(cc: ControllerComponents,
 
   def estimatePosition(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody())
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)

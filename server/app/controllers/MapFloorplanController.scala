@@ -4,6 +4,7 @@ import controllers.FloorplanSettings.MIN_ZOOM_UPLOAD
 import datasources.{DatasourceException, ProxyDataSource, SCHEMA}
 import models._
 import models.oauth.OAuth2Request
+import play.api.http.HeaderNames
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 import play.api.mvc._
@@ -29,6 +30,9 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
                                        user: helper.User,
                                        actorSystem: akka.actor.ActorSystem)
   extends AbstractController(cc) {
+  private def acceptsGzip(implicit request: RequestHeader): Boolean =
+    request.headers.get(HeaderNames.ACCEPT_ENCODING).exists(_.toLowerCase.contains("gzip"))
+
   /** Blocking Mongo/file work stays off Play's default pool (see app.play.conf). */
   private implicit val blockingEc: scala.concurrent.ExecutionContext =
     actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
@@ -36,7 +40,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
   def serveFloorPlanBinary(buid: String, floorNum: String): Action[AnyContent] = Action {
     implicit request =>
 
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -63,7 +67,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
   def getTilesZip(buid: String, floorNum: String): Action[AnyContent] = Action {
     implicit request =>
 
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         var json = anyReq.getJsonBody()
@@ -91,7 +95,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
   def getZipLink(buid: String, floorNum: String): Action[AnyContent] = Action {
     implicit request =>
 
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         var json = anyReq.getJsonBody()
@@ -142,7 +146,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
 
   def getBase64(buid: String, floorNum: String): Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         var json = anyReq.getJsonBody()
@@ -160,10 +164,13 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
 
           try {
             val cached = FloorplanCache.getOrCompute(buid, floorNum, file, fu)
-            Ok(cached.gzippedBytes).withHeaders(
-              ("Content-Encoding", "gzip"),
-              ("Content-Length", cached.gzippedBytes.length.toString)
-            ).as("text/plain")
+            if (acceptsGzip)
+              Ok(cached.gzippedBytes).withHeaders(
+                ("Content-Encoding", "gzip"),
+                ("Content-Length", cached.gzippedBytes.length.toString)
+              ).as("text/plain")
+            else
+              Ok(cached.base64).as("text/plain")
           } catch {
             case e: IOException => return RESPONSE.BAD("Requested floorplan cannot be encoded in base64 properly: " +
               floorNum)
@@ -185,7 +192,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
    */
   def getAllBase64(buid: String, requestedFloors: String): Action[AnyContent] = Action.async {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         if (!anyReq.assertJsonBody())
           return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -208,7 +215,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           z += 1
         }
 
-        if (!missingFloor && floorFiles.nonEmpty) {
+        if (!missingFloor && floorFiles.nonEmpty && acceptsGzip) {
           try {
             val cached = FloorplanCache.getAllOrCompute(buid, floorFiles.toSeq, fu)
             return Ok(cached.gzippedBytes).withHeaders(
@@ -254,7 +261,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
   def upload(): Action[AnyContent] = Action {
     implicit request =>
 
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
@@ -341,7 +348,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
   def uploadWithZoom(): Action[AnyContent] = Action {
     implicit request =>
 
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         LOG.D2("Floorplan: uploadWithZoom")
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()

@@ -54,7 +54,7 @@ class UserAdminController @Inject()(cc: ControllerComponents,
   /** Not in use. Heatmap caches are created/destroyed on demand (full fill ~6h per collection). */
   def migrateToMongoDB(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         // Generate heatmaps
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
@@ -80,7 +80,7 @@ class UserAdminController @Inject()(cc: ControllerComponents,
    */
   def all(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         LOG.D("User: fetchAllAccounts")
         val anyReq: OAuth2Request = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()

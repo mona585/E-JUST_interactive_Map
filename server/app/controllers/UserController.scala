@@ -24,7 +24,7 @@ class UserController @Inject()(cc: ControllerComponents,
 
   def register(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq: OAuth2Request = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -72,7 +72,7 @@ class UserController @Inject()(cc: ControllerComponents,
   def loginLocal(): Action[AnyContent] = Action {
     implicit request =>
 
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq: OAuth2Request = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -126,7 +126,7 @@ class UserController @Inject()(cc: ControllerComponents,
   def refreshLocal(): Action[AnyContent] = Action {
     implicit request =>
 
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq: OAuth2Request = new OAuth2Request(request)
         if (!anyReq.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
         val json = anyReq.getJsonBody()
@@ -171,7 +171,7 @@ class UserController @Inject()(cc: ControllerComponents,
    */
   def loginGoogle(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         LOG.D2("User: loginGoogle")
         val auth = new OAuth2Request(request)
         if (!auth.assertJsonBody()) return RESPONSE.BAD(RESPONSE.ERROR_JSON_PARSE)
@@ -196,7 +196,7 @@ class UserController @Inject()(cc: ControllerComponents,
 
   def updateUser(): Action[AnyContent] = Action {
     implicit request =>
-      def inner(request: Request[AnyContent]): Result = {
+      def inner(implicit request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
         val apiKey = anyReq.getAccessToken()
         if (apiKey == null) return anyReq.NO_ACCESS_TOKEN()
