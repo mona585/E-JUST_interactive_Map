@@ -33,7 +33,7 @@
  * DEALINGS IN THE SOFTWARE.
  *
  */
-app.controller('FloorController', ['$scope', '$compile', 'AnyplaceService', 'GMapService', 'AnyplaceAPIService', function ($scope, $compile, AnyplaceService, GMapService, AnyplaceAPIService) {
+app.controller('FloorController', ['$scope', '$compile', '$q', 'AnyplaceService', 'GMapService', 'AnyplaceAPIService', function ($scope, $compile, $q, AnyplaceService, GMapService, AnyplaceAPIService) {
     $scope.anyService = AnyplaceService;
     $scope.anyAPI = AnyplaceAPIService;
 
@@ -45,7 +45,115 @@ app.controller('FloorController', ['$scope', '$compile', 'AnyplaceService', 'GMa
         floor_plan_groundOverlay: null
     };
 
+    // Bounded cache of downloaded base64 floorplans. The overlay itself is
+    // recreated per attach so map state stays simple, but the multi-megabyte
+    // payload is never downloaded twice for the same floor.
+    var floorplanDataCache = {};
+    var floorplanLRUOrder = [];
+    var MAX_FLOORPLAN_CACHE = 3;
+    var inFlightFloorplans = {};
+    var currentLoadSequence = 0;
+    var preloadTimeoutId = null;
+
+    function getCacheKey(buid, floor_number) {
+        return String(buid) + ":" + String(floor_number);
+    }
+
+    function touchCacheKey(key) {
+        var idx = floorplanLRUOrder.indexOf(key);
+        if (idx !== -1) {
+            floorplanLRUOrder.splice(idx, 1);
+        }
+        floorplanLRUOrder.push(key);
+    }
+
+    function evictOldestCacheEntry() {
+        while (floorplanLRUOrder.length > MAX_FLOORPLAN_CACHE) {
+            delete floorplanDataCache[floorplanLRUOrder.shift()];
+        }
+    }
+
+    function clearFloorplanCache() {
+        if (preloadTimeoutId) {
+            clearTimeout(preloadTimeoutId);
+            preloadTimeoutId = null;
+        }
+        floorplanDataCache = {};
+        floorplanLRUOrder = [];
+        inFlightFloorplans = {};
+    }
+
+    function fetchFloorplanData(buid, floor_number) {
+        var key = getCacheKey(buid, floor_number);
+        if (floorplanDataCache[key]) {
+            touchCacheKey(key);
+            return $q.when(floorplanDataCache[key]);
+        }
+        if (inFlightFloorplans[key]) {
+            return inFlightFloorplans[key];
+        }
+
+        var promise = AnyplaceAPIService.downloadFloorPlan($scope.anyService.jsonReq, buid, floor_number).then(
+            function (resp) {
+                delete inFlightFloorplans[key];
+                var data = resp.data;
+                if (!data || data.length === 0) {
+                    return $q.reject(new Error("Empty floorplan data received"));
+                }
+                floorplanDataCache[key] = data;
+                touchCacheKey(key);
+                evictOldestCacheEntry();
+                return data;
+            },
+            function (err) {
+                delete inFlightFloorplans[key];
+                return $q.reject(err);
+            }
+        );
+        inFlightFloorplans[key] = promise;
+        return promise;
+    }
+
+    function scheduleAdjacentPreload(buid, currentFloorNumber) {
+        if (preloadTimeoutId) {
+            clearTimeout(preloadTimeoutId);
+        }
+        preloadTimeoutId = setTimeout(function () {
+            if (!$scope.xFloors || $scope.xFloors.length <= 1) return;
+            if (!$scope.anyService.selectedBuilding || buid !== $scope.anyService.selectedBuilding.buid) return;
+
+            var currentIdx = -1;
+            for (var i = 0; i < $scope.xFloors.length; i++) {
+                if (String($scope.xFloors[i].floor_number) === String(currentFloorNumber)) {
+                    currentIdx = i;
+                    break;
+                }
+            }
+            if (currentIdx === -1) return;
+
+            var candidates = [];
+            if (currentIdx + 1 < $scope.xFloors.length) candidates.push($scope.xFloors[currentIdx + 1]);
+            if (currentIdx - 1 >= 0) candidates.push($scope.xFloors[currentIdx - 1]);
+
+            function preloadStep(idx) {
+                if (idx >= candidates.length) return;
+                var key = getCacheKey(buid, candidates[idx].floor_number);
+                if (floorplanDataCache[key] || inFlightFloorplans[key]) {
+                    preloadStep(idx + 1);
+                    return;
+                }
+                fetchFloorplanData(buid, candidates[idx].floor_number).then(
+                    function () { preloadStep(idx + 1); },
+                    function () { preloadStep(idx + 1); }
+                );
+            }
+
+            preloadStep(0);
+        }, 1200);
+    }
+
     var _clearFloors = function () {
+        clearFloorplanCache();
         $scope.removeFloorPlan();
         $scope.xFloors = [];
         $scope.myFloorId = 0;
@@ -53,6 +161,7 @@ app.controller('FloorController', ['$scope', '$compile', 'AnyplaceService', 'GMa
     };
 
     $scope.$watch('anyService.selectedBuilding', function (newVal, oldVal) {
+        clearFloorplanCache();
         if (newVal && newVal.buid) {
             $scope.fetchAllFloorsForBuilding(newVal);
         } else {
@@ -174,45 +283,48 @@ app.controller('FloorController', ['$scope', '$compile', 'AnyplaceService', 'GMa
         );
     };
 
-    $scope.fetchFloorPlanOverlay = function () {
-        if (!$scope.anyService.selectedFloor || !$scope.anyService.selectedFloor.floor_number ||
+    $scope.fetchFloorPlanOverlay = function (floorObj) {
+        var targetFloor = floorObj || $scope.anyService.selectedFloor;
+        if (!targetFloor || targetFloor.floor_number === undefined || targetFloor.floor_number === null ||
             !$scope.anyService.selectedBuilding || !$scope.anyService.selectedBuilding.buid) {
             return;
         }
-        var floor_number = $scope.anyService.selectedFloor.floor_number;
+
+        var floor_number = targetFloor.floor_number;
         var buid = $scope.anyService.selectedBuilding.buid;
+        var key = getCacheKey(buid, floor_number);
+        var seq = ++currentLoadSequence;
 
-        var promise = AnyplaceAPIService.downloadFloorPlan(this.anyService.jsonReq, buid, floor_number);
-        promise.then(
-            function (resp) {
-
-                // in case the building was switched too fast, don't load the old building's floorplan
-                if (buid == $scope.anyService.selectedBuilding.buid && floor_number ==
-                    $scope.anyService.selectedFloor.floor_number) {
-
-                    $scope.data.floor_plan_file = null;
-                    $scope.data.floor_plan = null;
-                    if ($scope.data.floor_plan_groundOverlay != null) {
-                        $scope.data.floor_plan_groundOverlay.setMap(null);
-                        $scope.data.floor_plan_groundOverlay = null;
-                    }
-
-                    // on success
-                    var data = resp.data;
-
-                    // load the correct coordinates from the selected floor
-                    var fl = $scope.anyService.selectedFloor;
-                    var imageBounds = new google.maps.LatLngBounds(
-                        new google.maps.LatLng(fl.bottom_left_lat, fl.bottom_left_lng),
-                        new google.maps.LatLng(fl.top_right_lat, fl.top_right_lng));
-
-                    $scope.data.floor_plan_groundOverlay =
-                        new USGSOverlay(imageBounds, "data:image/png;base64," + data, GMapService.gmap);
-                }
-            },
-            function (resp) {  // on error TODO: alert failure
+        function attach(data) {
+            if (seq !== currentLoadSequence ||
+                !$scope.anyService.selectedBuilding || buid !== $scope.anyService.selectedBuilding.buid ||
+                !$scope.anyService.selectedFloor ||
+                String(floor_number) !== String($scope.anyService.selectedFloor.floor_number)) {
+                return;
             }
-        );
+
+            if ($scope.data.floor_plan_groundOverlay != null) {
+                $scope.data.floor_plan_groundOverlay.setMap(null);
+                $scope.data.floor_plan_groundOverlay = null;
+            }
+
+            var fl = $scope.anyService.selectedFloor;
+            var imageBounds = new google.maps.LatLngBounds(
+                new google.maps.LatLng(fl.bottom_left_lat, fl.bottom_left_lng),
+                new google.maps.LatLng(fl.top_right_lat, fl.top_right_lng));
+            $scope.data.floor_plan_groundOverlay =
+                new USGSOverlay(imageBounds, "data:image/png;base64," + data, GMapService.gmap);
+
+            scheduleAdjacentPreload(buid, floor_number);
+        }
+
+        if (floorplanDataCache[key]) {
+            touchCacheKey(key);
+            attach(floorplanDataCache[key]);
+            return;
+        }
+
+        fetchFloorplanData(buid, floor_number).then(attach, function () {});
     };
 
     var canvasOverlay = null;
