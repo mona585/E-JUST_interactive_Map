@@ -337,11 +337,17 @@ class NavigationController @Inject()(cc: ControllerComponents,
 
   private def navigateSameFloor(from: JsValue, to: JsValue, floorPois: util.List[HashMap[String, String]]): util.List[JsValue] = {
     val buid = (from \ SCHEMA.fBuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+    val floor = (from \ SCHEMA.fFloorNumber).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val puidFrom = (from \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val puidTo = (to \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val graph = new Dijkstra.Graph()
     graph.addPois(floorPois)
-    graph.addEdges(pds.db.connectionsByBuildingAsMap(buid))
+    // A same-floor route can only use same-floor edges; loading every edge in
+    // the building adds no reachable nodes and needlessly grows the graph.
+    val floorEdges = new util.ArrayList[HashMap[String, String]]()
+    pds.db.connectionsByBuildingFloorAsJson(buid, floor)
+      .foreach(j => floorEdges.add(JsonUtils.getHashMapStrStr(j)))
+    graph.addEdges(floorEdges)
     val routePois = Dijkstra.getShortestPath(graph, puidFrom, puidTo)
 
     val final_points = new util.ArrayList[JsValue]()

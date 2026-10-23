@@ -30,16 +30,26 @@ object FloorplanCache {
     val lm = file.lastModified()
     val len = file.length()
 
-    cache.synchronized {
+    val fresh = cache.synchronized {
       val existing = cache.get(key)
-      if (existing != null && existing.lastModified == lm && existing.length == len) {
-        existing
+      if (existing != null && existing.lastModified == lm && existing.length == len) existing else null
+    }
+    if (fresh != null) return fresh
+
+    // Encode outside the lock: a multi-megabyte floorplan must not block
+    // requests for other floors. Concurrent misses may duplicate one encode,
+    // but the first completed entry wins and the duplicate is discarded.
+    val base64 = Utils.encodeFileToBase64Binary(fu, file.getAbsolutePath)
+    val gzipv = Utils.gzip(base64)
+    val entry = CachedFloorplan(lm, len, base64, gzipv.toByteArray)
+
+    cache.synchronized {
+      val current = cache.get(key)
+      if (current != null && current.lastModified == lm && current.length == len) {
+        current
       } else {
-        if (existing != null) totalBytes -= entryBytes(existing)
-        val base64 = Utils.encodeFileToBase64Binary(fu, file.getAbsolutePath)
-        val gzipv = Utils.gzip(base64)
-        val entry = CachedFloorplan(lm, len, base64, gzipv.toByteArray)
-        cache.put(key, entry)
+        val previous = cache.put(key, entry)
+        if (previous != null) totalBytes -= entryBytes(previous)
         totalBytes += entryBytes(entry)
         evict()
         entry

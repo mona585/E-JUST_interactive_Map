@@ -1747,7 +1747,13 @@ class MongodbDatasource @Inject() () extends IDatasource {
   override def getUserByIdentifier(identifier: String): JsValue = {
     if (identifier == null || identifier.trim.isEmpty) return null
     val collection = mdb.getCollection(SCHEMA.cUsers)
-    val pattern = ("(?i)^" + Pattern.quote(identifier.trim) + "$").r
+    val trimmed = identifier.trim
+    // Fast path: exact username/email uses the unique indexes. The regex
+    // fallback below only runs when the caller used different casing.
+    val exact = collection.find(or(equal(SCHEMA.fUsername, trimmed), equal(SCHEMA.fEmail, trimmed))).first()
+    val exactRes = DbAwait.result(exact.toFuture(), MongodbDatasource.DB_TIMEOUT).asInstanceOf[Document]
+    if (exactRes != null) return convertJson(exactRes)
+    val pattern = ("(?i)^" + Pattern.quote(trimmed) + "$").r
     val query = or(regex(SCHEMA.fUsername, pattern), regex(SCHEMA.fEmail, pattern))
     val lookup = collection.find(query).first()
     val awaited = DbAwait.result(lookup.toFuture(), MongodbDatasource.DB_TIMEOUT)

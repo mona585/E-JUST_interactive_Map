@@ -190,9 +190,15 @@ object RESPONSE {
     }
 
     def gzipJsonOk(body: String): Result = {
-        val gzipv = Utils.gzip(body)
-        Ok(gzipv.toByteArray).withHeaders(("Content-Encoding", "gzip"),
-            ("Content-Length", gzipv.size.toString)).as("application/json")
+        // Gzip only when it actually saves bytes; tiny JSON payloads (login,
+        // errors, health) are smaller and cheaper to send uncompressed.
+        if (body.length < 1024) {
+            Ok(body).as("application/json")
+        } else {
+            val gzipv = Utils.gzip(body)
+            Ok(gzipv.toByteArray).withHeaders(("Content-Encoding", "gzip"),
+                ("Content-Length", gzipv.size.toString)).as("application/json")
+        }
     }
 
     def gzipOk(body: String): Result = {

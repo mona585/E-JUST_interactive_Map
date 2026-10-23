@@ -73,5 +73,15 @@ class ResponseSpec extends Specification {
       result.body.contentType must
         beSome.which(_.toLowerCase.startsWith("application/json"))
     }
+
+    "leave small JSON bodies uncompressed" in {
+      val result = RESPONSE.gzipJsonOk("""{"ok":true}""")
+      result.header.headers.get("Content-Encoding") must beNone
+    }
+
+    "compress large JSON bodies" in {
+      val result = RESPONSE.gzipJsonOk("""{"items":[""" + ("x" * 2048) + """]}""")
+      result.header.headers.get("Content-Encoding") must beSome("gzip")
+    }
   }
 }
