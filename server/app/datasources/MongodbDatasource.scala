@@ -204,6 +204,8 @@ object MongodbDatasource {
 class MongodbDatasource @Inject() () extends IDatasource {
   private val MAX_GREEKLISH_VARIANTS = 512
   private val poiProjection = exclude(SCHEMA.fOwnerId, SCHEMA.fGeometry, SCHEMA.fId, SCHEMA.fSchema)
+  private val edgeProjection = exclude(SCHEMA.fOwnerId, SCHEMA.fId, SCHEMA.fSchema)
+  private val floorProjection = exclude(SCHEMA.fOwnerId, SCHEMA.fId, SCHEMA.fSchema)
   private val spaceProjection = exclude(SCHEMA.fGeometry, SCHEMA.fOwnerId, SCHEMA.fCoOwners, SCHEMA.fId, SCHEMA.fSchema)
   private val campusSpaceProjection = exclude(SCHEMA.fGeometry, SCHEMA.fOwnerId, SCHEMA.fCoOwners,
     SCHEMA.fId, SCHEMA.fSchema, SCHEMA.fType)
@@ -626,19 +628,9 @@ class MongodbDatasource @Inject() () extends IDatasource {
 
   override def floorsByBuildingAsJson(buid: String): java.util.List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cFloorplans)
-    val floorLookUp = collection.find(equal(SCHEMA.fBuid, buid))
+    val floorLookUp = collection.find(equal(SCHEMA.fBuid, buid)).projection(floorProjection)
     val awaited = DbAwait.result(floorLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-    val floors = new java.util.ArrayList[JsValue]()
-    for (floor <- listJson) {
-      try {
-        floors.add(floor.as[JsObject] - SCHEMA.fOwnerId - SCHEMA.fId - SCHEMA.fSchema)
-      } catch {
-        case e: IOException =>
-      }
-    }
-    floors
+    convertJson(awaited.toList).asJava
   }
 
   override def poiFromKeyAsJson(collection: String, key: String, value: String): JsValue = {
@@ -665,12 +657,9 @@ class MongodbDatasource @Inject() () extends IDatasource {
   override def poiByBuidFloorPuid(buid: String, floor_number: String, puid: String): Boolean = {
     val collection = mdb.getCollection(SCHEMA.cPOIS)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloorNumber -> floor_number, SCHEMA.fPuid -> puid)
-    val poisLookUp = collection.find(query)
+    val poisLookUp = collection.find(query).projection(include(SCHEMA.fPuid)).limit(1)
     val awaited = DbAwait.result(poisLookUp.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    if (res.size > 0)
-      return true
-    false
+    awaited.nonEmpty
   }
 
   override def poisByBuildingAsMap(buid: String): java.util.List[java.util.HashMap[String, String]] = {
@@ -714,7 +703,8 @@ class MongodbDatasource @Inject() () extends IDatasource {
       SCHEMA.fBuidB -> BsonDocument("$in" -> distinct),
       SCHEMA.fEdgeType -> BsonDocument("$in" -> List(
         Connection.EDGE_TYPE_OUTDOOR, Connection.EDGE_TYPE_STAIR, Connection.EDGE_TYPE_ELEVATOR)))
-    val awaited = DbAwait.result(collection.find(query).toFuture(), MongodbDatasource.DB_TIMEOUT)
+    val awaited = DbAwait.result(collection.find(query).projection(edgeProjection).toFuture(),
+      MongodbDatasource.DB_TIMEOUT)
     for (edge <- convertJson(awaited.toList)) {
       conns.add(JsonUtils.getHashMapStrStr(edge))
     }
@@ -724,36 +714,25 @@ class MongodbDatasource @Inject() () extends IDatasource {
   override def connectionsByBuildingAsJson(buid: String): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cEdges)
     val query = BsonDocument(SCHEMA.fBuid -> buid)
-    val edges = collection.find(query)
+    val edges = collection.find(query).projection(edgeProjection)
     val awaited = DbAwait.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    convertJson(res)
+    convertJson(awaited.toList)
   }
 
   override def connectionsByBuildingFloorAsJson(buid: String, floor_number: String): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cEdges)
     val query = BsonDocument(SCHEMA.fBuid -> buid, SCHEMA.fFloorA -> floor_number, SCHEMA.fFloorB -> floor_number)
-    val edges = collection.find(query)
+    val edges = collection.find(query).projection(edgeProjection)
     val awaited = DbAwait.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-    val edgesArray = new java.util.ArrayList[JsValue]()
-    for (poi <- listJson)
-      edgesArray.add(poi.as[JsObject] - SCHEMA.fOwnerId - SCHEMA.fId - SCHEMA.fSchema)
-    edgesArray.toList
+    convertJson(awaited.toList)
   }
 
   override def connectionsByBuildingAllFloorsAsJson(buid: String): List[JsValue] = {
     val collection = mdb.getCollection(SCHEMA.cEdges)
     val query = BsonDocument(SCHEMA.fBuid -> buid)
-    val edges = collection.find(query)
+    val edges = collection.find(query).projection(edgeProjection)
     val awaited = DbAwait.result(edges.toFuture(), MongodbDatasource.DB_TIMEOUT)
-    val res = awaited.toList
-    val listJson = convertJson(res)
-    val edgesArray = new java.util.ArrayList[JsValue]()
-    for (poi <- listJson)
-      edgesArray.add(poi.as[JsObject] - SCHEMA.fOwnerId - SCHEMA.fId - SCHEMA.fSchema)
-    edgesArray.toList
+    convertJson(awaited.toList)
   }
 
   override def deleteAllByBuilding(buid: String): Boolean = {

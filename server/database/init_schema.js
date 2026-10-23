@@ -65,11 +65,13 @@ db.floorplans.createIndex({ "buid": 1, "floor_number": 1 });
 // Indexes for POIs
 db.pois.createIndex({ "puid": 1 }, { unique: true, sparse: true });
 db.pois.createIndex({ "buid": 1, "floor_number": 1 });
+db.pois.createIndex({ "buid": 1, "floor_number": 1, "puid": 1 });
 db.pois.createIndex({ "buid": 1, "pois_type": 1 });
 db.pois.createIndex({ "geometry": "2dsphere" });
 
 // Indexes for Edges / Connections
 db.edges.createIndex({ "buid": 1, "floor_a": 1 });
+db.edges.createIndex({ "buid": 1, "floor_a": 1, "floor_b": 1 });
 db.edges.createIndex({ "buid": 1, "is_published": 1 });
 db.edges.createIndex({ "pois_a": 1, "pois_b": 1 });
 // Campus routing: outdoor/stair/elevator edges by buid_a/buid_b.
@@ -77,6 +79,7 @@ db.edges.createIndex({ "edge_type": 1, "buid_a": 1, "buid_b": 1 });
 db.edges.createIndex({ "cuid": 1 }, { unique: true, sparse: true });
 
 // Indexes for Fingerprints
+db.accessPointsWifi.createIndex({ "buid": 1, "floor": 1 });
 db.fingerprintsWifi.createIndex({ "buid": 1, "floor": 1 });
 db.fingerprintsWifi.createIndex({ "MAC": 1, "rss": 1 });
 db.fingerprintsWifi.createIndex({ "geometry": "2dsphere" });
