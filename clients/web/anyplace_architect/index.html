@@ -51,7 +51,7 @@
     <script type="text/javascript" src="bower_components/angular-loading-bar/src/loading-bar.js"></script>
     <link rel="stylesheet" href="bower_components/angular-loading-bar/src/loading-bar.css">
     <script type="text/javascript" src="libs/angular-cookies.min.js"></script>
-    <script type="text/javascript" src="build/js/anyplace.js?v=20261024b"></script>
+    <script type="text/javascript" src="build/js/anyplace.js?v=20261024c"></script>
     <link rel="stylesheet" type="text/css" href="build/css/anyplace.min.css"/>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
 </head>
@@ -225,6 +225,9 @@
                                 <li role="presentation" ng-class="{ active:isCrudTabSelected(5) }">
                                     <a href="" ng-click="setCrudTabSelected(5)">Share</a>
                                 </li>
+                                <li role="presentation" ng-class="{ active:isCrudTabSelected(6) }">
+                                    <a href="" ng-click="setCrudTabSelected(6)">Restore</a>
+                                </li>
                             </ul>
 
                             <!-- Tab 1-->
@@ -386,6 +389,26 @@
                                     </ul>
                                     <!-- Buttons end here -->
 
+                                </div>
+                            </div>
+
+                            <!-- Tab 6 -->
+                            <div class="divider-top-10" ng-show="isCrudTabSelected(6)">
+                                <div>
+                                    <div class="divider-top-10">
+                                        <div class="midnote">Restore</div>
+                                        <div class="subnote">Restore a space from a backup zip - works even when no
+                                            space is selected (the space is created automatically)</div>
+                                        <div class="subnote">(floormaps, pois and connectors)</div>
+                                        <div class="input-group" style="margin: 3px;">
+                                            <input type="file" class="form-control" id="backupRestoreFile"
+                                                   ng-model="backupRestoreFile">
+                                        </div>
+                                        <div>
+                                            <button class="btn btn-warning" ng-click="RestoreBackup()">Restore
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

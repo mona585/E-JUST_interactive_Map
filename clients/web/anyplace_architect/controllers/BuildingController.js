@@ -27,7 +27,7 @@
 
 
 
-app.controller('BuildingController', ['$cookieStore', '$scope', '$compile', 'GMapService', 'AnyplaceService', 'AnyplaceAPIService', function ($cookieStore, $scope, $compile, GMapService, AnyplaceService, AnyplaceAPIService) {
+app.controller('BuildingController', ['$cookieStore', '$scope', '$compile', '$q', 'GMapService', 'AnyplaceService', 'AnyplaceAPIService', function ($cookieStore, $scope, $compile, $q, GMapService, AnyplaceService, AnyplaceAPIService) {
 
     $scope.myMarkers = {};
     $scope.myMarkerId = 0;
@@ -80,7 +80,11 @@ app.controller('BuildingController', ['$cookieStore', '$scope', '$compile', 'GMa
 
     $scope.setCrudTabSelected = function (n) {
         $scope.crudTabSelected = n;
-        if (!$scope.anyService.getBuilding()) {
+        // Add (1) and Restore (6) work with no building selected (Restore
+        // auto-creates the space from the backup), so only guard the tabs
+        // that require an existing building: Edit (2), Delete (3), Backup
+        // (4) and Share (5).
+        if (n !== 1 && n !== 6 && !$scope.anyService.getBuilding()) {
             _err($scope, "No building selected.");
             return;
         }
@@ -296,11 +300,11 @@ app.controller('BuildingController', ['$cookieStore', '$scope', '$compile', 'GMa
                     }
 
                     var htmlContent = '<div class="infowindow-scroll-fix">'
-                        + '<div class="infowindow-title">'+escapeHtml(b.name)+'</div>'
+                        + '<div class="infowindow-title">'+b.name+'</div>'
                         + '<div class="font-weight-bold">BUID:</div>'
-                        + '<input class="form-control input-tiny" value="'+escapeId(b.buid)+'" onClick="selectAllInputText(this)" readonly/>'
+                        + '<input class="form-control input-tiny" value="'+b.buid+'" onClick="selectAllInputText(this)" readonly/>'
                         + '<div class="infowindow-title">Description:</div>'
-                        + '<textarea class="infowindow-text-area"  rows="3" readonly>' + escapeHtml(b.description) + '</textarea>'
+                        + '<textarea class="infowindow-text-area"  rows="3" readonly>' + b.description + '</textarea>'
                         + '</div>';
 
 
@@ -1405,73 +1409,85 @@ app.controller('BuildingController', ['$cookieStore', '$scope', '$compile', 'GMa
                 $scope.anyService.progress = 80;
                 if (floors) {
                     for (var i = 0; i < floors.length; i++) {
-                        (function (jreq) {
-                            var promise = AnyplaceAPIService.retrievePoisByBuildingFloor(jreq);
+                        // Record EVERY floor (even one with zero POIs) so the
+                        // backup carries its name/description/zoom and coordinate
+                        // bounds; otherwise a POI-free floor (e.g. "Floor 2")
+                        // would be omitted and its floorplan could not be
+                        // repositioned when the space is restored.
+                        (function (fl) {
+                            var flEntry = {
+                                floor_number: fl.floor_number,
+                                pois: [],
+                                floor_name: fl.floor_name,
+                                description: fl.description,
+                                bottom_left_lat: fl.bottom_left_lat,
+                                bottom_left_lng: fl.bottom_left_lng,
+                                top_right_lat: fl.top_right_lat,
+                                top_right_lng: fl.top_right_lng,
+                                zoom: fl.zoom
+                            };
+                            resFloors.push(flEntry);
+                            var promise = AnyplaceAPIService.retrievePoisByBuildingFloor({
+                                buid: building.buid,
+                                floor_number: fl.floor_number
+                            });
                             promise.then(
                                 function (resp) {
                                     var data = resp.data;
                                     var poisArray = data.pois;
-                                    if (poisArray) {
-                                        var flPois = [];
-                                        if (poisArray[0] != undefined) {
-                                            var fNo = poisArray[0].floor_number;
-                                            for (var j = 0; j < poisArray.length; j++) {
-                                                var sPoi = poisArray[j];
+                                    if (poisArray && poisArray.length > 0) {
+                                        for (var j = 0; j < poisArray.length; j++) {
+                                            var sPoi = poisArray[j];
 
-                                                if (sPoi.pois_type == "None") { continue; }
-                                                if (sPoi.overwrite) {
-                                                    var tmp = {
-                                                        name: sPoi.name,
-                                                        description: sPoi.description,
-                                                        puid: sPoi.puid,
-                                                        pois_type: sPoi.pois_type,
-                                                        coordinates_lat: sPoi.coordinates_lat,
-                                                        coordinates_lon: sPoi.coordinates_lon,
-                                                        overwrite: sPoi.overwrite
-                                                    };
-                                                } else {
-                                                    var tmp = {
-                                                        name: sPoi.name,
-                                                        description: sPoi.description,
-                                                        puid: sPoi.puid,
-                                                        pois_type: sPoi.pois_type,
-                                                        coordinates_lat: sPoi.coordinates_lat,
-                                                        coordinates_lon: sPoi.coordinates_lon,
-                                                        overwrite: "false"
-                                                    };
-                                                }
-
-                                                if (sPoi.is_building_entrance == 'true') {
-                                                    tmp.is_building_entrance = 'true';
-                                                } else {
-                                                    tmp.is_building_entrance = 'false';
-                                                }
-                                                flPois.push(tmp);
+                                            // NOTE: do NOT skip pois_type=="None" here.  This
+                                            // backup is used to restore a space, and connector
+                                            // POIs (pois_type None) are the endpoints of the
+                                            // connection graph.  If they are omitted, the
+                                            // connection restore cannot resurrect the space.
+                                            if (sPoi.overwrite) {
+                                                var tmp = {
+                                                    name: sPoi.name,
+                                                    description: sPoi.description,
+                                                    puid: sPoi.puid,
+                                                    pois_type: sPoi.pois_type,
+                                                    coordinates_lat: sPoi.coordinates_lat,
+                                                    coordinates_lon: sPoi.coordinates_lon,
+                                                    overwrite: sPoi.overwrite
+                                                };
+                                            } else {
+                                                var tmp = {
+                                                    name: sPoi.name,
+                                                    description: sPoi.description,
+                                                    puid: sPoi.puid,
+                                                    pois_type: sPoi.pois_type,
+                                                    coordinates_lat: sPoi.coordinates_lat,
+                                                    coordinates_lon: sPoi.coordinates_lon,
+                                                    overwrite: "false"
+                                                };
                                             }
 
-                                            resFloors.push({
-                                                    floor_number: fNo,
-                                                    pois: flPois
-                                                });
+                                            if (sPoi.is_building_entrance == 'true') {
+                                                tmp.is_building_entrance = 'true';
+                                            } else {
+                                                tmp.is_building_entrance = 'false';
+                                            }
+                                            flEntry.pois.push(tmp);
                                         }
-                                        count++;
-                                        if (count === floors.length) {
-                                            $scope.Poisresult.building.floors = resFloors;
-                                            $scope.zip.file("allpois.json", JSON.stringify($scope.Poisresult, null, 4));
-                                            $scope.anyService.progress = 90;
-                                            $scope.exportConnectionBuildingToJson();
-                                        }
-
                                     }
                                 },
                                 function (resp) {
                                     var data = resp.data;
                                     LOG.E(data.message);
+                                }).finally(function () {
+                                    count++;
+                                    if (count === floors.length) {
+                                        $scope.Poisresult.building.floors = resFloors;
+                                        $scope.zip.file("allpois.json", JSON.stringify($scope.Poisresult, null, 4));
+                                        $scope.anyService.progress = 90;
+                                        $scope.exportConnectionBuildingToJson();
+                                    }
                                 });
-                        }({
-                            buid: building.buid,
-                            floor_number: floors[i].floor_number
-                        }));
+                        })(floors[i]);
                     }
                 }
             },
@@ -1495,80 +1511,680 @@ app.controller('BuildingController', ['$cookieStore', '$scope', '$compile', 'GMa
 
         var jsonReq = AnyplaceService.jsonReq;
         jsonReq.buid = building.buid;
-        var count = 0;
-        var promise = AnyplaceAPIService.allBuildingFloors(jsonReq);
-        promise.then(
+        AnyplaceAPIService.allBuildingFloors(jsonReq).then(
             function (resp) {
                 var floors = resp.data.floors;
                 var resFloors = [];
+                var floorEntry = {};
 
                 if (floors) {
                     for (var i = 0; i < floors.length; i++) {
-                        (function (jreq) {
-                            var promise = AnyplaceAPIService.retrieveConnectionsByBuildingFloor(jreq);
-                            promise.then(
-                                function (resp) {
-                                    $scope.anyService.progress = 100;
-                                    var data = resp.data;
-                                    var connArray = data.connections;
-
-                                    if (connArray) {
-                                        var flConnections = [];
-                                        if (connArray[0] != undefined) {
-                                            var fNo = connArray[0].floor_a;
-                                            for (var j = 0; j < connArray.length; j++) {
-                                                var sConnection = connArray[j];
-                                                var tmp = {
-                                                    name: sConnection.name,
-                                                    description: sConnection.description,
-                                                    cuid: sConnection.puid,
-                                                    weight: sConnection.weight,
-                                                    pois_a: sConnection.pois_a,
-                                                    pois_b: sConnection.pois_b,
-                                                    floor_a: sConnection.floor_a,
-                                                    floor_b: sConnection.floor_b,
-                                                    is_published: sConnection.is_published,
-                                                    buid_a: sConnection.buid_a,
-                                                    buid_b: sConnection.buid_b
-                                                };
-                                                flConnections.push(tmp);
-                                            }
-
-                                            resFloors.push({
-                                                    floor_number: fNo,
-                                                    connections: flConnections
-                                                });
-                                        }
-
-                                        count++;
-                                        if (count === floors.length) {
-                                            $scope.Connectionsresult.building.floors = resFloors;
-                                            $scope.zip.file("allconnections.json", JSON.stringify($scope.Connectionsresult, null, 4));
-
-                                            $scope.zip.generateAsync({type: "blob"})
-                                                .then(function (content) {
-                                                    // see FileSaver.js
-                                                    saveAs(content, building.buid + ".zip");
-                                                });
-                                            $scope.anyService.progress = undefined;
-                                        }
-                                    }
-                                },
-                                function (resp) {
-                                    var data = resp.data;
-                                    console.log(data.message);
-                                });
-                        }({
-                            buid: building.buid,
-                            floor_number: floors[i].floor_number
-                        }));
+                        // Record EVERY floor even if it has no connectors, so the
+                        // restore knows all floors exist and downloads complete.
+                        var flEntry = {
+                            floor_number: floors[i].floor_number,
+                            connections: []
+                        };
+                        resFloors.push(flEntry);
+                        floorEntry[String(floors[i].floor_number)] = flEntry;
                     }
                 }
+
+                // Fetch ALL connections of the space in one call. The per-floor
+                // endpoint only returns same-floor edges (floor_a==floor_b==floor)
+                // and silently drops cross-floor edges (stairs/elevators), so
+                // relying on it makes backups lossy. Group every edge (including
+                // cross-floor ones) into the floor matching its floor_a so the
+                // restore still reconstructs the full graph.
+                AnyplaceAPIService.retrieveConnectionsByBuildingAllFloors({
+                    buid: building.buid
+                }).then(
+                    function (resp) {
+                        var connArray = (resp.data && resp.data.connections) || [];
+                        if (connArray.length > 0) {
+                            for (var j = 0; j < connArray.length; j++) {
+                                var sConnection = connArray[j];
+                                var tmp = {
+                                    name: sConnection.name,
+                                    description: sConnection.description,
+                                    cuid: sConnection.cuid,
+                                    weight: sConnection.weight,
+                                    pois_a: sConnection.pois_a,
+                                    pois_b: sConnection.pois_b,
+                                    floor_a: sConnection.floor_a,
+                                    floor_b: sConnection.floor_b,
+                                    is_published: sConnection.is_published,
+                                    buid_a: sConnection.buid_a,
+                                    buid_b: sConnection.buid_b,
+                                    edge_type: sConnection.edge_type || "hallway"
+                                };
+                                var fA = String(sConnection.floor_a);
+                                var fB = String(sConnection.floor_b);
+                                var target = floorEntry[fA];
+                                if (!target) target = floorEntry[fB];
+                                if (!target && resFloors.length > 0) target = resFloors[0];
+                                if (target) target.connections.push(tmp);
+                            }
+                        }
+                        $scope.Connectionsresult.building.floors = resFloors;
+                        $scope.zip.file("allconnections.json", JSON.stringify($scope.Connectionsresult, null, 4));
+
+                        $scope.zip.generateAsync({type: "blob"})
+                            .then(function (content) {
+                                // see FileSaver.js
+                                saveAs(content, building.buid + ".zip");
+                            });
+                        $scope.anyService.progress = undefined;
+                    },
+                    function (resp) {
+                        var data = resp.data;
+                        console.log(data.message);
+                        $scope.anyService.progress = undefined;
+                    }
+                );
             },
             function (resp) {
                 LOG.E(resp.data.message);
             }
         );
+    };
+
+    // --------------------------------------------------------------------
+    // Restore a space from a backup zip downloaded via DownloadBackup() above.
+    // The zip (generated client-side) contains:
+    //   floor_plans/<n>.png   floorplan images
+    //   allpois.json          building + floors + pois
+    //   allconnections.json   building + floors + connectors
+    // Restore re-imports them through the same APIs used elsewhere in the UI:
+    // floorplan upload (uploadFloorPlan64), POI add (addPois, puid preserved
+    // so connectors link), and connection add (addConnection).
+    // --------------------------------------------------------------------
+    $scope.RestoreBackup = function () {
+        // `b` may be null/undefined here: if no space is selected, a new space
+        // is auto-created from the backup's building metadata (see below).
+        var b = $scope.anyService.selectedBuilding;
+        var fileInput = document.getElementById("backupRestoreFile");
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+            _err($scope, "Choose a backup zip file first.");
+            return;
+        }
+        var file = fileInput.files[0];
+        if (!/\.zip$/i.test(file.name)) {
+            _err($scope, "Please select the <buid>.zip backup file downloaded from the Backup tab.");
+            return;
+        }
+
+        var zip = new JSZip();
+        _setProgress($scope, 0);
+        var results = {};
+
+        // JSZip 3.x resolves with native Promises; re-enter Angular's digest
+        // stream so progress/alerts render.  App API calls are Angular $q
+        // promises, so chaining from a $q root keeps everything in the digest.
+        $q.when(zip.loadAsync(file)).then(function (z) {
+            if (!z.file("allpois.json") || !z.file("allconnections.json")) {
+                throw new Error("Not a valid space backup (missing allpois.json/allconnections.json).");
+            }
+            results.zip = z;
+            return $q.all([
+                $q.when(z.file("allpois.json").async("string")),
+                $q.when(z.file("allconnections.json").async("string"))
+            ]);
+        }).then(function (parsed) {
+            results.poisJson = JSON.parse(parsed[0]);
+            results.connsJson = JSON.parse(parsed[1]);
+            _setProgress($scope, 15);
+            // Resolve the target space: reuse the currently selected one, or
+            // auto-create a new space from the backup's building metadata when
+            // none is selected.
+            return _ensureRestoreTargetBuilding(results.poisJson.building);
+        }).then(function (targetBuilding) {
+            b = targetBuilding;
+            // 1) ensure floors exist (with bounds/zoom) + upload floorplans
+            return $scope._restoreFloorsAndFloorplans(b, results.zip, results.poisJson, results.connsJson);
+        }).then(function (floorStats) {
+            results.floorStats = floorStats;
+            _setProgress($scope, 55);
+            // 2) re-create all POIs (preserving puid so connectors link)
+            return $scope._restorePois(b, results.poisJson);
+        }).then(function (poiStats) {
+            results.poiStats = poiStats;
+            _setProgress($scope, 80);
+            // 3) re-create the connectors between the restored POIs
+            return $scope._restoreConnections(b, results.connsJson);
+        }).then(function (connStats) {
+            results.connStats = connStats;
+            _setProgress($scope, undefined);
+            var total = results.floorStats.added + results.poiStats.added + results.connStats.added;
+            var allFailures = (results.floorStats.failures || [])
+                .concat(results.poiStats.failures || [])
+                .concat(results.connStats.failures || []);
+
+            if (total > 0) {
+                _suc($scope, "Restored " + total + " item(s): " + results.poiStats.added + " POI(s), " +
+                    results.connStats.added + " connection(s), " + results.floorStats.added + " floor(s). " +
+                    "Refresh the page to see the data.");
+            } else {
+                _warn($scope, "Restore finished but nothing was added. The backup may be empty, or this space already contains the data.");
+            }
+
+            // The per-item error tolerance means a bad floorplan/POI/connector no
+            // longer aborts the whole restore.  Report every item that failed so
+            // the user can see exactly what (and why) rather than a silent miss.
+            if (allFailures.length > 0) {
+                var shown = allFailures.slice(0, 8).join(". ");
+                if (allFailures.length > 8) { shown += ". (" + (allFailures.length - 8) + " more)"; }
+                _warn($scope, "Restore completed with " + allFailures.length + " item(s) not restored: " + shown + ". See the browser console for details.");
+            }
+            for (var fi2 = 0; fi2 < allFailures.length; fi2++) {
+                LOG.E("restore: " + allFailures[fi2]);
+            }
+        })["catch"](function (err) {
+            _setProgress($scope, undefined);
+            var msg = _errorText(err);
+            _err($scope, "Restore failed: " + msg);
+        });
+    };
+
+    // Resolves the building to restore into.  If a space with a buid is
+    // currently selected it is reused as-is; otherwise a new space is created
+    // from the backup's building metadata (name + coordinates) so the restore
+    // works even when the architect has no building on the map yet.
+    // Returns a $q promise resolving to the target building object (with buid).
+    var _ensureRestoreTargetBuilding = function (buildingMeta) {
+        var selected = $scope.anyService.selectedBuilding;
+        if (selected && selected.buid) {
+            return $q.when(selected);
+        }
+        var meta = buildingMeta || {};
+        var nb = {
+            name: meta.name || "Restored Space",
+            description: "-",
+            is_published: "false",
+            address: "-",
+            url: "-",
+            bucode: meta.buid || "",
+            space_type: "building",
+            coordinates_lat: String(meta.coordinates_lat),
+            coordinates_lon: String(meta.coordinates_lon)
+        };
+        if (!nb.coordinates_lat || nb.coordinates_lat === "undefined" ||
+            !nb.coordinates_lon || nb.coordinates_lon === "undefined") {
+            return $q.reject(new Error("No space selected and the backup has no coordinates to create one."));
+        }
+        return $q.when($scope.anyAPI.addBuilding(nb)).then(function (resp) {
+            var data = resp && resp.data ? resp.data : resp;
+            if (!data || data.status !== "success" || !data.buid) {
+                throw new Error("Failed to auto-create the space: " +
+                    ((data && data.message) ? data.message : "unknown error"));
+            }
+            nb.buid = data.buid;
+            $scope.anyService.setBuilding(nb);
+            _suc($scope, "Auto-created new space '" + nb.name + "' from the backup. Restoring...");
+            return nb;
+        });
+    };
+
+    // Turns a thrown value / rejected promise result into a readable message.
+    // Angular $http rejections are response objects (status/statusText/data);
+    // JSZip and JSON.parse throw Errors with a `.message`.  Anything else is
+    // reported generically instead of a useless "[object Object]".
+    var _errorText = function (err) {
+        var str = function (v) {
+            if (LPUtils.isNullOrUndefined(v)) { return undefined; }
+            var s = String(v);
+            return (s.length > 0 && s !== "[object Object]") ? s : undefined;
+        };
+        if (err && typeof err === "object") {
+            var m = str(err.message) || str(err.statusText) ||
+                (err.data && str(err.data.message)) || str(err.data && err.data.status) ||
+                (err.data && err.data.error) || undefined;
+            if (m) { return m; }
+            return "unknown error (HTTP status " + (typeof err.status !== "undefined" ? err.status : "?") + "). See the browser console for details.";
+        }
+        return str(err) || "unknown error";
+    };
+
+    // set progress safely (may be invoked from a native-Promise continuation).
+    var _setProgress = function (scope, val) {
+        if (scope.$root.$$phase) {
+            scope.anyService.progress = val;
+        } else {
+            scope.$apply(function () { scope.anyService.progress = val; });
+        }
+    };
+
+    // Fetches the building floors that carry coordinate bounds + zoom.
+    $scope._loadBuildingFloors = function (b) {
+        var jsonReq = AnyplaceService.jsonReq;
+        jsonReq.buid = b.buid;
+        return AnyplaceAPIService.allBuildingFloors(jsonReq).then(function (resp) {
+            return resp.data.floors || [];
+        });
+    };
+
+    // Ensures every floor referenced by the backup exists in the target (adding
+    // it if missing), then uploads the accompanying floorplan image positioned
+    // with the coordinate bounds + zoom captured in the backup.
+    // Returns { added: <number of floors created> }.
+    $scope._restoreFloorsAndFloorplans = function (b, z, poisJson, connsJson) {
+        var byNo = {};
+        var collectFloor = function (fl, withBounds) {
+            var key = String(fl.floor_number);
+            if (!byNo[key]) byNo[key] = { floor_number: String(fl.floor_number), meta: {} };
+            if (withBounds) {
+                byNo[key].meta.floor_name = byNo[key].meta.floor_name || fl.floor_name;
+                byNo[key].meta.description = byNo[key].meta.description || fl.description;
+                byNo[key].meta.bottom_left_lat = byNo[key].meta.bottom_left_lat || fl.bottom_left_lat;
+                byNo[key].meta.bottom_left_lng = byNo[key].meta.bottom_left_lng || fl.bottom_left_lng;
+                byNo[key].meta.top_right_lat = byNo[key].meta.top_right_lat || fl.top_right_lat;
+                byNo[key].meta.top_right_lng = byNo[key].meta.top_right_lng || fl.top_right_lng;
+                byNo[key].meta.zoom = byNo[key].meta.zoom || fl.zoom;
+            }
+        };
+        (poisJson.building && poisJson.building.floors || []).forEach(function (fl) {
+            collectFloor(fl, true);
+        });
+        (connsJson.building && connsJson.building.floors || []).forEach(function (fl) {
+            collectFloor(fl, false);
+        });
+
+        return $scope._loadBuildingFloors(b).then(function (targetFloors) {
+            var targetByNo = {};
+            for (var i = 0; i < targetFloors.length; i++) {
+                targetByNo[String(targetFloors[i].floor_number)] = targetFloors[i];
+            }
+            var nums = Object.keys(byNo);
+            var added = 0;
+            var failures = [];
+            var seq = nums.map(function (no) {
+                return function () {
+                    var meta = byNo[no].meta || {};
+                    // The target floor already exists -> we only (re)upload its
+                    // floorplan image.  Failure here must NOT abort the rest of
+                    // the restore (POIs + connectors), so it is caught and
+                    // recorded instead of rejecting the chain.
+                    if (targetByNo[String(no)]) {
+                        return _restoreFloorplanSafe(b, z, no, meta, failures, targetByNo[String(no)]);
+                    }
+                    return $scope.anyAPI.addFloor({
+                        is_published: "true",
+                        buid: b.buid,
+                        floor_number: String(no),
+                        floor_name: meta.floor_name || (String(no) + " floor"),
+                        description: meta.description || (String(no) + " floor")
+                    }).then(function () {
+                        added++;
+                        return _restoreFloorplanSafe(b, z, no, meta, failures);
+                    }, function (err) {
+                        failures.push("floor " + no + " could not be created: " + _errorText(err));
+                        return null;
+                    });
+                };
+            });
+            return _runSequential(seq).then(function () {
+                return { added: added, failures: failures };
+            });
+        });
+    };
+
+    // Uploads floor_plans/<floor_number>.png for the given floor.  The
+    // coordinate bounds come from the backup; if the backup lacks them (e.g.
+    // the source floor was never geo-positioned), we fall back to the target
+    // floor's already-stored bounds, and finally to a small box around the
+    // building center so the floorplan image is still restored (best-effort
+    // placement) rather than being dropped.  Never rejects the calling chain:
+    // on any problem (no image, no usable bounds, upload failure) it records a
+    // readable failure into `failures` and resolves with null so subsequent
+    // floors, POIs and connectors are still restored.
+    var _restoreFloorplanSafe = function (b, z, floor_number, meta, failures, targetFloor) {
+        var imgPath = "floor_plans/" + floor_number + ".png";
+        if (!z.file(imgPath)) return $q.when(null);
+        var fl = meta || {};
+
+        var isSet = function (v) {
+            return !LPUtils.isNullOrUndefined(v) && !LPUtils.isStringBlankNullUndefined(String(v));
+        };
+        // Effective bounds: backup -> target floor's existing bounds -> building-derived default.
+        var bottom_left_lat = isSet(fl.bottom_left_lat) ? fl.bottom_left_lat : undefined;
+        var bottom_left_lng = isSet(fl.bottom_left_lng) ? fl.bottom_left_lng : undefined;
+        var top_right_lat = isSet(fl.top_right_lat) ? fl.top_right_lat : undefined;
+        var top_right_lng = isSet(fl.top_right_lng) ? fl.top_right_lng : undefined;
+        var haveFullBackupBounds = isSet(bottom_left_lat) && isSet(bottom_left_lng) && isSet(top_right_lat) && isSet(top_right_lng);
+        if (!haveFullBackupBounds) {
+            bottom_left_lat = (targetFloor && isSet(targetFloor.bottom_left_lat)) ? targetFloor.bottom_left_lat : undefined;
+            bottom_left_lng = (targetFloor && isSet(targetFloor.bottom_left_lng)) ? targetFloor.bottom_left_lng : undefined;
+            top_right_lat = (targetFloor && isSet(targetFloor.top_right_lat)) ? targetFloor.top_right_lat : undefined;
+            top_right_lng = (targetFloor && isSet(targetFloor.top_right_lng)) ? targetFloor.top_right_lng : undefined;
+        }
+        var haveFullTargetBounds = !haveFullBackupBounds && isSet(bottom_left_lat) && isSet(bottom_left_lng) && isSet(top_right_lat) && isSet(top_right_lng);
+        var rawZoom = isSet(fl.zoom) ? fl.zoom : (targetFloor && isSet(targetFloor.zoom) ? targetFloor.zoom : "19");
+        var zoomInt = parseInt(rawZoom, 10);
+        // backend uploadWithZoom requires zoom >= MIN_ZOOM_UPLOAD (18).
+        var zoom = (isNaN(zoomInt) || zoomInt < 18) ? "19" : String(zoomInt);
+
+        var haveFullBounds = haveFullBackupBounds || haveFullTargetBounds;
+        if (!haveFullBounds) {
+            // Last resort: a ~350m box around the building center so the image
+            // is restored even though it cannot be positioned precisely.
+            var cLat = Number(b.coordinates_lat);
+            var cLon = Number(b.coordinates_lon);
+            if (!isNaN(cLat) && !isNaN(cLon)) {
+                var dLat = 0.0025;
+                var dLon = dLat / Math.max(0.01, Math.cos(cLat * Math.PI / 180));
+                bottom_left_lat = String(cLat - dLat);
+                bottom_left_lng = String(cLon - dLon);
+                top_right_lat = String(cLat + dLat);
+                top_right_lng = String(cLon + dLon);
+                haveFullBounds = true;
+                failures.push("floor " + floor_number + " had no coordinate bounds in the backup or target; its floorplan was placed around the building center as a best-effort and may need repositioning");
+            } else {
+                failures.push("floor " + floor_number + " has no coordinate bounds in the backup and no building center to fall back to; its floorplan was not restored");
+                return $q.when(null);
+            }
+        } else if (haveFullTargetBounds) {
+            failures.push("floor " + floor_number + " had no coordinate bounds in the backup; the target floor's existing bounds were used for its floorplan");
+        }
+        return $q.when(z.file(imgPath).async("base64")).then(function (b64) {
+            var coords = {
+                buid: b.buid,
+                floor_number: String(floor_number),
+                bottom_left_lat: String(bottom_left_lat),
+                bottom_left_lng: String(bottom_left_lng),
+                top_right_lat: String(top_right_lat),
+                top_right_lng: String(top_right_lng),
+                owner_id: $scope.owner_id,
+                zoom: String(zoom)
+            };
+            return $scope.anyAPI.uploadFloorPlan64(JSON.stringify(coords),
+                "data:image/png;base64," + b64).then(function () {
+                    return true;
+                }, function (err) {
+                    failures.push("floor " + floor_number + " floorplan upload failed: " + _errorText(err));
+                    return null;
+                });
+        });
+    };
+
+    // Re-creates the POIs, preserving each puid so connectors keep their links.
+    // Returns { added: <number of POIs>, failures: [messages] }.  A single POI
+    // that fails to insert does not stop the rest of the restore.
+    $scope._restorePois = function (b, poisJson) {
+        var floorList = (poisJson.building && poisJson.building.floors) || [];
+        var tasks = [];
+        var added = 0;
+        var failures = [];
+        for (var i = 0; i < floorList.length; i++) {
+            var fl = floorList[i];
+            var pois = fl.pois || [];
+            for (var j = 0; j < pois.length; j++) {
+                (function (poi, flno, flname) {
+                    tasks.push(function () {
+                        return $scope.anyAPI.addPois({
+                            puid: poi.puid,
+                            buid: b.buid,
+                            floor_number: String(flno),
+                            floor_name: flname || (String(flno) + " floor"),
+                            name: poi.name,
+                            description: poi.description || "",
+                            pois_type: poi.pois_type || "POI",
+                            is_published: "true",
+                            is_door: "false",
+                            is_building_entrance: poi.is_building_entrance ? String(poi.is_building_entrance) : "false",
+                            coordinates_lat: poi.coordinates_lat,
+                            coordinates_lon: poi.coordinates_lon,
+                            overwrite: "true",
+                            owner_id: $scope.owner_id
+                        }).then(function () {
+                            added++;
+                        }, function (err) {
+                            failures.push("POI \"" + (poi.name || "?") + "\" (" + (poi.puid || "no puid") + "): " + _errorText(err));
+                            return null;
+                        });
+                    });
+                })(pois[j], fl.floor_number, fl.floor_name);
+            }
+        }
+        return _runSequential(tasks).then(function () {
+            return { added: added, failures: failures };
+        });
+    };
+
+    // Re-creates the connectors between the (restored) POIs.
+    // Returns { added: <number of connections>, failures: [messages] }.
+    // A connector usually fails here only if its endpoint POIs (matching puid)
+    // were not restored, which we report instead of aborting the restore.
+    // Re-creates the connectors between the (restored) POIs.  Before wiring,
+    // every connector endpoint POI must exist in the target.  A backup made by
+    // an older exporter may omit the intermediate "connector" nodes (pois_type
+    // "None"), so their endpoints are missing entirely; we re-create those as
+    // connector POIs (best-effort position) so the whole graph still comes
+    // back instead of silently yielding zero connections.
+    // Returns { added: <number of connections>, created: <connector POIs re-created>,
+    //           failures: [messages] }.
+    $scope._restoreConnections = function (b, connsJson) {
+        var floors = (connsJson.building && connsJson.building.floors) || [];
+        return _ensureConnectorPois(b, connsJson).then(function (connectorRes) {
+            var tasks = [];
+            var added = 0;
+            var failures = connectorRes.failures;
+            for (var i = 0; i < floors.length; i++) {
+                var fl = floors[i];
+                var conns = fl.connections || [];
+                for (var j = 0; j < conns.length; j++) {
+                    (function (c) {
+                        tasks.push(function () {
+                            return $scope.anyAPI.addConnection({
+                            name: c.name,
+                            description: c.description || "",
+                            weight: c.weight,
+                            pois_a: c.pois_a,
+                            pois_b: c.pois_b,
+                            floor_a: c.floor_a,
+                            floor_b: c.floor_b,
+                            buid: b.buid,
+                            buid_a: b.buid,
+                            buid_b: b.buid,
+                            is_published: c.is_published ? String(c.is_published) : "true",
+                            edge_type: c.edge_type || "hallway",
+                            owner_id: $scope.owner_id
+                        }).then(function () {
+                            added++;
+                        }, function (err) {
+                            failures.push("connection \"" + (c.name || "?") + "\" (" + (c.pois_a || "?") + "->" + (c.pois_b || "?") + "): " + _errorText(err));
+                            return null;
+                        });
+                    });
+                    })(conns[j]);
+                }
+            }
+            return _runSequential(tasks).then(function () {
+                return { added: added, created: connectorRes.created, failures: failures };
+            });
+        });
+    };
+
+    // Ensures every POI endpoint referenced by the connections exists in the
+    // target (matching puid), creating any that are missing as connector POIs
+    // (pois_type "None").  Older backups drop these intermediate connector
+    // nodes, so without this step every connection would fail because its
+    // endpoint POI is absent.  Returns { created: <number>, failures: [msg] }.
+    // A missing node has no backup coordinates, so its position is derived
+    // from the centroid of its already-placed connection partners (this
+    // propagates through connector chains over a few passes) and, failing
+    // that, from a small deterministic scatter around the building center.
+    // These re-created nodes may need repositioning, which the caller reports.
+    var _ensureConnectorPois = function (b, connsJson) {
+        var floors = (connsJson.building && connsJson.building.floors) || [];
+        // 1) collect every endpoint (puid, floor) the graph needs
+        var needed = [];            // {puid, floor}
+        var seen = {};
+        var neededByFloor = {};     // floor -> array of puids
+        for (var i = 0; i < floors.length; i++) {
+            var fl = floors[i];
+            var conns = fl.connections || [];
+            for (var j = 0; j < conns.length; j++) {
+                var c = conns[j];
+                _noteEndpoint(c.pois_a, c.floor_a);
+                _noteEndpoint(c.pois_b, c.floor_b);
+            }
+        }
+        function _noteEndpoint(puid, flr) {
+            if (!puid) return;
+            var key = String(flr) + ":" + String(puid);
+            if (seen[key]) return;
+            seen[key] = true;
+            needed.push({ puid: puid, floor: String(flr) });
+            (neededByFloor[String(flr)] = neededByFloor[String(flr)] || []).push(puid);
+        }
+
+        // 2) load POIs already in the target (so we don't duplicate)
+        return $scope.anyAPI.retrievePoisByBuilding({
+            buid: b.buid,
+            owner_id: $scope.owner_id
+        }).then(function (resp) {
+            var existing = {};          // "floor:puid" -> poi
+            var placed = resp.data && resp.data.pois || [];
+            for (var k = 0; k < placed.length; k++) {
+                var p = placed[k];
+                existing[String(p.floor_number) + ":" + String(p.puid)] = p;
+            }
+
+            // 3) build an adjacency map of endpoint nodes (floor:puid) and seed
+            //    "known" coordinates from POIs already placed in the target
+            var adj = {};               // key -> [key, ...] same-floor neighbors
+            var known = {};             // key -> {lat,lon}
+            for (var p = 0; p < placed.length; p++) {
+                var pp = placed[p];
+                var plat = Number(pp.coordinates_lat);
+                var plon = Number(pp.coordinates_lon);
+                if (!isNaN(plat) && !isNaN(plon)) {
+                    known[String(pp.floor_number) + ":" + String(pp.puid)] = { lat: plat, lon: plon };
+                }
+            }
+            // seed known positions also from backup POIs (they were just restored by _restorePois)
+            for (var i3 = 0; i3 < floors.length; i3++) {
+                var fl3 = floors[i3];
+                var bpois = fl3.pois || [];
+                for (var j3 = 0; j3 < bpois.length; j3++) {
+                    var bp = bpois[j3];
+                    var bl = Number(bp.coordinates_lat);
+                    var bn = Number(bp.coordinates_lon);
+                    if (!isNaN(bl) && !isNaN(bn)) {
+                        known[String(fl3.floor_number) + ":" + String(bp.puid)] = { lat: bl, lon: bn };
+                    }
+                }
+            }
+            for (var m = 0; m < floors.length; m++) {
+                var flx = floors[m];
+                var cns = flx.connections || [];
+                for (var n = 0; n < cns.length; n++) {
+                    var cc = cns[n];
+                    _link(cc.pois_a, cc.floor_a, cc.pois_b, cc.floor_b);
+                }
+            }
+            function _link(a, fa, c2, fb) {
+                var aKey = String(fa) + ":" + String(a);
+                var bKey = String(fb) + ":" + String(c2);
+                if (String(fa) !== String(fb)) return; // only place within a floor
+                if (!adj[aKey]) adj[aKey] = [];
+                if (!adj[bKey]) adj[bKey] = [];
+                if (adj[aKey].indexOf(bKey) === -1) adj[aKey].push(bKey);
+                if (adj[bKey].indexOf(aKey) === -1) adj[bKey].push(aKey);
+            }
+
+            // 4) resolve positions iteratively: propagate centroids along chains
+            //    until no new node can be placed (or a cap of passes is reached)
+            var positions = {};         // key -> {lat, lon}
+            var passes = 8;
+            for (var pass = 0; pass < passes; pass++) {
+                var changed = false;
+                for (var r = 0; r < needed.length; r++) {
+                    var nd = needed[r];
+                    var key2 = String(nd.floor) + ":" + String(nd.puid);
+                    if (known[key2] || positions[key2]) continue;
+                    var nb = adj[key2] || [];
+                    var acc = { lat: 0, lon: 0, count: 0 };
+                    for (var q = 0; q < nb.length; q++) {
+                        var nk = known[nb[q]] || positions[nb[q]];
+                        if (!nk) continue;
+                        acc.lat += nk.lat;
+                        acc.lon += nk.lon;
+                        acc.count++;
+                    }
+                    if (acc.count > 0) {
+                        positions[key2] = { lat: acc.lat / acc.count, lon: acc.lon / acc.count };
+                        changed = true;
+                    }
+                }
+                if (!changed) break;
+            }
+
+            // 5) fallback for anything still unresolved: building center + scatter
+            var cLat = Number(b.coordinates_lat);
+            var cLon = Number(b.coordinates_lon);
+            var hasCenter = !isNaN(cLat) && !isNaN(cLon);
+            var created = 0;
+            var failures = [];
+            var hashOffset = function (str) {
+                var h = 0;
+                for (var s = 0; s < str.length; s++) {
+                    h = ((h << 5) - h + str.charCodeAt(s)) | 0;
+                }
+                return (h >>> 0) % 1000 / 1000; // [0,1)
+            };
+            var tasks = needed.map(function (nd) {
+                var key3 = String(nd.floor) + ":" + String(nd.puid);
+                return function () {
+                    if (existing[key3]) return null; // already present, nothing to do
+                    var lat, lon;
+                    if (positions[key3]) {
+                        lat = positions[key3].lat;
+                        lon = positions[key3].lon;
+                    } else if (hasCenter) {
+                        var r1 = hashOffset(nd.puid + "a") * 0.0015;
+                        var r2 = hashOffset(nd.puid + "b") * 0.0015;
+                        lat = cLat + r1;
+                        lon = cLon + r2;
+                        failures.push("connector POI \"" + (nd.puid || "?") + "\" had no backup position; placed near the building center (reposition if needed)");
+                    } else {
+                        failures.push("connector POI \"" + (nd.puid || "?") + "\" could not be placed (no position and no building center); skipped");
+                        return null;
+                    }
+                    return $scope.anyAPI.addPois({
+                        puid: nd.puid,
+                        buid: b.buid,
+                        floor_number: String(nd.floor),
+                        floor_name: String(nd.floor) + " floor",
+                        name: "connector",
+                        description: "re-created connector node (was missing from the backup)",
+                        pois_type: "None",
+                        is_published: "true",
+                        is_door: "false",
+                        is_building_entrance: "false",
+                        coordinates_lat: String(lat),
+                        coordinates_lon: String(lon),
+                        overwrite: "true",
+                        owner_id: $scope.owner_id
+                    }).then(function () {
+                        created++;
+                    }, function (err) {
+                        failures.push("connector POI \"" + (nd.puid || "?") + "\" not created: " + _errorText(err));
+                        return null;
+                    });
+                };
+            });
+            return _runSequential(tasks).then(function () {
+                return { created: created, failures: failures };
+            });
+        });
+    };
+
+    // Runs an array of functions returning promises strictly in order.
+    var _runSequential = function (tasks) {
+        return tasks.reduce(function (prev, task) {
+            return prev.then(task);
+        }, $q.when());
     };
 
     //set cookies

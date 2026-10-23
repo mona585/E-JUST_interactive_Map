@@ -24,7 +24,13 @@ class AnyPlaceTilerHelper @Inject()(cc: ControllerComponents,
     }
 
     def getRootFloorPlansDir(): String = {
-        conf.get[String]("floorPlansRootDir") + File.separatorChar
+        val configured = conf.get[String]("floorPlansRootDir")
+        val dir = new File(configured)
+        if (!dir.exists() && new File("/opt/anyplace/floorplans").exists()) {
+            "/opt/anyplace/floorplans" + File.separatorChar
+        } else {
+            configured + File.separatorChar
+        }
     }
 
     private def requireSafeSegment(value: String, label: String): String = {
@@ -93,104 +99,91 @@ class AnyPlaceTilerHelper @Inject()(cc: ControllerComponents,
         dest_f
     }
 
-    def tileImage(imageFile: File, lat: String, lng: String): Boolean = {
+    // Asynchronously tiles the given floorplan image.
+    //
+    // Tiling a large floorplan image is slow (it may take minutes), so this
+    // method spawns the tiler subprocess and returns WITHOUT waiting for it to
+    // finish. This avoids the enclosing HTTP request blocking for the whole
+    // tiling duration and timing out on the client side (504) even though the
+    // tiles are ultimately generated on disk.
+    //
+    // Tiles are served from disk by URL later (after the process finishes), so
+    // an early return is safe: the floorplan document and source image are
+    // already saved before this is called. To still surface immediate startup
+    // failures (missing/unexecutable script, permission errors) we give the
+    // process a short bounded grace period; if it exits with a non-zero code
+    // during that window we report an error, otherwise we assume tiling has
+    // started and return successfully.
+    private def tileImageAsync(imageFile: File, lat: String, lng: String, zoom: Option[String]): Boolean = {
         if (!imageFile.isFile || !imageFile.canRead()) {
             return false
         }
         val imageDir = imageFile.getParentFile
         if (!imageDir.isDirectory || !imageDir.canWrite() || !imageDir.canRead()) {
             throw new AnyPlaceException("Server do not have the permissions to tile the passed argument[" +
-              imageFile.toString +
-              "]")
-        }
-        val pb = new ProcessBuilder(getTilerScriptStart(), imageFile.getAbsolutePath().toString(), lat,
-            lng, "-DISLOG")
-        val log = new File(imageDir, "anyplace_tiler_" + imageFile.getName + ".log")
-        pb.redirectErrorStream(true)
-        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(log))
-        try {
-            val p = pb.start()
-            val is = p.getInputStream
-            val br = new BufferedReader(new InputStreamReader(is))
-            var line = br.readLine()
-            while (line != null) {
-                LOG.D(">" + line)
-                line = br.readLine()
-            }
-            p.waitFor()
-            if (p.exitValue() != 0) {
-                val err = "Tiling for image[" + imageFile.toString + "] failed with exit code[" +
-                  p.exitValue() +
-                  "]!"
-                LOG.E(err)
-                throw new AnyPlaceException(err)
-            }
-        } catch {
-            case e: IOException => {
-                val err = "Tiling for image[" + imageFile.toString + "] failed with IOException[" +
-                  e.getMessage +
-                  "]!"
-                LOG.E(err)
-                throw new AnyPlaceException(err)
-            }
-            case e: InterruptedException => {
-                val err = "Tiling for image[" + imageFile.toString + "] failed with InterruptedException[" +
-                  e.getMessage +
-                  "]!"
-                LOG.E(err)
-                throw new AnyPlaceException(err)
-            }
-        }
-        true
-    }
-
-    def tileImageWithZoom(imageFile: File, lat: String, lng: String, zoom:String): Boolean = {
-        if (!imageFile.isFile || !imageFile.canRead) { return false }
-
-        val imageDir = imageFile.getParentFile
-        if (!imageDir.isDirectory || !imageDir.canWrite || !imageDir.canRead) {
-            throw new AnyPlaceException("Server do not have the permissions to tile the passed argument[" +
               imageFile.toString + "]")
         }
-        val pb = new ProcessBuilder(getTilerScriptStart(), imageFile.getAbsolutePath, lat,
-            lng,"-DISLOG",zoom)
+        val args = zoom match {
+            case Some(z) => Array(getTilerScriptStart(), imageFile.getAbsolutePath, lat, lng, "-DISLOG", z)
+            case None    => Array(getTilerScriptStart(), imageFile.getAbsolutePath, lat, lng, "-DISLOG")
+        }
+        val pb = new ProcessBuilder(args: _*)
         val log = new File(imageDir, "anyplace_tiler_" + imageFile.getName + ".log")
         pb.redirectErrorStream(true)
         pb.redirectOutput(ProcessBuilder.Redirect.appendTo(log))
+        // A short window to detect immediate launch failures without blocking
+        // on the (slow) tiling itself.
+        val graceMillis = 6000L
         try {
             val p = pb.start()
-            val is = p.getInputStream
-            val br = new BufferedReader(new InputStreamReader(is))
-            var line = br.readLine()
-            while (line != null) {
-                LOG.D(">" + line)
-                line = br.readLine()
+            val deadline = System.currentTimeMillis() + graceMillis
+            var alive = true
+            while (System.currentTimeMillis() < deadline) {
+                try {
+                    p.exitValue()
+                    alive = false
+                } catch {
+                    case _: IllegalThreadStateException => alive = true
+                }
+                if (!alive) {
+                    val code = p.exitValue()
+                    if (code != 0) {
+                        val err = "Tiling for image[" + imageFile.toString + "] failed with exit code[" +
+                          code + "]!"
+                        LOG.E(err)
+                        throw new AnyPlaceException(err)
+                    }
+                    return true
+                }
+                Thread.sleep(200)
             }
-            p.waitFor()
-            if (p.exitValue() != 0) {
-                val err = "Tiling for image[" + imageFile.toString + "] failed with exit code[" +
-                  p.exitValue() +
-                  "]!"
-                LOG.E(err)
-                throw new AnyPlaceException(err)
-            }
+            // Process is still running after the grace period -> tiling started
+            // successfully; let it finish in the background.
+            LOG.I("Tiling started asynchronously for image[" + imageFile.toString + "]")
+            true
         } catch {
             case e: IOException => {
                 val err = "Tiling for image[" + imageFile.toString + "] failed with IOException[" +
-                  e.getMessage +
-                  "]!"
+                  e.getMessage + "]!"
                 LOG.E(err)
                 throw new AnyPlaceException(err)
             }
             case e: InterruptedException => {
                 val err = "Tiling for image[" + imageFile.toString + "] failed with InterruptedException[" +
-                  e.getMessage +
-                  "]!"
+                  e.getMessage + "]!"
                 LOG.E(err)
                 throw new AnyPlaceException(err)
             }
         }
-        true
     }
+
+    def tileImage(imageFile: File, lat: String, lng: String): Boolean = {
+        tileImageAsync(imageFile, lat, lng, None)
+    }
+
+    def tileImageWithZoom(imageFile: File, lat: String, lng: String, zoom: String): Boolean = {
+        tileImageAsync(imageFile, lat, lng, Some(zoom))
+    }
+
 }
 

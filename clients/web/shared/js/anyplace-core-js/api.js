@@ -131,6 +131,8 @@ API.Mapping.CONNECTION_DELETE = "/auth/mapping/connection/delete";
 API.Mapping.CONNECTION_DELETE_URL = API.url + API.Mapping.CONNECTION_DELETE;
 API.Mapping.CONNECTION_ALL_FLOOR = "/mapping/connection/floor/all";
 API.Mapping.CONNECTION_ALL_FLOOR_URL = API.url + API.Mapping.CONNECTION_ALL_FLOOR;
+API.Mapping.CONNECTION_ALL_FLOORS = "/mapping/connection/floors/all";
+API.Mapping.CONNECTION_ALL_FLOORS_URL = API.url + API.Mapping.CONNECTION_ALL_FLOORS;
 
 API.Mapping.LOGIN_LOCAL = "/user/login";
 API.Mapping.LOGIN_LOCAL_URL = API.url + API.Mapping.LOGIN_LOCAL;
@@ -750,6 +752,18 @@ app.factory('AnyplaceAPIService', ['$http', '$q', 'formDataObject', function ($h
         return $http({
             method: "POST",
             url: API.Mapping.CONNECTION_DELETE_URL,
+            data: json_req
+        }).success(function (data, status) {
+            return data;
+        }).error(function (data, status) {
+            return data;
+        });
+    };
+
+    apiService.retrieveConnectionsByBuildingAllFloors = function (json_req) {
+        return $http({
+            method: "POST",
+            url: API.Mapping.CONNECTION_ALL_FLOORS_URL,
             data: json_req
         }).success(function (data, status) {
             return data;

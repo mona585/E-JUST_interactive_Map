@@ -194,6 +194,20 @@ def main( argv ):
     CURRENT_PADDED_IMAGE_NAME = ImageDirName + '/padded-image.png'
     CURRENT_ZOOM_IMAGE_NAME = ImageDirName + '/zoom-sized-image'
 
+    # ImageMagick refuses to open images wider/taller than this (the compiled
+    # width/height resource limit, typically 16KP), emitting:
+    #   convert-im6.q16: width or height exceeds limit @ OpenPixelCache
+    # When upscaling a large floorplan for higher zoom levels, the resized
+    # image can exceed this limit and abort the whole tiling run.  We skip any
+    # zoom level whose upscaled size would breach the limit, while always
+    # keeping the as-uploaded zoom (UploadZoom), which never exceeds it since
+    # it is the original source resolution.
+    MAX_IMAGE_SIDE = 16000
+
+    # current image dimensions (the as-uploaded source)
+    srcWidth, srcHeight = getImageInfoFromFile2(ImageFileName)
+    print('Source W[%d] H[%d] MaxSide[%d]' % (srcWidth, srcHeight, MAX_IMAGE_SIDE))
+
     # initializations
     
     # we will run the procedure for every zoom level in range [OriginalZoom..ToZoom]
@@ -203,6 +217,13 @@ def main( argv ):
         if( currentZoom == UploadZoom ):
             currentImage=ImageFileName
         else:
+            resRatio = 100.0 / (2 ** (UploadZoom - currentZoom))
+            upscaledW = srcWidth * (resRatio / 100.0)
+            upscaledH = srcHeight * (resRatio / 100.0)
+            if( upscaledW > MAX_IMAGE_SIDE or upscaledH > MAX_IMAGE_SIDE ):
+                print('Skipping zoom %d: upscaled size %.0fx%.0f exceeds max side %d' %
+                      (currentZoom, upscaledW, upscaledH, MAX_IMAGE_SIDE))
+                continue
             newName=(('%s-z%d.png') % (CURRENT_ZOOM_IMAGE_NAME, currentZoom))
             resizeImage(currentImage, UploadZoom, currentZoom, newName)
             currentImage = newName

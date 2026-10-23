@@ -77,8 +77,20 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         if (pds.db.getFromKeyAsJson(SCHEMA.cEdges, SCHEMA.fConCuid, Connection.getId(pois_a, pois_b)) != null)
           return RESPONSE.BAD("Connection already exists.")
         try {
-          val weight = getConnectionWeight(pois_a, pois_b)
-          json = json.as[JsObject] + (SCHEMA.fWeight -> JsString(java.lang.Double.toString(weight)))
+          // Honor a client-provided weight (restore/import) verbatim so the exact
+          // original value is preserved; only recompute from coordinates when no
+          // valid weight was supplied.
+          val providedWeight = (json \ SCHEMA.fWeight).toOption.flatMap { w =>
+            w.asOpt[Double].orElse(w.asOpt[String].flatMap(v =>
+              scala.util.Try(v.trim.toDouble).toOption))
+          }.filter(_ >= 0.0)
+          providedWeight match {
+            case Some(w) =>
+              json = json.as[JsObject] + (SCHEMA.fWeight -> JsString(java.lang.Double.toString(w)))
+            case None =>
+              val weight = getConnectionWeight(pois_a, pois_b)
+              json = json.as[JsObject] + (SCHEMA.fWeight -> JsString(java.lang.Double.toString(weight)))
+          }
           if (edge_type == Connection.EDGE_TYPE_ELEVATOR || edge_type == Connection.EDGE_TYPE_STAIR) {
           }
           val conn = new Connection(json)

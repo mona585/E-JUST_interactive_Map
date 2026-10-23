@@ -10,7 +10,15 @@ class FileUtils @Inject()(cc: ControllerComponents,
                                 conf: Configuration,
                                 api: AnyplaceServerAPI)
   extends AbstractController(cc) {
-  val RADIO_MAPS_FROZEN_DIR = conf.get[String]("radioMapFrozenDir")
+  val RADIO_MAPS_FROZEN_DIR: String = {
+    val configured = conf.get[String]("radioMapFrozenDir")
+    val dir = new File(configured)
+    if (!dir.exists() && new File("/opt/anyplace/radiomaps_frozen").exists()) {
+      "/opt/anyplace/radiomaps_frozen"
+    } else {
+      configured
+    }
+  }
 
   private def requireSafeSegment(value: String, label: String): String = {
     if (!Utils.isSafePathSegment(value))
