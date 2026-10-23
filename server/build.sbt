@@ -13,10 +13,9 @@ lazy val root = (project in file("."))
     scalaVersion := "2.13.6",
     libraryDependencies ++= Seq(
       guice,
-      "com.typesafe.play" %% "play-json" % "2.10.0-RC5",
-      "com.typesafe.play" %% "play" % "2.8.8",
-      "org.mongodb.scala" %% "mongo-scala-driver" % "4.3.0",
-      "com.typesafe.play" %% "play-specs2" % "2.8.8" % Test
+      "com.typesafe.play" %% "play" % "2.8.13",
+      "org.mongodb.scala" %% "mongo-scala-driver" % "4.4.0",
+      "com.typesafe.play" %% "play-specs2" % "2.8.13" % Test
     ),
     scalacOptions ++= Seq(
       "-feature",
@@ -43,5 +42,6 @@ Test / javaOptions ++= Seq(
   "--add-opens=java.base/java.util=ALL-UNNAMED",
   "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
   "--add-opens=java.base/java.io=ALL-UNNAMED",
+  "--add-exports=java.base/sun.net.www.protocol.file=ALL-UNNAMED",
   "-Xmx768m"
 )
