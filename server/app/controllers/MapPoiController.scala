@@ -63,6 +63,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         try {
           val poi = new Poi(json)
           if (!pds.db.addJson(SCHEMA.cPOIS, poi.toGeoJson())) return RESPONSE.BAD_CANNOT_RETRIEVE_POI
+          SearchCache.clear()
           val res: JsValue = Json.obj(SCHEMA.fPuid -> poi.getId())
           return RESPONSE.OK(res, "Successfully added POI.")
         } catch {
@@ -132,6 +133,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
           val poi = new Poi(storedPoi)
           if (!pds.db.replaceJsonDocument(SCHEMA.cPOIS, SCHEMA.fPuid, poi.getId(), poi.toGeoJsonStr()))
             return RESPONSE.BAD("Poi could not be updated.")
+          SearchCache.clear()
           return RESPONSE.OK("Successfully updated poi.")
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
@@ -174,6 +176,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
           if ((storedPoi \ SCHEMA.fBuid).asOpt[String].getOrElse("") != buid)
             return RESPONSE.FORBIDDEN("POI belongs to a different space.")
           val all_items_failed = pds.db.deleteAllByPoi(puid)
+          SearchCache.clear()
           if (all_items_failed.size > 0) {
             val res = Json.obj("ids" -> all_items_failed.asScala)
             return RESPONSE.BAD(res, "Some items related to the deleted poi could not be deleted: " +
@@ -280,13 +283,18 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         val greeklish = request.getQueryString(SCHEMA.fGreeklish)
           .orElse((json \ SCHEMA.fGreeklish).asOpt[String]).getOrElse("")
         try {
-          var result: List[JsValue] = null
-          if (cuid.compareTo("") == 0)
-            result = pds.db.poisByBuildingAsJson3(buid, letters)
-          else if (greeklish.compareTo("true") == 0)
-            result = pds.db.poisByBuildingAsJson2GR(cuid, letters)
-          else
-            result = pds.db.poisByBuildingAsJson2(cuid, letters)
+          val cacheKey = cuid + "|" + buid + "|" + greeklish + "|" + letters
+          val result = SearchCache.get(cacheKey).getOrElse {
+            val fresh =
+              if (cuid.compareTo("") == 0)
+                pds.db.poisByBuildingAsJson3(buid, letters)
+              else if (greeklish.compareTo("true") == 0)
+                pds.db.poisByBuildingAsJson2GR(cuid, letters)
+              else
+                pds.db.poisByBuildingAsJson2(cuid, letters)
+            SearchCache.put(cacheKey, fresh)
+            fresh
+          }
           val res: JsValue = Json.obj(SCHEMA.cPOIS -> result)
           try
             RESPONSE.gzipJsonOk(res.toString)
