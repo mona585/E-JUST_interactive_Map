@@ -1,16 +1,16 @@
 [Unit]
-Description=Anyplace MongoDB daily backup (mongodump --oplog --gzip)
-After=mongod.service
-Wants=mongod.service
+Description=Anyplace MongoDB daily backup (verified mongodump archive)
+After=network-online.target mongod.service docker.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=anyplace
-Group=anyplace
-# Host provides /etc/anyplace/backup.env (BACKUP_DIR, MDB_HOST, MDB_PORT,
-# MDB_DATABASE, MDB_USER, MDB_PASS) with mode 0600, and config.sh derived
-# from server/database/admin/config.example.sh. Requires single-node
-# replica set for --oplog (see helper.sh).
-EnvironmentFile=/etc/anyplace/backup.env
+User=root
+Group=root
+# Host provides /etc/anyplace/backup.env with mode 0600. It may define
+# BACKUP_DIR, BACKUP_GPG_RECIPIENT, BACKUP_OFFHOST_TARGET, and the MDB_*
+# variables; connection details otherwise come from
+# /opt/anyplace/server/database/admin/config.sh.
+EnvironmentFile=-/etc/anyplace/backup.env
 WorkingDirectory=/opt/anyplace/server/database/admin
 ExecStart=/opt/anyplace/server/database/admin/backup.sh
