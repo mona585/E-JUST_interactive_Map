@@ -194,7 +194,8 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         if (!Utils.isSafePathSegment(buid)) return RESPONSE.BAD("Invalid building identifier.")
         val floors = requestedFloors.split(" ")
         if (!floors.forall(Utils.isSafePathSegment)) return RESPONSE.BAD("Invalid floor identifier.")
-        val all_floors = new util.ArrayList[String]
+        val floorFiles = scala.collection.mutable.ArrayBuffer.empty[(String, File)]
+        var missingFloor = false
         var z = 0
         while (z < floors.length) {
           val filePath = tilerHelper.getFloorPlanFor(buid, floors(z))
@@ -202,18 +203,38 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
           if (!Utils.isWithinRoot(tilerHelper.getRootFloorPlansDir(), filePath))
             return RESPONSE.BAD("Invalid building or floor identifier.")
           val file = new File(filePath)
-          try
-            if (!file.exists || !file.canRead) { all_floors.add("") }
-            else try {
-              val cached = FloorplanCache.getOrCompute(buid, floors(z), file, fu)
-              all_floors.add(cached.base64)
-            } catch {
-              case _: IOException =>
-                return RESPONSE.BAD("Cannot encode floorplan: " + floors(z))
-            }
-          catch {
+          if (!file.exists || !file.canRead) missingFloor = true
+          else floorFiles += ((floors(z), file))
+          z += 1
+        }
+
+        if (!missingFloor && floorFiles.nonEmpty) {
+          try {
+            val cached = FloorplanCache.getAllOrCompute(buid, floorFiles.toSeq, fu)
+            return Ok(cached.gzippedBytes).withHeaders(
+              ("Content-Encoding", "gzip"),
+              ("Content-Length", cached.gzippedBytes.length.toString)
+            ).as("application/json")
+          } catch {
+            case _: IOException =>
+              return RESPONSE.BAD("Cannot encode one of the requested floorplans.")
             case _: Exception =>
               return RESPONSE.ERROR_INTERNAL("Error while getting floorplans.")
+          }
+        }
+
+        val byFloor = floorFiles.toMap
+        val all_floors = new util.ArrayList[String]
+        z = 0
+        while (z < floors.length) {
+          byFloor.get(floors(z)) match {
+            case Some(file) =>
+              try all_floors.add(FloorplanCache.getOrCompute(buid, floors(z), file, fu).base64)
+              catch {
+                case _: IOException =>
+                  return RESPONSE.BAD("Cannot encode floorplan: " + floors(z))
+              }
+            case None => all_floors.add("")
           }
           z += 1
         }
