@@ -29,7 +29,8 @@ the acceptance checklist.
   `status.sh`, `install.sh`).
 - Nginx bootstrap and hardened vhosts, backup timer, and backup environment
   template (`docs/deploy/`).
-- Recovery and deployment runbooks (`docs/recovery/`, `docs/RUN_SERVER_REMOTE.md`).
+- Recovery and deployment runbooks (`docs/recovery/`,
+  `docs/deploy/PRODUCTION_ROLLOUT.md`).
 - This IT handover set (`docs/it-handover/`).
 - Backend test suite and CI configuration (`server/test/`,
   `.github/workflows/server.yml`).

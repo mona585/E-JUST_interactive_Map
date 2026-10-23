@@ -2,6 +2,11 @@
 
 This guide reproduces the **exact remote launch** done on `2026-09-24` (`Ahmed-branch` `1c5f5cfd` + `PR1` campus burst fixes, `http://192.168.1.6:9000` local + `https://<trycloudflare>.trycloudflare.com` remote). No uni VM required for teammate testing.
 
+> **Development tunnel only.** This guide launches a temporary
+> `trycloudflare.com` URL for teammate testing. For the controlled campus
+> rollout (backup, dataset hydration, TLS, smoke tests, rollback), use
+> `docs/deploy/PRODUCTION_ROLLOUT.md`.
+
 ## 1. Current Branch
 
 ```bash

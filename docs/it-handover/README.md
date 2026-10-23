@@ -8,8 +8,8 @@ against upstream Anyplace documentation.
 
 When documents disagree, use this order:
 
-1. `docs/deploy/` configuration files and `docs/RUN_SERVER_REMOTE.md` for the
-   exact host rollout procedure.
+1. `docs/deploy/PRODUCTION_ROLLOUT.md` and the `docs/deploy/` configuration
+   files for the exact host rollout procedure.
 2. This handover set for operating the running system.
 3. Everything else (including upstream Anyplace documentation) for background.
 

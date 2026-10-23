@@ -3,9 +3,10 @@
 This guide describes the supported deployment: a native Play service managed by
 systemd on Ubuntu 22.04 LTS, with Nginx in front and MongoDB on loopback.
 
-For the exact commands used on the current production VM, including TLS
-issuance, see `docs/RUN_SERVER_REMOTE.md` and the configuration files in
-`docs/deploy/`.
+For the controlled production rollout, including backup, data hydration, TLS
+issuance, smoke tests, and rollback, see `docs/deploy/PRODUCTION_ROLLOUT.md`.
+`docs/RUN_SERVER_REMOTE.md` is the development tunnel guide, not the production
+procedure. Configuration files live in `docs/deploy/`.
 
 ## 1. Prerequisites
 
