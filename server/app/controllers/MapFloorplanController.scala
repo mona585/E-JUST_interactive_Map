@@ -13,6 +13,7 @@ import utils.json.VALIDATE
 import java.io._
 import java.util
 import javax.inject.{Inject, Singleton}
+import scala.concurrent.Future
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 object FloorplanSettings {
@@ -25,9 +26,12 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
                                        tilerHelper: AnyPlaceTilerHelper,
                                        pds: ProxyDataSource,
                                        fu: FileUtils,
-                                       user: helper.User)
+                                       user: helper.User,
+                                       actorSystem: akka.actor.ActorSystem)
   extends AbstractController(cc) {
-  implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
+  /** Blocking Mongo/file work stays off Play's default pool (see app.play.conf). */
+  private implicit val blockingEc: scala.concurrent.ExecutionContext =
+    actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
 
   def serveFloorPlanBinary(buid: String, floorNum: String): Action[AnyContent] = Action {
     implicit request =>
@@ -136,7 +140,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
     inner()
   }
 
-  def getBase64(buid: String, floorNum: String): Action[AnyContent] = Action {
+  def getBase64(buid: String, floorNum: String): Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -169,7 +173,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   /**
@@ -179,7 +183,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
    * @param floorNum
    * @return
    */
-  def getAllBase64(buid: String, requestedFloors: String): Action[AnyContent] = Action {
+  def getAllBase64(buid: String, requestedFloors: String): Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -222,7 +226,7 @@ class MapFloorplanController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   @deprecated("NotInUse")

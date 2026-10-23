@@ -13,15 +13,21 @@ import utils.{AccessPointIdsCache, LOG, RESPONSE, Utils}
 import java.io.IOException
 import java.util
 import javax.inject.{Inject, Singleton}
+import scala.concurrent.Future
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 @Singleton
 class AccessPointController @Inject()(cc: ControllerComponents,
                                       pds: ProxyDataSource,
-                                      env: Environment)
+                                      env: Environment,
+                                      actorSystem: akka.actor.ActorSystem)
   extends AbstractController(cc) {
+  /** Blocking Mongo/file work stays off Play's default pool (see app.play.conf). */
+  private implicit val blockingEc: scala.concurrent.ExecutionContext =
+    actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
 
-  def byFloor(): Action[AnyContent] = Action {
+
+  def byFloor(): Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -89,13 +95,13 @@ class AccessPointController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   /**
    * @return
    */
-  def getIDs: Action[AnyContent] = Action {
+  def getIDs: Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -118,6 +124,6 @@ class AccessPointController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 }

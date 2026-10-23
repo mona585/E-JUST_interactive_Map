@@ -11,13 +11,19 @@ import utils.json.VALIDATE
 
 import java.io._
 import javax.inject.{Inject, Singleton}
+import scala.concurrent.Future
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 @Singleton
 class MapFloorController @Inject()(cc: ControllerComponents,
                                    tilerHelper: AnyPlaceTilerHelper,
                                    pds: ProxyDataSource,
-                                   user: helper.User)
+                                   user: helper.User,
+                                   actorSystem: akka.actor.ActorSystem)
   extends AbstractController(cc) {
+  /** Blocking Mongo/file work stays off Play's default pool (see app.play.conf). */
+  private implicit val blockingEc: scala.concurrent.ExecutionContext =
+    actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
+
 
   def add(): Action[AnyContent] = Action {
     implicit request =>
@@ -170,7 +176,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
       inner(request)
   }
 
-  def all(): Action[AnyContent] = Action {
+  def all(): Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -195,7 +201,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
 }

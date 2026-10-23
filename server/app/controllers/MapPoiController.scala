@@ -11,12 +11,18 @@ import utils.json.VALIDATE.String
 import utils._
 import java.io._
 import javax.inject.{Inject, Singleton}
+import scala.concurrent.Future
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 @Singleton
 class MapPoiController @Inject()(cc: ControllerComponents,
                                            pds: ProxyDataSource,
-                                           user: helper.User)
+                                           user: helper.User,
+                                           actorSystem: akka.actor.ActorSystem)
   extends AbstractController(cc) {
+  /** Blocking Mongo/file work stays off Play's default pool (see app.play.conf). */
+  private implicit val blockingEc: scala.concurrent.ExecutionContext =
+    actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
+
 
   private val MAX_SEARCH_QUERY_LENGTH = 128
   private val MAX_SEARCH_WORDS = 8
@@ -184,7 +190,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
       inner(request)
   }
 
-  def byFloor(): Action[AnyContent] = Action {
+  def byFloor(): Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -212,10 +218,10 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
-  def bySpace(): Action[AnyContent] = Action {
+  def bySpace(): Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -241,7 +247,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   /**
@@ -250,7 +256,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
    *
    * @return
    */
-  def search: Action[AnyContent] = Action {
+  def search: Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         LOG.D2("POI: search")
@@ -294,7 +300,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   /**

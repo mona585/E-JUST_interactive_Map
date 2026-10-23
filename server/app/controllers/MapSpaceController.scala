@@ -13,12 +13,18 @@ import utils.json.VALIDATE.String
 
 import java.io._
 import javax.inject.{Inject, Singleton}
+import scala.concurrent.Future
 @Singleton
 class MapSpaceController @Inject()(cc: ControllerComponents,
                                     tilerHelper: AnyPlaceTilerHelper,
                                     pds: ProxyDataSource,
-                                    user: helper.User)
+                                    user: helper.User,
+                                    actorSystem: akka.actor.ActorSystem)
     extends AbstractController(cc) {
+  /** Blocking Mongo/file work stays off Play's default pool (see app.play.conf). */
+  private implicit val blockingEc: scala.concurrent.ExecutionContext =
+    actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
+
 
   val NEARBY_BUILDINGS_RANGE = 50
   val NEARBY_BUILDINGS_RANGE_MAX = 500
@@ -280,7 +286,7 @@ class MapSpaceController @Inject()(cc: ControllerComponents,
       inner(request)
   }
 
-  def public: Action[AnyContent] = Action {
+  def public: Action[AnyContent] = Action.async {
     implicit request =>
 
       def inner(request: Request[AnyContent]): Result = {
@@ -302,10 +308,10 @@ class MapSpaceController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
-  def get(): Action[AnyContent] = Action {
+  def get(): Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -337,7 +343,7 @@ class MapSpaceController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   def userAccessible(): Action[AnyContent] = Action {

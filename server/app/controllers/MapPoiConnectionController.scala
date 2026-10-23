@@ -13,13 +13,19 @@ import java.io._
 import java.text.{NumberFormat, ParseException}
 import java.util.Locale
 import javax.inject.{Inject, Singleton}
+import scala.concurrent.Future
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 @Singleton
 class MapPoiConnectionController @Inject()(cc: ControllerComponents,
                                    pds: ProxyDataSource,
-                                   user: helper.User)
+                                   user: helper.User,
+                                   actorSystem: akka.actor.ActorSystem)
   extends AbstractController(cc) {
+  /** Blocking Mongo/file work stays off Play's default pool (see app.play.conf). */
+  private implicit val blockingEc: scala.concurrent.ExecutionContext =
+    actorSystem.dispatchers.lookup("contexts.blocking-io-dispatcher")
+
 
   def add(): Action[AnyContent] = Action {
     implicit request =>
@@ -236,7 +242,7 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
       inner(request)
   }
 
-  def byFloor(): Action[AnyContent] = Action {
+  def byFloor(): Action[AnyContent] = Action.async {
     implicit request =>
       def inner(request: Request[AnyContent]): Result = {
         val anyReq = new OAuth2Request(request)
@@ -272,7 +278,7 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   /**
@@ -280,7 +286,7 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
    *
    * @return
    */
-  def byFloorsAll: Action[AnyContent] = Action {
+  def byFloorsAll: Action[AnyContent] = Action.async {
     implicit request =>
 
       def inner(request: Request[AnyContent]): Result = {
@@ -310,7 +316,7 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
         }
       }
 
-      inner(request)
+      Future { inner(request) }(blockingEc)
   }
 
   private def getConnectionWeight(pois_a: String, pois_b: String) = {
