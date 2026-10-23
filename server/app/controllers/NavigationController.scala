@@ -332,21 +332,24 @@ class NavigationController @Inject()(cc: ControllerComponents,
   private def navigateSameFloor(from: JsValue, to: JsValue): List[JsValue] = {
     val buid = (from \ SCHEMA.fBuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val floor = (from \ SCHEMA.fFloorNumber).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
-    navigateSameFloor(from, to, pds.db.poisByBuildingFloorAsMap(buid, floor))
+    val entry = NavigationDataCache.getOrLoad(NavigationDataCache.floorKey(buid, floor)) {
+      // A same-floor route can only use same-floor edges; loading every edge in
+      // the building adds no reachable nodes and needlessly grows the graph.
+      val edges = new util.ArrayList[HashMap[String, String]]()
+      pds.db.connectionsByBuildingFloorAsJson(buid, floor)
+        .foreach(j => edges.add(JsonUtils.getHashMapStrStr(j)))
+      (pds.db.poisByBuildingFloorAsMap(buid, floor), edges)
+    }
+    navigateSameFloor(from, to, entry.pois, entry.edges)
   }
 
-  private def navigateSameFloor(from: JsValue, to: JsValue, floorPois: util.List[HashMap[String, String]]): util.List[JsValue] = {
-    val buid = (from \ SCHEMA.fBuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
-    val floor = (from \ SCHEMA.fFloorNumber).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+  private def navigateSameFloor(from: JsValue, to: JsValue,
+                                floorPois: util.List[HashMap[String, String]],
+                                floorEdges: util.List[HashMap[String, String]]): util.List[JsValue] = {
     val puidFrom = (from \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val puidTo = (to \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val graph = new Dijkstra.Graph()
     graph.addPois(floorPois)
-    // A same-floor route can only use same-floor edges; loading every edge in
-    // the building adds no reachable nodes and needlessly grows the graph.
-    val floorEdges = new util.ArrayList[HashMap[String, String]]()
-    pds.db.connectionsByBuildingFloorAsJson(buid, floor)
-      .foreach(j => floorEdges.add(JsonUtils.getHashMapStrStr(j)))
     graph.addEdges(floorEdges)
     val routePois = Dijkstra.getShortestPath(graph, puidFrom, puidTo)
 
@@ -369,9 +372,12 @@ class NavigationController @Inject()(cc: ControllerComponents,
     val buid = (from \ SCHEMA.fBuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val puidFrom = (from \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
     val puidTo = (to \ SCHEMA.fPuid).asOpt[String].getOrElse(return new util.ArrayList[JsValue]())
+    val entry = NavigationDataCache.getOrLoad(NavigationDataCache.buildingKey(buid)) {
+      (pds.db.poisByBuildingAsMap(buid), pds.db.connectionsByBuildingAsMap(buid))
+    }
     val graph = new Dijkstra.Graph()
-    graph.addPois(pds.db.poisByBuildingAsMap(buid))
-    graph.addEdges(pds.db.connectionsByBuildingAsMap(buid))
+    graph.addPois(entry.pois)
+    graph.addEdges(entry.edges)
     val routePois = Dijkstra.getShortestPath(graph, puidFrom, puidTo)
     val final_points = new util.ArrayList[JsValue]()
     var p: NavResultPoint = null

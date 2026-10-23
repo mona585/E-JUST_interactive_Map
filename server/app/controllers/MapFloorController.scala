@@ -153,6 +153,7 @@ class MapFloorController @Inject()(cc: ControllerComponents,
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
         try {
+          NavigationDataCache.clear()
           val deleted = pds.db.deleteAllByFloor(buid, floorNum)
           if (!deleted)
             return RESPONSE.BAD("Some items related to the floor could not be deleted.")

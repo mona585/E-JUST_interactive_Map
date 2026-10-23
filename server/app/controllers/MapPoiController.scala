@@ -64,6 +64,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
           val poi = new Poi(json)
           if (!pds.db.addJson(SCHEMA.cPOIS, poi.toGeoJson())) return RESPONSE.BAD_CANNOT_RETRIEVE_POI
           SearchCache.clear()
+          NavigationDataCache.clear()
           val res: JsValue = Json.obj(SCHEMA.fPuid -> poi.getId())
           return RESPONSE.OK(res, "Successfully added POI.")
         } catch {
@@ -134,6 +135,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
           if (!pds.db.replaceJsonDocument(SCHEMA.cPOIS, SCHEMA.fPuid, poi.getId(), poi.toGeoJsonStr()))
             return RESPONSE.BAD("Poi could not be updated.")
           SearchCache.clear()
+          NavigationDataCache.clear()
           return RESPONSE.OK("Successfully updated poi.")
         } catch {
           case e: DatasourceException => return RESPONSE.ERROR(e)
@@ -177,6 +179,7 @@ class MapPoiController @Inject()(cc: ControllerComponents,
             return RESPONSE.FORBIDDEN("POI belongs to a different space.")
           val all_items_failed = pds.db.deleteAllByPoi(puid)
           SearchCache.clear()
+          NavigationDataCache.clear()
           if (all_items_failed.size > 0) {
             val res = Json.obj("ids" -> all_items_failed.asScala)
             return RESPONSE.BAD(res, "Some items related to the deleted poi could not be deleted: " +

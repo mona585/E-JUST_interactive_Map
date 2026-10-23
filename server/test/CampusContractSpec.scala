@@ -991,6 +991,7 @@ class CampusContractSpec extends PlaySpecification with IsolatedFixture {
           "floor_a" -> "0", "floor_b" -> "0", "buid" -> buid,
           "edge_type" -> "elevator", "weight" -> "10.0",
           "is_published" -> "true"))
+        utils.NavigationDataCache.clear()
         val lift = route(app, FakeRequest(POST, "/api/navigation/route/campus")
           .withJsonBody(routeBody())).get
         status(lift) must equalTo(OK)

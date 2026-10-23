@@ -264,6 +264,7 @@ class MapSpaceController @Inject()(cc: ControllerComponents,
           case e: DatasourceException => return RESPONSE.ERROR(e)
         }
         try {
+          NavigationDataCache.clear()
           val deleted = pds.db.deleteAllByBuilding(buid)
           if (!deleted)
             return RESPONSE.BAD("Some items related to the deleted space could not be deleted.")

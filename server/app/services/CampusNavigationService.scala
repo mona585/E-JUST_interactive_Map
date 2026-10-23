@@ -3,7 +3,7 @@ package services
 import datasources.{ProxyDataSource, SCHEMA}
 import models.NavResultPoint
 import play.api.libs.json.JsValue
-import utils.Dijkstra
+import utils.{Dijkstra, NavigationDataCache}
 
 import java.util
 import javax.inject.{Inject, Singleton}
@@ -31,9 +31,12 @@ class CampusNavigationService @Inject() (pds: ProxyDataSource) {
     val fromPuid = (fromPoi \ SCHEMA.fPuid).asOpt[String].orNull
     val toPuid = (toPoi \ SCHEMA.fPuid).asOpt[String].orNull
     if (fromPuid == null || toPuid == null) return points
+    val entry = NavigationDataCache.getOrLoad(NavigationDataCache.campusKey(buids)) {
+      (pds.db.poisByBuildingIdsAsMap(buids), pds.db.connectionsByCampusAsMap(buids))
+    }
     val graph = new Dijkstra.Graph()
-    for (poi <- pds.db.poisByBuildingIdsAsMap(buids).asScala) graph.addPoi(poi)
-    val edges = pds.db.connectionsByCampusAsMap(buids).asScala.filterNot { e =>
+    for (poi <- entry.pois.asScala) graph.addPoi(poi)
+    val edges = entry.edges.asScala.filterNot { e =>
       stepFree && "stair".equalsIgnoreCase(e.get(SCHEMA.fEdgeType))
     }
     val edgeList = new util.ArrayList[util.HashMap[String, String]]()

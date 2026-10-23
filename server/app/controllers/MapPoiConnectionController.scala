@@ -102,6 +102,7 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
           val conn = new Connection(json)
           if (!pds.db.addJson(SCHEMA.cEdges, conn.toJson()))
             return RESPONSE.BAD_CANNOT_ADD_CONNECTION
+          NavigationDataCache.clear()
           val res: JsValue = Json.obj(SCHEMA.fConCuid -> conn.getId())
           return RESPONSE.OK(res, "Successfully added new connection.")
         } catch {
@@ -173,6 +174,7 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
             storedConn = storedConn.as[JsObject] + (SCHEMA.fEdgeType -> JsString(edge_type))
           }
           val conn = new Connection(storedConn)
+          NavigationDataCache.clear()
           if (!pds.db.replaceJsonDocument(SCHEMA.cEdges, SCHEMA.fConCuid, conn.getId(), conn.toJson().toString))
             return RESPONSE.BAD("Connection could not be updated.")
           return RESPONSE.OK("Successfully updated connection.")
@@ -227,6 +229,7 @@ class MapPoiConnectionController @Inject()(cc: ControllerComponents,
             val esp = pds.db.getFromKeyAsJson(SCHEMA.cSpaces, SCHEMA.fBuid, eb)
             if (esp == null || !user.canAccessSpace(esp, owner_id)) return RESPONSE.UNAUTHORIZED_USER
           }
+          NavigationDataCache.clear()
           val all_items_failed = pds.db.deleteAllByConnection(cuid)
           if (all_items_failed.size > 0) {
             val obj: JsValue = Json.obj("ids" -> all_items_failed.asScala)
