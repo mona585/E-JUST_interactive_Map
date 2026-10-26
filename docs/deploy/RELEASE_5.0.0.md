@@ -4,6 +4,7 @@
 **Previous version:** `4.2.6`
 **Release date:** 2026-10-26
 **Status:** Code-complete; production rollout pending.
+**Deployment tag:** `v5.0.0-deploy` (adds the hostname/TLS-mode preparation).
 
 ## Why this is a major upgrade
 

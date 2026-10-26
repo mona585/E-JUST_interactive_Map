@@ -85,7 +85,7 @@ Out of scope for this handover:
 
 ### 4.2 Security
 
-- Play listens on loopback only; Nginx terminates TLS.
+- Play listens on loopback only; Nginx or the campus TLS gateway terminates TLS.
 - MongoDB listens on loopback only and requires authentication.
 - Secrets are provided through `/etc/anyplace/anyplace.env` (mode `0600`).
 - CORS is restricted to the configured public origin.
@@ -155,7 +155,7 @@ The deployment is accepted when:
 6. A POI search and an indoor route succeed.
 7. A manual backup completes, passes validation, and a restore into a scratch
    database succeeds.
-8. `certbot renew --dry-run` succeeds.
+8. If the VM terminates TLS, `certbot renew --dry-run` succeeds; otherwise IT confirms the gateway certificate renewal path.
 9. No plaintext secrets exist in the repository or documentation.
 10. The IT operator has completed one restore drill and one service restart.
 

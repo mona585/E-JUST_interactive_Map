@@ -122,7 +122,7 @@ Mark each item during the acceptance session.
 - [ ] MongoDB is reachable only on loopback and requires authentication.
 - [ ] A manual backup completes and its manifest contains non-zero counts.
 - [ ] A restore drill into a scratch database succeeds.
-- [ ] `certbot renew --dry-run` succeeds.
+- [ ] `certbot renew --dry-run` succeeds if the VM terminates TLS; otherwise IT confirms the gateway renewal path.
 - [ ] `anyplace-backup.timer` is enabled and scheduled.
 - [ ] Disk usage is below 80% and the backup retention policy is configured.
 - [ ] The IT operator has performed a service restart and read the logs.

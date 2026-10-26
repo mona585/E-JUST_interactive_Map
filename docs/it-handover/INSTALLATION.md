@@ -198,7 +198,11 @@ curl -fsS http://127.0.0.1:9000/api/version
 
 ## 7. Nginx and TLS
 
-Use the bootstrap vhost first so ACME HTTP-01 can succeed:
+First confirm who terminates TLS using `docs/deploy/PRODUCTION_PREP_5.0.0.md`.
+If a campus gateway terminates TLS, install
+`docs/deploy/nginx-anyplace-gateway.conf` instead and skip certbot on the VM.
+
+For VM-terminated TLS, use the bootstrap vhost first so ACME HTTP-01 can succeed:
 
 ```bash
 sudo cp /opt/anyplace/docs/deploy/nginx-anyplace-bootstrap.conf \

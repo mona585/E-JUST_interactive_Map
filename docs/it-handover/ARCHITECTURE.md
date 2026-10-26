@@ -191,7 +191,7 @@ server/database/init_schema.js              idempotent collections and indexes
 
 - **Network**: only Nginx is public. Play binds loopback. MongoDB binds
   loopback and requires authentication.
-- **Transport**: TLS terminates at Nginx; HTTP redirects to HTTPS.
+- **Transport**: TLS terminates at Nginx or the campus gateway; confirm the mode in `docs/deploy/PRODUCTION_PREP_5.0.0.md` before configuring either.
 - **Secrets**: supplied by `/etc/anyplace/anyplace.env` (mode `0600`). The unit
   reads `APPLICATION_SECRET` and the `MONGODB_*` variables from it.
 - **CORS**: restricted to the configured public origin.

@@ -9,15 +9,23 @@ Run every command from the repository root unless a step says otherwise. Use a
 maintenance window: the data-hydration path stops the service and briefly makes
 the API unavailable.
 
+Read `docs/deploy/PRODUCTION_PREP_5.0.0.md` first for the release state, the
+off-campus DNS/TLS findings, and the TLS-mode decision gate.
+
 ## 0. Preflight (read-only)
 
-Set the public hostname for this session and confirm it matches DNS:
+Set the public hostname for this session and run the automated preflight from a
+campus-networked workstation:
 
 ```bash
-export MAP_HOST="ejustgo.ejust.edu.eg"   # replace with the assigned name
-getent hosts "$MAP_HOST"
-curl -sSI "http://$MAP_HOST/" | head -5
+export MAP_HOST="ejustgo.ejust.edu.eg"
+./scripts/prod-preflight.sh --host "$MAP_HOST" --expected-ip 196.219.57.237 \
+  --ssh <deploy-user>@<vm-address> | tee "prod-preflight-$(date +%F).txt"
 ```
+
+The script is read-only. It verifies DNS, TCP 80/443/22, the TLS certificate,
+the public API and web entries, the release tag/artifact, and (with `--ssh`) the
+VM state. If it reports a critical failure, stop before changing anything.
 
 Record the current state before changing anything:
 
@@ -81,7 +89,8 @@ Verify the archive is not empty and the dry run succeeded before continuing.
 ```bash
 cd /opt/anyplace
 sudo -u anyplace git fetch origin
-sudo -u anyplace git checkout <release-commit-or-tag>
+# v5.0.0-deploy includes the hostname and TLS-mode preparation for this rollout.
+sudo -u anyplace git checkout v5.0.0-deploy
 
 sudo -u anyplace ./scripts/build-web-assets.sh
 cd server
@@ -173,7 +182,26 @@ Browser checks:
 
 ## 5. TLS and Nginx
 
-On the first rollout, or when the certificate is missing:
+First decide who terminates TLS. The off-campus probe sees the university
+wildcard certificate (`CN=*.ejust.edu.eg`, Sectigo), which suggests a campus
+gateway, but confirm the forwarding path with IT before installing a vhost.
+
+**Mode A - university gateway terminates TLS (likely):**
+
+```bash
+# Replace the set_real_ip_from placeholder with the gateway address from IT.
+sudo cp docs/deploy/nginx-anyplace-gateway.conf \
+  /etc/nginx/sites-available/anyplace
+sudo ln -sfn /etc/nginx/sites-available/anyplace \
+  /etc/nginx/sites-enabled/anyplace
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Do not run certbot on the VM in this mode. Do not redirect HTTP to HTTPS; the
+gateway already provides HTTPS and a redirect would loop. Confirm the gateway
+preserves `Host` and sends `X-Forwarded-Proto: https`.
+
+**Mode B - the VM terminates TLS:**
 
 ```bash
 sudo cp docs/deploy/nginx-anyplace-bootstrap.conf \
@@ -190,12 +218,12 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot renew --dry-run
 ```
 
-If port 80 is not publicly reachable, use the DNS-01 challenge instead of
+If public port 80 is not reachable, use the DNS-01 challenge instead of
 `--webroot` and record that change in the handover notes.
 
-The hardened vhost must keep `/api/` and the three web apps on the same origin;
-the clients call `/api` relatively. Verify that `X-Forwarded-Proto` reaches Play
-so generated links use `https`.
+Both modes must keep `/api/` and the three web apps on the same origin; the
+clients call `/api` relatively. Verify that `X-Forwarded-Proto` reaches Play so
+generated links use `https`.
 
 ## 6. Backups and monitoring
 
