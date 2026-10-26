@@ -2,7 +2,7 @@
 
 **Prepared:** 2026-10-26, from outside the campus network.
 **Target:** `https://ejustgo.ejust.edu.eg`
-**Release:** `v5.0.0` / commit `57745c9e` (plus this preparation commit)
+**Release:** `v5.0.0` / commit `57745c9e`; deployment tip `v5.0.0-deploy.1`
 **Scope:** preparation and state definition only. No production changes were made.
 
 ## 1. Release state
@@ -10,12 +10,13 @@
 | Item | Value |
 |---|---|
 | Tag | `v5.0.0` (code-complete release) |
-| Deployment tag | `v5.0.0-deploy` (adds hostname, TLS-mode, and preflight preparation) |
+| Deployment tag | `v5.0.0-deploy.1` (adds E-JUST Go branding, hostname, TLS-mode, and preflight preparation) |
 | Artifact | `server/target/universal/anyplace-5.0.0.zip` |
-| SHA-256 | `37be00f44c8344bb88eafb375a547986a058d5aa223a8bb99f93d41693229103` |
+| SHA-256 | `601cd84af2f7fc33c6145641c7105f34f0246071a9acd14776d39a09e41685ab` |
 | Unit tests | 69 total: 66 passed, 3 Mongo-gated skips |
 | Mongo integration | 137 passed |
 | Nginx configs | `nginx -t` passed for campus, gateway, and bootstrap variants |
+| Branding | Phase 1 display name `E-JUST Go`; runtime identifiers unchanged |
 | Previous release | `4.2.6` |
 
 Rebuild with `cd server && sbt dist` if the artifact is missing. The checksum
@@ -136,7 +137,7 @@ Follow `docs/deploy/PRODUCTION_ROLLOUT.md` with the mode chosen above:
 
 1. Preflight and VM state snapshot.
 2. Verified backup of MongoDB and `/opt/anyplace` files.
-3. Stage `v5.0.0`, rebuild web assets, run `sbt clean stage`.
+3. Stage `v5.0.0-deploy.1`, rebuild web assets, run `sbt clean stage`.
 4. Stop the service, restore the committed dataset, apply indexes.
 5. Start the service and run loopback smoke tests.
 6. Install the Nginx variant and reload; verify HTTPS and all four web apps.

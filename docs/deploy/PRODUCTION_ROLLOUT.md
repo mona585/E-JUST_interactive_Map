@@ -89,8 +89,8 @@ Verify the archive is not empty and the dry run succeeded before continuing.
 ```bash
 cd /opt/anyplace
 sudo -u anyplace git fetch origin
-# v5.0.0-deploy includes the hostname and TLS-mode preparation for this rollout.
-sudo -u anyplace git checkout v5.0.0-deploy
+# v5.0.0-deploy.1 includes E-JUST Go branding, hostname, TLS mode, and preflight.
+sudo -u anyplace git checkout v5.0.0-deploy.1
 
 sudo -u anyplace ./scripts/build-web-assets.sh
 cd server

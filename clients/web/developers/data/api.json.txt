@@ -2,7 +2,7 @@
   "swagger": "2.0",
   "info": {
     "version": "4.2.1",
-    "title": "Anyplace"
+    "title": "E-JUST Go API"
   },
   "host": "ap-dev.cs.ucy.ac.cy:9003",
   "schemes": [

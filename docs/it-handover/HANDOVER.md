@@ -2,14 +2,14 @@
 
 ## 1. Delivery summary
 
-This document records the handover of the E-JUST Anyplace deployment from the
+This document records the handover of the E-JUST Go deployment from the
 development team to the E-JUST IT Department. It covers the delivered software,
 the runtime inventory, the credential policy, operational responsibilities, and
 the acceptance checklist.
 
 | Item | Value |
 |---|---|
-| Product | E-JUST Anyplace indoor and campus navigation |
+| Product | E-JUST Go indoor and campus navigation |
 | Application version | `5.0.0` |
 | Source repository | `git@github.com:mona585/E-JUST_interactive_Map.git` |
 | Handover date | Fill at sign-off |

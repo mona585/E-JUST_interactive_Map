@@ -2,7 +2,7 @@
 
 ## ASSUMING AN APACHE DEPLOYMENT.
 ## WHATEVER EXISTS ALREADY IN $DEST, WILL NOT BE REGENERATED.
-## Make sure you put the correct Anyplace Backend URL in the API_FILE
+## Make sure you put the correct E-JUST Go Backend URL in the API_FILE
 
 ## MODIFY THESE:
 DEST=~/web

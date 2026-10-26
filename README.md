@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📍 E-JUST Interactive Map & Anyplace Indoor Navigation System
+# 📍 E-JUST Go — Interactive Map & Indoor Navigation
 ### *Production-Grade Self-Hosting & Deployment Architecture Guide*
 
 [![Server](https://img.shields.io/badge/Backend-Scala_Play_2.8_%7C_MongoDB-DC382D?style=for-the-badge&logo=scala&logoColor=white)](server/)
@@ -50,7 +50,7 @@ chmod +x install.sh
 
 ## 🏛️ Overview & Production Architecture
 
-The **E-JUST Interactive Map & Anyplace Navigation System** provides GPS-less indoor positioning, crowdsourced Wi-Fi fingerprinting (RSSI), and multi-floor navigation.
+The **E-JUST Go Interactive Map & Navigation System** provides GPS-less indoor positioning, crowdsourced Wi-Fi fingerprinting (RSSI), and multi-floor navigation.
 
 ### Production Network Topology
 
@@ -73,7 +73,7 @@ The **E-JUST Interactive Map & Anyplace Navigation System** provides GPS-less in
                                 HTTP (Port 9000 internal)
                                            v
                    +--------------------------------------------------+
-                   |             ANYPLACE BACKEND SERVER              |
+                   |             E-JUST GO BACKEND SERVER             |
                    |       (Play Framework 2.8 / Scala 2.13)         |
                    +-----------------------+--------------------------+
                                            |
@@ -125,7 +125,7 @@ sudo systemctl enable mongod
 sudo systemctl start mongod
 ```
 
-### 1.2 Configure Anyplace Database & Indexes
+### 1.2 Configure E-JUST Go Database & Indexes
 Ensure MongoDB is running on `127.0.0.1:27017`. Create the database:
 
 ```bash
@@ -289,7 +289,7 @@ sudo chown -R www-data:www-data /var/www/anyplace/clients/web
 
 ## 📱 Step 5: Android Mobile Suite Setup (Logger App)
 
-The **Anyplace Logger App** is used by campus managers to record Wi-Fi signals indoors.
+The **E-JUST Go Logger App** is used by campus managers to record Wi-Fi signals indoors.
 
 ### 5.1 Build Requirements & Environment
 On your build computer / developer machine:
@@ -330,12 +330,12 @@ adb install -r ../../apks/logger-debug.apk
 
 ## 🛠️ Step 6: Production Operations & Systemd Services
 
-### 6.1 Create Systemd Service for Anyplace Backend
+### 6.1 Create Systemd Service for E-JUST Go Backend
 Create `/etc/systemd/system/anyplace.service`:
 
 ```ini
 [Unit]
-Description=Anyplace Indoor Navigation Play Backend Server
+Description=E-JUST Go Indoor Navigation Play Backend Server
 After=network.target mongod.service
 Requires=mongod.service
 
@@ -372,7 +372,7 @@ sudo systemctl status anyplace
 | **Backend API Version** | `curl -k https://your-domain.com/api/v4/version` | `{"status":"success","version":"4.3.1"}` |
 | **Architect Web App** | Browser: `https://your-domain.com/architect` | Interactive Campus Map & Floor Editor |
 | **Viewer Web App** | Browser: `https://your-domain.com/viewer` | Campus Navigation View |
-| **Android Settings** | In Logger App: Tap ⚙️ **Settings** | Opens Anyplace Server Settings without crash |
+| **Android Settings** | In Logger App: Tap ⚙️ **Settings** | Opens E-JUST Go Server Settings without crash |
 | **APK Build** | `./gradlew :logger:assembleDebug` | `BUILD SUCCESSFUL` -> Output in `apks/logger-debug.apk` |
 
 ---

@@ -4,7 +4,8 @@
 **Previous version:** `4.2.6`
 **Release date:** 2026-10-26
 **Status:** Code-complete; production rollout pending.
-**Deployment tag:** `v5.0.0-deploy` (adds the hostname/TLS-mode preparation).
+**Deployment tag:** `v5.0.0-deploy.1` (adds E-JUST Go branding, hostname,
+TLS-mode, and preflight preparation; supersedes `v5.0.0-deploy`).
 
 ## Why this is a major upgrade
 
@@ -15,6 +16,11 @@ verified backup/restore tooling, ships the E-JUST dataset, and removes the
 database and request-path bottlenecks measured on the 4.2.6 baseline.
 
 ## Highlights
+
+### Branding
+- Active web clients, Android labels, API documentation, and server logs now
+  present **E-JUST Go**. Runtime identifiers, package IDs, service names, and
+  upstream attribution remain unchanged (Phase 1 branding-only).
 
 ### Security and correctness
 - Upgraded to Play 2.8.13, Scala 2.13.6, and the Mongo Scala driver 4.4.0.

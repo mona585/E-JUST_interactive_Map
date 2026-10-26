@@ -1,6 +1,6 @@
-# E-JUST Anyplace IT Handover
+# E-JUST Go IT Handover
 
-This directory is the IT-facing documentation set for the E-JUST Anyplace
+This directory is the IT-facing documentation set for the E-JUST Go
 deployment. It is written against this repository and the deployed host, not
 against upstream Anyplace documentation.
 

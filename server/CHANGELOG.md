@@ -14,6 +14,8 @@
   backups; restore tooling; production rollout runbook.
 - Data/docs: committed E-JUST dataset and restore script; IT handover suite;
   release milestone in `docs/deploy/RELEASE_5.0.0.md`.
+- Branding: active web clients, Android labels, API docs, and server logs now
+  use E-JUST Go; runtime identifiers and upstream attribution are unchanged.
 
 # Version 4.2.6
 - search bar (pac-input):

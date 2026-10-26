@@ -1,4 +1,4 @@
-# Anyplace API
+# E-JUST Go API
 **Version:** 4.3.1
 
 ### A free and open Indoor Navigation Service with superb accuracy!
@@ -7,7 +7,7 @@
 For `/api/auth` endpoints, the `access_token` must be put in the request headers.
 In swagger you can use `Authenticate`.
 
-Google sign in is supported. Anyplace specific key is provided for those cases as well.
+Google sign in is supported. E-JUST Go specific key is provided for those cases as well.
 
 ##### API KEY (access_token):
 Find your key from [/architect](../architect/#tab-user)
@@ -33,7 +33,7 @@ A valid key ends with `ap`.
 
 ## Tags
 
-- **User** — Anyplace account: local or a Google account.
+- **User** — E-JUST Go account: local or a Google account.
 - **User:Admin** — Priviledged tasks for `admin` or `moderators`
 - **Space** — An indoor space: a `building` or a `vessel`.
 - **Space:Floor** — A `floor` within a space.
@@ -300,7 +300,7 @@ Used by Fingerptints, at the highest zoom level
 
 Miscellaneous functionalities.
 
-### Returns Anyplace Version
+### Returns E-JUST Go Version
 
 ```
 GET /api/version
@@ -1573,7 +1573,7 @@ Provide the new fields that you wish to update
 
 ## User
 
-Anyplace account: local or a Google account.
+E-JUST Go account: local or a Google account.
 
 ### Adds a new user
 
@@ -1669,10 +1669,10 @@ POST /api/user/login/google
 
 **Operation ID:** `loginGoogle`
 
-Login or register (on the first login) to Anyplace using a Google account.
+Login or register (on the first login) to E-JUST Go using a Google account.
 
 The Google OAuth token is used retrieving the anyplace account.
-For all other requests, it uses the Anyplace Access Token, just like the local accounts.
+For all other requests, it uses the E-JUST Go Access Token, just like the local accounts.
 
 
 #### Parameters

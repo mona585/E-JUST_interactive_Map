@@ -8,20 +8,20 @@
   <string name="preferences_file">LoggerPreferences</string>
 
 
-  <string name="description_body">Anyplace Logger for RSS logging. You can select locations in a building that have been registered and upload RSS log files.</string>
+  <string name="description_body">E-JUST Go Logger for RSS logging. You can select locations in a building that have been registered and upload RSS log files.</string>
   <string name="github">https://github.com/dmsl/anyplace/tree/develop-clients</string>
 
   <!-- Start Screen Values  -->
-  <string name="content_description">Anyplace Logo</string>
+  <string name="content_description">E-JUST Go Logo</string>
   <string name="start_screen_description">Logger</string>
 
-  <string name="app_name">Logger</string>
-  <string name="app_name_logger">Logger</string>
-  <string name="app_name_about">About Anyplace</string>
+  <string name="app_name">E-JUST Go Logger</string>
+  <string name="app_name_logger">E-JUST Go Logger</string>
+  <string name="app_name_about">About E-JUST Go</string>
   <string name="action_settings">Settings</string>
 
   <!-- Required by AndroidFileBrowser -->
-  <string name="prefs_name_logger">Anyplace Logger Preferences</string>
+  <string name="prefs_name_logger">E-JUST Go Logger Preferences</string>
   <string name="app_choose_folder">Choose folder</string>
   <string name="parentDir">..</string>
   <string name="homeDir">.</string>
@@ -41,7 +41,7 @@
   <string name="logger_server_Password_summary">The logger\'s password</string>
   <string name="logger_others_title">Other Settings</string>
   <string name="logger_add_building_title">Add Building</string>
-  <string name="logger_add_building_summary">Open Anyplace Architect</string>
+  <string name="logger_add_building_summary">Open E-JUST Go Architect</string>
 
   <string-array name="intervalArray">
     <item>0.5 sec</item>
@@ -55,7 +55,7 @@
   </string-array>
 
   <string name="walk_bar_max">30</string>
-  <string name="prefs_name_anyplace">Anyplace Preferences</string>
+  <string name="prefs_name_anyplace">E-JUST Go Preferences</string>
   <string name="algorithms_title">Positioning Algorithms</string>
   <string name="algorithms_summary">Choose one of the following algorithms to estimate
 		your position</string>

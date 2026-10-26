@@ -47,7 +47,7 @@ import utils.LOG
 import scala.concurrent.Future
 
 /**
- * Entrypoint method to the Anyplace Server
+ * Entrypoint method to the E-JUST Go Server
  *
  * @param conf
  * @param appLifecycle to add a stop hook
@@ -59,14 +59,14 @@ class Anyplace @Inject() (conf: Configuration) (appLifecycle: ApplicationLifecyc
 
   /** Play Application started */
   def OnAnyplaceStart(): Unit = {
-    LOG.I("Anyplace: starting server..")
+    LOG.I("E-JUST Go: starting server..")
     MongodbDatasource.initialize(conf)
     logAnalyticsInstallation()
   }
 
   /** Play Application stopped */
   def OnAnyplaceStop(): Unit = {
-    LOG.I("Anyplace: stopping server..")
+    LOG.I("E-JUST Go: stopping server..")
     try {
       MongodbDatasource.instance.disconnect()
     } catch {
@@ -84,7 +84,7 @@ class Anyplace @Inject() (conf: Configuration) (appLifecycle: ApplicationLifecyc
         JGoogleAnalyticsTracker.setProxy(System.getenv("http_proxy"))
         val config = new AnalyticsConfigData("UA-61313158-2")
         val tracker = new JGoogleAnalyticsTracker(config, GoogleAnalyticsVersion.V_4_7_2)
-        tracker.trackEvent("Anyplace Installation", "Anyplace Server start", "Anyplace logging")
+        tracker.trackEvent("E-JUST Go Installation", "E-JUST Go Server start", "E-JUST Go logging")
         LOG.D("logAnalyticsInstallation: done")
       } catch {
         case e: Exception => LOG.E("logAnalyticsInstallation: failed", e)

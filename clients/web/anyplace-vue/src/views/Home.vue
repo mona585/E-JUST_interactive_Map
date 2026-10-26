@@ -144,7 +144,7 @@
             <a href="about" class="dropdown-item" type="button">About</a>
             <button class="dropdown-item" type="button">Terms of Service</button>
             <button class="dropdown-item" type="button">Privacy</button>
-            <small class="text-muted mx-auto" style="font-size: 8px">Anyplace &copy; 2021</small>
+            <small class="text-muted mx-auto" style="font-size: 8px">E-JUST Go &copy; 2026</small>
           </div>
         </div>
       </div>
@@ -158,7 +158,7 @@ import {Options, Vue} from 'vue-class-component';
 import MapLeaflet from "@/components/MapLeaflet.vue"; // @ is an alias to /src
 
 @Options({
-  name: "Anyplace",
+  name: "E-JUST Go",
   components: {
     MapLeaflet,
   },

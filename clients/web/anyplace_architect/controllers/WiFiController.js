@@ -1586,7 +1586,7 @@ app.controller('WiFiController', ['$cookieStore', '$scope', 'AnyplaceService', '
                     var heatMapData = [];
                     var i = resp.data.radioPoints.length;
                     if (i <= 0) {
-                        _err($scope, "This floor seems not to be WiFi mapped. Download the Anyplace app from the Google Play store to map the floor.");
+                        _err($scope, "This floor seems not to be WiFi mapped. Download the E-JUST Go app from the Google Play store to map the floor.");
                         if (!$scope.radioHeatmapRSSTimeMode) {
                             document.getElementById("radioHeatmapRSS-mode").classList.remove('quickaction-selected');
                             $scope.radioHeatmapRSSMode = false;
@@ -1801,7 +1801,7 @@ app.controller('WiFiController', ['$cookieStore', '$scope', 'AnyplaceService', '
                 var i = data.length;
 
                 if (i <= 0) {
-                    _err($scope, "No fingerprints. Map the space using Anyplace app.");
+                    _err($scope, "No fingerprints. Map the space using the E-JUST Go app.");
                     return;
                 }
                 plotGraphs(data);
@@ -1979,7 +1979,7 @@ app.controller('WiFiController', ['$cookieStore', '$scope', 'AnyplaceService', '
                     var i = resp.data.radioPoints.length;
                     if (i <= 0) {
                         if (!$scope.fingerPrintsTimeMode) {
-                            _err($scope, "This floor seems not to be FingerPrint mapped. Download the Anyplace app from the Google Play store to map the floor.");
+                            _err($scope, "This floor seems not to be FingerPrint mapped. Download the E-JUST Go app from the Google Play store to map the floor.");
                             document.getElementById("fingerPrints-mode").classList.remove('quickaction-selected');
                             $scope.fingerPrintsMode = false;
                             if (typeof (Storage) !== "undefined" && localStorage) {

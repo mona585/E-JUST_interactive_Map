@@ -6,7 +6,7 @@
 ################
 
 ###
-#  summary: Returns Anyplace Version
+#  summary: Returns E-JUST Go Version
 #  tags:
 #    - Misc
 #  responses:
@@ -121,10 +121,10 @@ POST        /api/user/refresh                                 controllers.UserCo
 ###
 #  summary: Login for Google users
 #  description: |
-#       Login or register (on the first login) to Anyplace using a Google account.
+#       Login or register (on the first login) to E-JUST Go using a Google account.
 #
-#       The Google OAuth token is used retrieving the anyplace account.
-#       For all other requests, it uses the Anyplace Access Token, just like the local accounts.
+#       The Google OAuth token is used retrieving the E-JUST Go account.
+#       For all other requests, it uses the E-JUST Go Access Token, just like the local accounts.
 #  tags:
 #    - User
 #  parameters: [
@@ -133,7 +133,7 @@ POST        /api/user/refresh                                 controllers.UserCo
 #       "name": "Body",
 #       "description":
 #           "Login using a Google account.\n\n
-#           On the **first** login an Anyplace account is created.\n\n
+#           On the **first** login an E-JUST Go account is created.\n\n
 #           With the registration (initial login) please also provide the user's `name`
 #           in the json arguments. In all other cases it is ignored.",
 #       "required": true,

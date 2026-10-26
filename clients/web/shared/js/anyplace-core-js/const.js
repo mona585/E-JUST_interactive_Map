@@ -21,5 +21,5 @@ ERR_GEOLOC_TIMEOUT="Timeout on the geolocation request.";
 ERR_GEOLOC_UNKNOWN="Error while geolocating. Please try again.";
 ERR_GEOLOC_NOT_SUPPORTED="Geolocation not supported by the browser.";
 
-WARN_NO_FINGERPRINTS="This floor seems not to be FingerPrint mapped. Download the Anyplace app from the Google Play store to map the floor.";
+WARN_NO_FINGERPRINTS="This floor seems not to be FingerPrint mapped. Download the E-JUST Go app from the Google Play store to map the floor.";
 WARN_ACCES_REMOVED="ACCES map removed.";

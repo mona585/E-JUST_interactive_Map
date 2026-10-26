@@ -1,4 +1,4 @@
-# Run Anyplace Server — Ahmed-branch (Remote & Local) — Campus Burst-Optimized
+# Run E-JUST Go Server — Ahmed-branch (Remote & Local) — Campus Burst-Optimized
 
 This guide reproduces the **exact remote launch** done on `2026-09-24` (`Ahmed-branch` `1c5f5cfd` + `PR1` campus burst fixes, `http://192.168.1.6:9000` local + `https://<trycloudflare>.trycloudflare.com` remote). No uni VM required for teammate testing.
 
@@ -97,7 +97,7 @@ nohup server/target/universal/stage/bin/anyplace \
   -Dplay.http.secret.key=local-test-secret -Dapplication.secret=local-test-secret \
   > anyplace.log 2>&1 &
 sleep 10; cat anyplace.log | tail -n 20
-# → Anyplace: starting server.. / MongodbDatasource$: connected to database. / External analytics disabled
+# → E-JUST Go: starting server.. / MongodbDatasource$: connected to database. / External analytics disabled
 ```
 
 Alternative `install.sh` path (requires `PUBLIC_BASE_URL` env):

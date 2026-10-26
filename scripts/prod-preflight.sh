@@ -51,10 +51,10 @@ if [ "$(git -C "$REPO_ROOT" rev-parse --is-inside-work-tree 2>/dev/null)" = "tru
   else
     fail "tag v5.0.0 is missing"
   fi
-  if git -C "$REPO_ROOT" rev-parse -q --verify refs/tags/v5.0.0-deploy >/dev/null; then
-    pass "deployment tag v5.0.0-deploy exists"
+  if git -C "$REPO_ROOT" rev-parse -q --verify refs/tags/v5.0.0-deploy.1 >/dev/null; then
+    pass "deployment tag v5.0.0-deploy.1 exists"
   else
-    warn "deployment tag v5.0.0-deploy is missing"
+    warn "deployment tag v5.0.0-deploy.1 is missing"
   fi
   DIRTY="$(git -C "$REPO_ROOT" status --porcelain | head -5)"
   if [ -n "$DIRTY" ]; then warn "working tree has local changes:"; printf '%s\n' "$DIRTY"; else pass "working tree is clean"; fi

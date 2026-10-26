@@ -15,7 +15,7 @@ parameters:
     schema:
     type: object
 info:
-  title: "Anyplace API"
+  title: "E-JUST Go API"
   description: |
     ## A free and open Indoor Navigation Service with superb accuracy!
 
@@ -23,7 +23,7 @@ info:
     For `/api/auth` endpoints, the `access_token` must be put in the request headers.
     In swagger you can use `Authenticate`.
 
-    Google sign in is supported. Anyplace specific key is provided for those cases as well.
+    Google sign in is supported. An E-JUST Go specific key is provided for those cases as well.
 
     #### API KEY (access_token):
     Find your key from [/architect](../architect/#tab-user)
@@ -36,7 +36,7 @@ info:
 # DESCRIPTION OF EACH ENDPOINT CATEGORY
 tags:
   - name: "User"
-    description: "Anyplace account: local or a Google account."
+    description: "E-JUST Go account: local or a Google account."
   - name: "User:Admin"
     description: "Priviledged tasks for `admin` or `moderators`"
   - name: "Space"

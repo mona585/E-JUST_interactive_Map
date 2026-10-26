@@ -1,11 +1,11 @@
-# Anyplace Indoor Navigation
+# E-JUST Go Indoor Navigation
 
 This context defines the stable language used by the E-JUST deployment of Anyplace. It covers mapped places and the data used to navigate within them.
 
 ## People
 
 **User**:
-A person with an Anyplace account and the default permissions assigned to a self-registered account.
+A person with an E-JUST Go account and the default permissions assigned to a self-registered account.
 _Avoid_: Account, standard user
 
 **Administrator**:

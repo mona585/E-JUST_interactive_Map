@@ -2,9 +2,9 @@
 
 ## 1. Purpose and scope
 
-E-JUST Anyplace provides indoor and campus navigation, mapping administration,
+E-JUST Go provides indoor and campus navigation, mapping administration,
 and Wi-Fi positioning for the E-JUST campus. The system is a deployment of the
-Anyplace platform, adapted for E-JUST branding, campus data, and IT operations.
+Anyplace platform, adapted as E-JUST Go with campus data and IT operations.
 
 In scope:
 

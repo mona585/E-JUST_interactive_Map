@@ -1,6 +1,6 @@
-# Local Deployment Guide: Anyplace Behind Nginx Proxy Manager
+# Local Deployment Guide: E-JUST Go Behind Nginx Proxy Manager
 
-This document provides step-by-step instructions to deploy the **Anyplace Indoor Navigation System** completely locally (offline / standalone), hosted on your own server, and published securely through an external **Nginx Proxy Manager (NPM)** instance.
+This document provides step-by-step instructions to deploy the **E-JUST Go Indoor Navigation System** completely locally (offline / standalone), hosted on your own server, and published securely through an external **Nginx Proxy Manager (NPM)** instance.
 
 ---
 
@@ -17,7 +17,7 @@ This document provides step-by-step instructions to deploy the **Anyplace Indoor
                            │ Reverse Proxy HTTP (Port 9000)
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│            Anyplace Standalone Server                  │
+│            E-JUST Go Standalone Server                 │
 │  ├── Play Server Backend (API & Static Assets: 9000)   │
 │  └── MongoDB Database (Port 27017)                      │
 └────────────────────────────────────────────────────────┘
@@ -44,14 +44,14 @@ What `install.sh` automatically does:
 3. Prepares data directories for floorplans, radiomaps, and tiles.
 4. Configures `clients/web/shared/js/anyplace-core-js/api.js` to route requests to relative `/api`.
 5. Builds Web Applications (`architect`, `viewer`, `viewer_campus`) using NPM/Bower/Grunt.
-6. Compiles the Anyplace Play server (`sbt stage`).
+6. Compiles the E-JUST Go Play server (`sbt stage`).
 7. Generates helper scripts (`start.sh`, `stop.sh`, `status.sh`) and `anyplace.service` for systemd.
 
 ---
 
-## Step 2: Start the Local Anyplace Server
+## Step 2: Start the Local E-JUST Go Server
 
-Run the `start.sh` script to boot MongoDB and the Anyplace backend:
+Run the `start.sh` script to boot MongoDB and the E-JUST Go backend:
 
 ```bash
 ./start.sh
@@ -62,7 +62,7 @@ To verify status:
 ./status.sh
 ```
 
-The Anyplace backend is now running locally on **`http://127.0.0.1:9000`**.
+The E-JUST Go backend is now running locally on **`http://127.0.0.1:9000`**.
 
 ---
 
@@ -76,7 +76,7 @@ Log into your **Nginx Proxy Manager Web Admin Interface** (typically running on 
 2. **Details Tab**:
    - **Domain Names**: Enter your local domain or local IP (e.g., `anyplace.local` or `map.yourdomain.com`).
    - **Scheme**: `http`
-   - **Forward Hostname / IP**: Enter your Anyplace server host IP (e.g., `127.0.0.1` if NPM is on the same machine, or local server IP `192.168.x.x`, or `172.17.0.1` for Docker host gateway).
+   - **Forward Hostname / IP**: Enter your E-JUST Go server host IP (e.g., `127.0.0.1` if NPM is on the same machine, or local server IP `192.168.x.x`, or `172.17.0.1` for Docker host gateway).
    - **Forward Port**: `9000`
    - **Block Common Exploits**: `ON`
    - **Websockets Support**: `ON` *(Required for real-time map updates)*
@@ -105,20 +105,20 @@ In the Proxy Host modal, go to the **Custom Locations** tab to ensure clean rout
 
 Once Nginx Proxy Manager is configured, open your browser and navigate to:
 
-- **Anyplace Architect (Map Creator & Editor)**:
+- **E-JUST Go Architect (Map Creator & Editor)**:
   `https://map.yourdomain.com/architect/`
-- **Anyplace Viewer (Navigation App)**:
+- **E-JUST Go Viewer (Navigation App)**:
   `https://map.yourdomain.com/viewer/`
 - **API Health Check**:
   `https://map.yourdomain.com/api/version`
 
 ---
 
-## Step 5: Connecting the Anyplace Android Client
+## Step 5: Connecting the E-JUST Go Android Client
 
-To connect the Android mobile app (`clients/android-new`) to your local Anyplace instance:
+To connect the Android mobile app (`clients/android-new`) to your local E-JUST Go instance:
 
-1. Open the Anyplace Android App.
+1. Open the E-JUST Go Android App.
 2. Open **Settings** -> **Server Configuration**.
 3. Set the **Server URL / Domain** to your NPM URL:
    `https://map.yourdomain.com` (or `http://192.168.x.x:9000`)
@@ -142,7 +142,7 @@ To connect the Android mobile app (`clients/android-new`) to your local Anyplace
 
 ## Optional: Register as a System Service (Systemd)
 
-To make Anyplace start automatically whenever the server reboots:
+To make E-JUST Go start automatically whenever the server reboots:
 
 ```bash
 sudo cp anyplace.service /etc/systemd/system/
