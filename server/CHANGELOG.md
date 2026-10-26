@@ -1,5 +1,20 @@
 # CHANGELOG
 
+# Version 5.0.0 - E-JUST production upgrade (2026-10-26)
+- Security: Play 2.8.13 / Scala 2.13.6 / Mongo driver 4.4.0; CORS restricted to
+  the configured origin; auth, role, and ownership checks hardened; no internal
+  exception details in responses; consistent `application/json` content type.
+- HTTP: JSON and floorplan responses honor `Accept-Encoding`; gzip is used only
+  when the client advertises it and the body is at least 1 KB.
+- Performance: compound indexes for AP, same-floor edge, and POI lookups;
+  blocking I/O dispatcher for read paths; caches for floorplans, combined
+  floorplans, search results, and routing snapshots; edge/floor projections;
+  Nginx gzip and no-cache entry documents; campus floorplan LRU/prefetch.
+- Operations: self-healing systemd unit with G1/OOM flags; verified encrypted
+  backups; restore tooling; production rollout runbook.
+- Data/docs: committed E-JUST dataset and restore script; IT handover suite;
+  release milestone in `docs/deploy/RELEASE_5.0.0.md`.
+
 # Version 4.2.6
 - search bar (pac-input):
   - accepts coordinates in google maps format: LAT, LON

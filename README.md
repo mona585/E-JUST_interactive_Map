@@ -7,6 +7,7 @@
 [![Web Suite](https://img.shields.io/badge/Frontend-Nginx_%7C_HTML5_%7C_AngularJS-009639?style=for-the-badge&logo=nginx&logoColor=white)](clients/web/)
 [![Android Client](https://img.shields.io/badge/Android-SDK_31_%7C_Java_17-3DDC84?style=for-the-badge&logo=android&logoColor=white)](clients/android-new/)
 [![OS Support](https://img.shields.io/badge/OS_Target-Android_12_--_17-0052CC?style=for-the-badge&logo=android&logoColor=white)](apks/)
+[![Release](https://img.shields.io/badge/Release-5.0.0-purple?style=for-the-badge)](docs/deploy/RELEASE_5.0.0.md)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE.txt)
 
 ---

@@ -10,7 +10,7 @@ the acceptance checklist.
 | Item | Value |
 |---|---|
 | Product | E-JUST Anyplace indoor and campus navigation |
-| Application version | `4.2.6` |
+| Application version | `5.0.0` |
 | Source repository | `git@github.com:mona585/E-JUST_interactive_Map.git` |
 | Handover date | Fill at sign-off |
 | Receiving department | E-JUST Information Technology Department |
@@ -112,7 +112,7 @@ Mark each item during the acceptance session.
 - [ ] `systemctl is-enabled anyplace.service` returns `enabled`.
 - [ ] `systemctl is-active anyplace.service` returns `active`.
 - [ ] `/api/health` succeeds locally and over HTTPS.
-- [ ] `/api/version` returns `4.2.6`.
+- [ ] `/api/version` returns `5.0.0`.
 - [ ] `/architect/`, `/viewer/`, `/campus/`, and `/developers/` return `200` over
       HTTPS.
 - [ ] The seeded campus and buildings are visible in the viewer.

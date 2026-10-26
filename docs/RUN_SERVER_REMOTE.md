@@ -111,7 +111,7 @@ PUBLIC_BASE_URL=https://<your-tunnel>.trycloudflare.com ./install.sh  # generate
 
 ```bash
 curl -fsS http://127.0.0.1:9000/api/version
-# → {"version":"4.2.6","port":"443","address":"https://<your-tunnel>.trycloudflare.com"}
+# → {"version":"5.0.0","port":"443","address":"https://<your-tunnel>.trycloudflare.com"}
 
 curl -fsS https://<your-tunnel>.trycloudflare.com/api/version
 # → same 200 via Cloudflare (QUIC 198.41.192.27)

@@ -276,7 +276,7 @@ curl -fsS -o /dev/null -w '%{http_code}\n' https://<public-host>/viewer/
 curl -fsS -o /dev/null -w '%{http_code}\n' https://<public-host>/campus/
 ```
 
-Expected: service active, health succeeds, version `4.2.6`, and each web app
+Expected: service active, health succeeds, version `5.0.0`, and each web app
 returns `200`.
 
 ## 10. Upgrade and rollback

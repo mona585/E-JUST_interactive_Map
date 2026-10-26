@@ -149,7 +149,7 @@ The deployment is accepted when:
 
 1. `anyplace.service` is `active (running)` and enabled at boot.
 2. `/api/health` returns success locally and through Nginx over HTTPS.
-3. `/api/version` reports `4.2.6`.
+3. `/api/version` reports `5.0.0`.
 4. `/architect/`, `/viewer/`, `/campus/`, and `/developers/` load over HTTPS.
 5. The seeded campus and buildings are visible in the viewer.
 6. A POI search and an indoor route succeed.

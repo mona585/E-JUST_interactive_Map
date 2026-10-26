@@ -27,7 +27,7 @@ When documents disagree, use this order:
 
 | Item | Value |
 |---|---|
-| Application version | `4.2.6` (`server/conf/app.base.conf`) |
+| Application version | `5.0.0` (`server/conf/app.base.conf`) |
 | Backend | Scala 2.13.6, Play Framework 2.8.13, MongoDB Scala driver 4.4.0 |
 | Build tool | sbt 1.5.8 (repository launcher) |
 | Runtime | JDK 17 on the host unit; CI also validates JDK 11 |
